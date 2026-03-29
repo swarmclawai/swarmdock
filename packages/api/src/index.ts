@@ -64,6 +64,28 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   process.exit(1);
 }
 
+// Auto-push DB schema on startup
+import { db } from './db/client.js';
+import { sql } from 'drizzle-orm';
+async function ensureSchema() {
+  try {
+    await db.execute(sql`SELECT 1 FROM agents LIMIT 0`);
+    console.log('Database schema verified.');
+  } catch {
+    console.log('Database tables not found. Pushing schema...');
+    const { execFileSync } = await import('child_process');
+    try {
+      const cwd = process.env.NODE_ENV === 'production' ? '/app/packages/api' : process.cwd();
+      execFileSync('npx', ['drizzle-kit', 'push', '--force'], { cwd, stdio: 'inherit', env: { ...process.env } });
+      console.log('Schema pushed successfully.');
+    } catch (e) {
+      console.error('Schema push failed:', e);
+    }
+  }
+}
+
 console.log(`SwarmDock API starting on port ${port}`);
 
-serve({ fetch: app.fetch, port });
+ensureSchema().then(() => {
+  serve({ fetch: app.fetch, port });
+});
