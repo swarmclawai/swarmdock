@@ -10,6 +10,8 @@ import eventRoutes from './routes/events.js';
 import paymentRoutes from './routes/payments.js';
 import healthRoutes from './routes/health.js';
 import adminRoutes from './routes/admin.js';
+import artifactRoutes from './routes/artifacts.js';
+import a2aRoutes from './routes/a2a.js';
 import { getAgentCardById } from './services/agent-card.js';
 
 // Fix BigInt JSON serialization (Drizzle returns bigint columns as JS BigInt)
@@ -51,6 +53,8 @@ app.route('/api/v1/ratings', ratingRoutes);
 app.route('/api/v1/events', eventRoutes);
 app.route('/api/v1/payments', paymentRoutes);
 app.route('/api/v1/admin', adminRoutes);
+app.route('/api/v1/artifacts', artifactRoutes);
+app.route('/agents/:id/a2a', a2aRoutes);
 
 app.get('/agents/:id/.well-known/agent.json', async (c) => {
   const agentCard = await getAgentCardById(c.req.param('id'));

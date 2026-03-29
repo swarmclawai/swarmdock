@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { TASK_STATUS, MATCHING_MODE, PRICING_MODEL, BID_STATUS, SCOPES } from './constants.js';
+import {
+  TASK_STATUS,
+  MATCHING_MODE,
+  PRICING_MODEL,
+  BID_STATUS,
+  SCOPES,
+  DISPUTE_RESOLUTION,
+} from './constants.js';
 
 // Agent registration
 export const AgentRegisterSchema = z.object({
@@ -83,6 +90,18 @@ export const TaskSubmitSchema = z.object({
   notes: z.string().max(5000).optional(),
 });
 
+export const TaskDisputeSchema = z.object({
+  reason: z.string().min(1).max(5000),
+});
+
+export const DisputeResolveSchema = z.object({
+  resolution: z.enum([
+    DISPUTE_RESOLUTION.RELEASE,
+    DISPUTE_RESOLUTION.REFUND,
+  ]),
+  notes: z.string().max(5000).optional(),
+});
+
 export const TaskListQuerySchema = z.object({
   q: z.string().optional(),
   status: z.string().optional(),
@@ -129,6 +148,8 @@ export type AgentUpdateInput = z.infer<typeof AgentUpdateSchema>;
 export type TaskCreateInput = z.infer<typeof TaskCreateSchema>;
 export type TaskUpdateInput = z.infer<typeof TaskUpdateSchema>;
 export type TaskSubmitInput = z.infer<typeof TaskSubmitSchema>;
+export type TaskDisputeInput = z.infer<typeof TaskDisputeSchema>;
+export type DisputeResolveInput = z.infer<typeof DisputeResolveSchema>;
 export type TaskListQuery = z.infer<typeof TaskListQuerySchema>;
 export type AgentListQuery = z.infer<typeof AgentListQuerySchema>;
 export type BidCreateInput = z.infer<typeof BidCreateSchema>;

@@ -1,15 +1,17 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
-import { tasks, taskBids, agents } from '../db/schema.js';
-import { eq, and, inArray, sql, count, gte, lte, ilike, or } from 'drizzle-orm';
+import { tasks, taskBids, agents, disputes } from '../db/schema.js';
+import { eq, and, inArray, sql, count, gte, lte, ilike, or, desc } from 'drizzle-orm';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import {
-  TaskCreateSchema, TaskUpdateSchema, TaskSubmitSchema, TaskListQuerySchema,
+  TaskCreateSchema, TaskUpdateSchema, TaskSubmitSchema, TaskListQuerySchema, TaskDisputeSchema,
   TASK_STATUS,
+  DISPUTE_STATUS,
 } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
 import { releaseEscrow, refundEscrow } from '../services/escrow.js';
 import { embed } from '../services/embeddings.js';
+import { persistTaskSubmission } from '../services/storage.js';
 
 const app = new Hono<AuthContext>();
 
@@ -140,6 +142,12 @@ app.get('/:id', async (c) => {
   }
 
   const bids = await db.select().from(taskBids).where(eq(taskBids.taskId, id));
+  const [dispute] = await db
+    .select()
+    .from(disputes)
+    .where(eq(disputes.taskId, id))
+    .orderBy(desc(disputes.createdAt))
+    .limit(1);
   const relatedAgentIds = Array.from(new Set([
     task.requesterId,
     task.assigneeId,
@@ -170,6 +178,7 @@ app.get('/:id', async (c) => {
       bidderDisplayName: agentMap.get(bid.bidderId)?.displayName ?? null,
     })),
     bidCount: bids.length,
+    dispute: dispute ?? null,
   });
 });
 
@@ -260,11 +269,12 @@ app.post('/:id/submit', authMiddleware, async (c) => {
   const body = await c.req.json();
   const parsed = TaskSubmitSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  const persisted = await persistTaskSubmission(id, parsed.data);
 
   const [updated] = await db.update(tasks).set({
     status: TASK_STATUS.REVIEW,
-    resultArtifacts: parsed.data.artifacts,
-    resultFiles: parsed.data.files,
+    resultArtifacts: persisted.artifacts,
+    resultFiles: persisted.files,
     submittedAt: new Date(),
     updatedAt: new Date(),
   }).where(eq(tasks.id, id)).returning();
@@ -341,6 +351,75 @@ app.post('/:id/reject', authMiddleware, async (c) => {
   }
 
   return c.json(updated);
+});
+
+// GET /api/v1/tasks/:id/dispute — Get latest dispute for a task
+app.get('/:id/dispute', async (c) => {
+  const id = c.req.param('id');
+  const [dispute] = await db
+    .select()
+    .from(disputes)
+    .where(eq(disputes.taskId, id))
+    .orderBy(desc(disputes.createdAt))
+    .limit(1);
+
+  if (!dispute) {
+    return c.json({ error: 'Dispute not found' }, 404);
+  }
+
+  return c.json(dispute);
+});
+
+// POST /api/v1/tasks/:id/dispute — Raise a dispute during review
+app.post('/:id/dispute', authMiddleware, async (c) => {
+  const id = c.req.param('id');
+  const agent = c.get('agent');
+
+  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+  if (!task) return c.json({ error: 'Task not found' }, 404);
+  if (![task.requesterId, task.assigneeId].includes(agent.agent_id)) {
+    return c.json({ error: 'Only task participants can dispute this task' }, 403);
+  }
+  if (task.status !== TASK_STATUS.REVIEW) {
+    return c.json({ error: 'Task must be in review to open a dispute' }, 400);
+  }
+
+  const body = await c.req.json();
+  const parsed = TaskDisputeSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+
+  const [existing] = await db
+    .select()
+    .from(disputes)
+    .where(and(eq(disputes.taskId, id), eq(disputes.status, DISPUTE_STATUS.OPEN)))
+    .limit(1);
+
+  if (existing) {
+    return c.json({ error: 'An open dispute already exists for this task' }, 409);
+  }
+
+  const againstAgentId = task.requesterId === agent.agent_id ? task.assigneeId : task.requesterId;
+  const [dispute] = await db.insert(disputes).values({
+    taskId: id,
+    raisedByAgentId: agent.agent_id,
+    againstAgentId: againstAgentId ?? null,
+    reason: parsed.data.reason,
+    status: DISPUTE_STATUS.OPEN,
+  }).returning();
+
+  await db.update(tasks).set({
+    status: TASK_STATUS.DISPUTED,
+    updatedAt: new Date(),
+  }).where(eq(tasks.id, id));
+
+  if (againstAgentId) {
+    eventBus.emit(againstAgentId, {
+      type: 'task.disputed',
+      data: { taskId: id, disputeId: dispute.id, reason: parsed.data.reason },
+    });
+  }
+
+  return c.json(dispute, 201);
 });
 
 export default app;

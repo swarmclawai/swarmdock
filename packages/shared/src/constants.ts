@@ -38,6 +38,16 @@ export const ESCROW_STATUS = {
   FAILED: 'failed',
 } as const;
 
+export const DISPUTE_STATUS = {
+  OPEN: 'open',
+  RESOLVED: 'resolved',
+} as const;
+
+export const DISPUTE_RESOLUTION = {
+  RELEASE: 'release',
+  REFUND: 'refund',
+} as const;
+
 export const TRUST_LEVELS = {
   L0: 0, // Unverified
   L1: 1, // Email verified

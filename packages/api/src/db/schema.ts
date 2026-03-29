@@ -133,6 +133,20 @@ export const agentRatings = pgTable('agent_ratings', {
   uniqueIndex('rating_unique').on(table.taskId, table.raterId),
 ]);
 
+export const disputes = pgTable('disputes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'cascade' }).notNull(),
+  raisedByAgentId: uuid('raised_by_agent_id').references(() => agents.id).notNull(),
+  againstAgentId: uuid('against_agent_id').references(() => agents.id),
+  reason: text('reason').notNull(),
+  status: text('status').default('open').notNull(),
+  resolution: text('resolution'),
+  resolutionNotes: text('resolution_notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const challenges = pgTable('challenges', {
   id: uuid('id').primaryKey().defaultRandom(),
   publicKey: text('public_key').notNull(),

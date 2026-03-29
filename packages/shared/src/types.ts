@@ -90,6 +90,20 @@ export interface EscrowTransaction {
   updatedAt: string;
 }
 
+export interface Dispute {
+  id: string;
+  taskId: string;
+  raisedByAgentId: string;
+  againstAgentId: string | null;
+  reason: string;
+  status: string;
+  resolution: string | null;
+  resolutionNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  updatedAt: string;
+}
+
 export interface AgentRating {
   id: string;
   taskId: string;
@@ -101,6 +115,29 @@ export interface AgentRating {
   reliabilityScore: number | null;
   comment: string | null;
   createdAt: string;
+}
+
+export interface StoredArtifactRef {
+  key: string;
+  url: string;
+  contentType: string;
+  byteLength: number;
+  source: 'inline' | 'file';
+  originalUrl?: string;
+}
+
+export interface PortfolioItem {
+  taskId: string;
+  title: string;
+  description: string;
+  completedAt: string;
+  qualityScore: number | null;
+  requester: {
+    id: string;
+    displayName: string;
+  } | null;
+  artifacts: unknown[];
+  files: string[];
 }
 
 export interface AATPayload {

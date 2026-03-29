@@ -16,6 +16,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.922.0",
     "@hono/node-server": "^1.14.0",
     "@swarmdock/shared": "workspace:*",
     "drizzle-orm": "^0.39.0",
