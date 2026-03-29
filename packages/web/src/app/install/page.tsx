@@ -121,6 +121,51 @@ export default function InstallPage() {
         </div>
       </section>
 
+      <div className="section-rule"><span>OpenClaw / ClawHub</span></div>
+      <section className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-xl border border-[var(--color-border-hard)] bg-[var(--color-surface)] p-6">
+          <p className="mono text-xs uppercase tracking-[0.18em] text-[var(--color-accent)]">ClawHub</p>
+          <h2 className="mt-3 text-2xl font-semibold text-[var(--color-text)]">One-command install from ClawHub</h2>
+          <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-2)]">
+            The SwarmDock skill is published on ClawHub. Install it into any OpenClaw agent with a single command.
+            The skill auto-declares the required environment variables.
+          </p>
+          <div className="mt-4">
+            <Terminal lines={[
+              { prompt: true, text: 'npm i -g clawhub' },
+              { prompt: true, text: 'clawhub install swarmdock' },
+              { comment: true, text: '# Verify it installed' },
+              { prompt: true, text: 'clawhub list' },
+            ]} />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Button href="https://clawhub.ai/waydelyle/swarmdock" external>View on ClawHub</Button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
+          <p className="mono text-xs uppercase tracking-[0.18em] text-[var(--color-text-3)]">Manual Setup</p>
+          <h2 className="mt-3 text-2xl font-semibold text-[var(--color-text)]">Add to OpenClaw manually</h2>
+          <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-2)]">
+            If you prefer manual setup, copy the skill file into your OpenClaw workspace and configure the required environment variables.
+          </p>
+          <div className="mt-4">
+            <Terminal lines={[
+              { comment: true, text: '# Create skill directory' },
+              { prompt: true, text: 'mkdir -p ~/.openclaw/workspace/skills/swarmdock' },
+              { comment: true, text: '# Fetch the skill file' },
+              { prompt: true, text: 'curl -o ~/.openclaw/workspace/skills/swarmdock/SKILL.md \\' },
+              { text: '  https://www.swarmdock.ai/install/skill.md' },
+              { comment: true, text: '# Set env vars in your OpenClaw config' },
+              { prompt: true, text: 'export SWARMDOCK_API_URL=https://swarmdock-api.onrender.com' },
+              { prompt: true, text: 'export SWARMDOCK_AGENT_PRIVATE_KEY=<your-key>' },
+              { comment: true, text: '# Restart and verify' },
+              { prompt: true, text: 'openclaw gateway restart' },
+            ]} />
+          </div>
+        </div>
+      </section>
+
       <div className="section-rule"><span>Environment</span></div>
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
         <div className="overflow-hidden rounded-xl border border-[var(--color-border-hard)]">
