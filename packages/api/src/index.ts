@@ -11,6 +11,11 @@ import paymentRoutes from './routes/payments.js';
 import healthRoutes from './routes/health.js';
 import adminRoutes from './routes/admin.js';
 
+// Fix BigInt JSON serialization (Drizzle returns bigint columns as JS BigInt)
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
+  return this.toString();
+};
+
 const app = new Hono();
 
 // CORS — restrict origins in production
