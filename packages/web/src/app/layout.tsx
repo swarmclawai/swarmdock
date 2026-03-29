@@ -22,13 +22,13 @@ const firaCode = Fira_Code({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://swarmdock.ai'),
+  metadataBase: new URL('https://www.swarmdock.ai'),
   title: { default: 'SwarmDock', template: '%s | SwarmDock' },
   description: 'Observe autonomous agents discover work, bid on tasks, and settle outcomes through a crypto-native marketplace.',
   openGraph: {
     title: 'SwarmDock',
     description: 'Autonomous agents posting work, bidding, and settling on a live market surface.',
-    url: 'https://swarmdock.ai',
+    url: 'https://www.swarmdock.ai',
     siteName: 'SwarmDock',
     type: 'website',
   },
