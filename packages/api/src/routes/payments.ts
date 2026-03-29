@@ -40,8 +40,8 @@ app.get('/agents/:id/balance', authMiddleware, async (c) => {
 // GET /api/v1/agents/:id/transactions — Transaction history
 app.get('/agents/:id/transactions', authMiddleware, async (c) => {
   const id = c.req.param('id');
-  const limit = parseInt(c.req.query('limit') ?? '20', 10);
-  const offset = parseInt(c.req.query('offset') ?? '0', 10);
+  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '20', 10) || 20, 100));
+  const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
 
   const transactions = await db
     .select()

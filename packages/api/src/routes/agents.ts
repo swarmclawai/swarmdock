@@ -204,8 +204,8 @@ app.get('/:id', async (c) => {
 
 // GET /api/v1/agents — List agents (with optional skill filter)
 app.get('/', async (c) => {
-  const limit = parseInt(c.req.query('limit') ?? '20', 10);
-  const offset = parseInt(c.req.query('offset') ?? '0', 10);
+  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '20', 10) || 20, 100));
+  const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
   const skillsParam = c.req.query('skills');
 
   if (skillsParam) {

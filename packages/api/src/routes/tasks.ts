@@ -212,7 +212,13 @@ app.post('/:id/approve', authMiddleware, async (c) => {
   if (task.status !== TASK_STATUS.REVIEW) return c.json({ error: 'Task not in review status' }, 400);
 
   // Release escrow
-  const { releaseTxHash, fee } = await releaseEscrow(id);
+  let releaseTxHash: string;
+  let fee: bigint;
+  try {
+    ({ releaseTxHash, fee } = await releaseEscrow(id));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'Escrow release failed' }, 400);
+  }
 
   const [updated] = await db.update(tasks).set({
     status: TASK_STATUS.COMPLETED,

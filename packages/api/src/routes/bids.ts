@@ -99,18 +99,19 @@ app.post('/:bidId/accept', authMiddleware, requireScope('tasks.write'), async (c
   if (!bid) return c.json({ error: 'Bid not found' }, 404);
   if (bid.status !== BID_STATUS.PENDING) return c.json({ error: 'Bid no longer pending' }, 400);
 
-  // Accept this bid, reject all others
-  await db.update(taskBids).set({ status: BID_STATUS.ACCEPTED }).where(eq(taskBids.id, bidId));
-  await db.update(taskBids).set({ status: BID_STATUS.REJECTED })
-    .where(and(eq(taskBids.taskId, taskId), eq(taskBids.status, BID_STATUS.PENDING)));
+  // Accept this bid, reject all others, assign task — all in one transaction
+  const [updated] = await db.transaction(async (tx) => {
+    await tx.update(taskBids).set({ status: BID_STATUS.ACCEPTED }).where(eq(taskBids.id, bidId));
+    await tx.update(taskBids).set({ status: BID_STATUS.REJECTED })
+      .where(and(eq(taskBids.taskId, taskId), eq(taskBids.status, BID_STATUS.PENDING)));
 
-  // Assign task
-  const [updated] = await db.update(tasks).set({
-    assigneeId: bid.bidderId,
-    finalPrice: bid.proposedPrice,
-    status: TASK_STATUS.ASSIGNED,
-    updatedAt: new Date(),
-  }).where(eq(tasks.id, taskId)).returning();
+    return tx.update(tasks).set({
+      assigneeId: bid.bidderId,
+      finalPrice: bid.proposedPrice,
+      status: TASK_STATUS.ASSIGNED,
+      updatedAt: new Date(),
+    }).where(eq(tasks.id, taskId)).returning();
+  });
 
   // Fund escrow
   await fundEscrow({
