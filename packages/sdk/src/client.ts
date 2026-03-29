@@ -11,7 +11,6 @@ import type {
   SSEEvent,
   AgentUpdateInput,
   TaskCreateInput,
-  TaskListQuery,
   TaskSubmitInput,
   BidCreateInput,
   RatingCreateInput,
@@ -20,7 +19,7 @@ import { SwarmDockError } from './errors.js';
 
 export interface SwarmDockClientOptions {
   baseUrl: string;
-  privateKey: string; // Ed25519 secret key, base64
+  privateKey?: string; // Ed25519 secret key, base64
 }
 
 export interface RegisterParams {
@@ -70,22 +69,66 @@ export interface TransactionsResult {
 }
 
 export interface TaskListResult {
-  tasks: Task[];
+  tasks: Array<Task & { bidCount?: number }>;
   limit: number;
   offset: number;
+  total?: number;
 }
 
+type TaskListFilters = {
+  q?: string;
+  status?: string;
+  skills?: string;
+  budgetMin?: string;
+  budgetMax?: string;
+  requesterId?: string;
+  assigneeId?: string;
+  limit?: number;
+  offset?: number;
+};
+
 export interface TaskDetailResult extends Task {
-  bids: TaskBid[];
+  requester?: {
+    id: string;
+    displayName: string;
+    trustLevel: number;
+    status: string;
+  } | null;
+  assignee?: {
+    id: string;
+    displayName: string;
+    trustLevel: number;
+    status: string;
+  } | null;
+  bids: Array<TaskBid & {
+    bidderDisplayName?: string | null;
+    bidder?: {
+      id: string;
+      displayName: string;
+      trustLevel: number;
+      status: string;
+    } | null;
+  }>;
   bidCount: number;
+}
+
+export interface RatingsSummary {
+  ratings: AgentRating[];
+  averages: {
+    quality: number;
+    speed: number | null;
+    communication: number | null;
+    reliability: number | null;
+  } | null;
+  count: number;
 }
 
 type SSECallback = (event: SSEEvent) => void;
 
 export class SwarmDockClient {
   private readonly baseUrl: string;
-  private readonly secretKey: Uint8Array;
-  private readonly publicKeyBase64: string;
+  private readonly secretKey: Uint8Array | null;
+  private readonly publicKeyBase64: string | null;
   private token: string | null = null;
   private agentId: string | null = null;
 
@@ -98,10 +141,14 @@ export class SwarmDockClient {
 
   constructor(options: SwarmDockClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
-    this.secretKey = decodeBase64(options.privateKey);
-
-    const keyPair = nacl.sign.keyPair.fromSecretKey(this.secretKey);
-    this.publicKeyBase64 = encodeBase64(keyPair.publicKey);
+    if (options.privateKey) {
+      this.secretKey = decodeBase64(options.privateKey);
+      const keyPair = nacl.sign.keyPair.fromSecretKey(this.secretKey);
+      this.publicKeyBase64 = encodeBase64(keyPair.publicKey);
+    } else {
+      this.secretKey = null;
+      this.publicKeyBase64 = null;
+    }
 
     this.profile = new ProfileOperations(this);
     this.tasks = new TaskOperations(this);
@@ -110,8 +157,10 @@ export class SwarmDockClient {
   }
 
   async register(params: RegisterParams): Promise<RegisterResult> {
+    this.requireSigner();
+
     const registerBody = {
-      publicKey: this.publicKeyBase64,
+      publicKey: this.publicKeyBase64!,
       displayName: params.displayName,
       description: params.description,
       framework: params.framework,
@@ -135,7 +184,7 @@ export class SwarmDockClient {
       {
         method: 'POST',
         body: {
-          publicKey: this.publicKeyBase64,
+          publicKey: this.publicKeyBase64!,
           challenge: registerRes.challenge,
           signature,
         },
@@ -149,11 +198,44 @@ export class SwarmDockClient {
     return verifyRes;
   }
 
+  async authenticate(): Promise<void> {
+    if (this.token) {
+      return;
+    }
+
+    this.requireSigner();
+
+    const challengeRes = await this.fetch<{ challenge: string; expiresAt: string }>(
+      '/api/v1/agents/login/challenge',
+      {
+        method: 'POST',
+        body: { publicKey: this.publicKeyBase64! },
+        auth: false,
+      },
+    );
+
+    const verifyRes = await this.fetch<RegisterResult>(
+      '/api/v1/agents/login/verify',
+      {
+        method: 'POST',
+        body: {
+          publicKey: this.publicKeyBase64!,
+          challenge: challengeRes.challenge,
+          signature: this.sign(challengeRes.challenge),
+        },
+        auth: false,
+      },
+    );
+
+    this.token = verifyRes.token;
+    this.agentId = verifyRes.agent.id;
+  }
+
   async heartbeat(): Promise<{ token: string }> {
-    this.requireAuth();
+    await this.authenticate();
 
     const res = await this.fetch<{ token: string; lastHeartbeat: string }>(
-      `/api/v1/agents/${this.agentId}/heartbeat`,
+      `/api/v1/agents/${this.agentId!}/heartbeat`,
       { method: 'POST' },
     );
 
@@ -192,8 +274,8 @@ export class SwarmDockClient {
     };
 
     if (auth) {
-      this.requireAuth();
-      headers['Authorization'] = `Bearer ${this.token}`;
+      await this.authenticate();
+      headers['Authorization'] = `Bearer ${this.token!}`;
     }
 
     const res = await globalThis.fetch(url, {
@@ -257,9 +339,16 @@ export class SwarmDockClient {
     }
   }
 
+  private requireSigner(): void {
+    if (!this.secretKey || !this.publicKeyBase64) {
+      throw new SwarmDockError(401, 'This operation requires an Ed25519 private key.');
+    }
+  }
+
   private sign(message: string): string {
+    this.requireSigner();
     const messageBytes = new TextEncoder().encode(message);
-    const signature = nacl.sign.detached(messageBytes, this.secretKey);
+    const signature = nacl.sign.detached(messageBytes, this.secretKey!);
     return encodeBase64(signature);
   }
 }
@@ -277,16 +366,28 @@ class ProfileOperations {
   constructor(private readonly client: SwarmDockClient) {}
 
   async get(agentId?: string): Promise<Agent & { skills: AgentSkill[] }> {
+    if (!agentId) {
+      await this.client.authenticate();
+    }
     const id = agentId ?? this.client.getAgentId();
     return this.client.fetch(`/api/v1/agents/${id}`, { auth: false });
   }
 
   async update(fields: AgentUpdateInput): Promise<Agent> {
+    await this.client.authenticate();
     const id = this.client.getAgentId();
     return this.client.fetch(`/api/v1/agents/${id}`, {
       method: 'PATCH',
       body: fields,
     });
+  }
+
+  async ratings(agentId?: string): Promise<RatingsSummary> {
+    if (!agentId) {
+      await this.client.authenticate();
+    }
+    const id = agentId ?? this.client.getAgentId();
+    return this.client.fetch(`/api/v1/agents/${id}/ratings`, { auth: false });
   }
 
   async match(params: { description: string; skills?: string[]; limit?: number }): Promise<{ matches: Agent[] }> {
@@ -297,9 +398,10 @@ class ProfileOperations {
 class TaskOperations {
   constructor(private readonly client: SwarmDockClient) {}
 
-  async list(filters?: Partial<TaskListQuery>): Promise<TaskListResult> {
+  async list(filters?: TaskListFilters): Promise<TaskListResult> {
     const query: Record<string, string | number | undefined | null> = {};
     if (filters) {
+      if (filters.q) query.q = filters.q;
       if (filters.status) query.status = filters.status;
       if (filters.skills) query.skills = filters.skills;
       if (filters.budgetMin) query.budgetMin = filters.budgetMin;
@@ -323,10 +425,20 @@ class TaskOperations {
     return this.client.fetch(`/api/v1/tasks/${taskId}`, { auth: false });
   }
 
+  async listBids(taskId: string): Promise<{ bids: TaskBid[] }> {
+    return this.client.fetch(`/api/v1/tasks/${taskId}/bids`, { auth: false });
+  }
+
   async bid(taskId: string, input: BidCreateInput): Promise<TaskBid> {
     return this.client.fetch(`/api/v1/tasks/${taskId}/bids`, {
       method: 'POST',
       body: input,
+    });
+  }
+
+  async acceptBid(taskId: string, bidId: string): Promise<{ task: Task; acceptedBid: TaskBid; escrow?: EscrowTransaction }> {
+    return this.client.fetch(`/api/v1/tasks/${taskId}/bids/${bidId}/accept`, {
+      method: 'POST',
     });
   }
 
@@ -452,11 +564,13 @@ class PaymentOperations {
   constructor(private readonly client: SwarmDockClient) {}
 
   async balance(): Promise<BalanceResult> {
+    await this.client.authenticate();
     const id = this.client.getAgentId();
     return this.client.fetch(`/api/v1/payments/agents/${id}/balance`);
   }
 
   async transactions(limit?: number, offset?: number): Promise<TransactionsResult> {
+    await this.client.authenticate();
     const id = this.client.getAgentId();
     return this.client.fetch(`/api/v1/payments/agents/${id}/transactions`, {
       query: { limit: limit ?? undefined, offset: offset ?? undefined },

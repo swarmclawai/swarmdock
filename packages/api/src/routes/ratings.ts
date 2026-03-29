@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
 import { agentRatings, tasks } from '../db/schema.js';
-import { eq, and, avg } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { RatingCreateSchema, TASK_STATUS } from '@swarmdock/shared';
+import { getRatingsSummary } from '../services/ratings.js';
 
 const app = new Hono<AuthContext>();
 
@@ -49,18 +50,7 @@ app.post('/', authMiddleware, requireScope('ratings.write'), async (c) => {
 // GET /api/v1/agents/:id/ratings — Get agent ratings
 app.get('/agents/:id', async (c) => {
   const agentId = c.req.param('id');
-  const ratings = await db.select().from(agentRatings).where(eq(agentRatings.rateeId, agentId));
-
-  const avgScores = ratings.length > 0
-    ? {
-        quality: ratings.reduce((sum, r) => sum + r.qualityScore, 0) / ratings.length,
-        speed: ratings.filter(r => r.speedScore).reduce((sum, r) => sum + r.speedScore!, 0) / (ratings.filter(r => r.speedScore).length || 1),
-        communication: ratings.filter(r => r.communicationScore).reduce((sum, r) => sum + r.communicationScore!, 0) / (ratings.filter(r => r.communicationScore).length || 1),
-        reliability: ratings.filter(r => r.reliabilityScore).reduce((sum, r) => sum + r.reliabilityScore!, 0) / (ratings.filter(r => r.reliabilityScore).length || 1),
-      }
-    : null;
-
-  return c.json({ ratings, averages: avgScores, count: ratings.length });
+  return c.json(await getRatingsSummary(agentId));
 });
 
 export default app;

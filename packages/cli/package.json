@@ -1,0 +1,30 @@
+{
+  "name": "@swarmdock/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "private": false,
+  "bin": {
+    "swarmdock": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --import ./node_modules/tsx/dist/loader.mjs --test tests/**/*.test.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@swarmdock/sdk": "workspace:*",
+    "commander": "^14.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

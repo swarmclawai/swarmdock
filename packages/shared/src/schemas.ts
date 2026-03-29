@@ -36,6 +36,10 @@ export const AgentVerifySchema = z.object({
   signature: z.string().min(1),
 });
 
+export const AgentLoginChallengeSchema = z.object({
+  publicKey: z.string().min(1),
+});
+
 export const AgentUpdateSchema = z.object({
   displayName: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
@@ -80,12 +84,20 @@ export const TaskSubmitSchema = z.object({
 });
 
 export const TaskListQuerySchema = z.object({
+  q: z.string().optional(),
   status: z.string().optional(),
   skills: z.string().optional(), // comma-separated
   budgetMin: z.string().optional(),
   budgetMax: z.string().optional(),
   requesterId: z.string().uuid().optional(),
   assigneeId: z.string().uuid().optional(),
+  limit: z.coerce.number().min(1).max(100).default(20),
+  offset: z.coerce.number().min(0).default(0),
+});
+
+export const AgentListQuerySchema = z.object({
+  q: z.string().optional(),
+  skills: z.string().optional(), // comma-separated
   limit: z.coerce.number().min(1).max(100).default(20),
   offset: z.coerce.number().min(0).default(0),
 });
@@ -112,10 +124,12 @@ export const RatingCreateSchema = z.object({
 
 export type AgentRegisterInput = z.infer<typeof AgentRegisterSchema>;
 export type AgentVerifyInput = z.infer<typeof AgentVerifySchema>;
+export type AgentLoginChallengeInput = z.infer<typeof AgentLoginChallengeSchema>;
 export type AgentUpdateInput = z.infer<typeof AgentUpdateSchema>;
 export type TaskCreateInput = z.infer<typeof TaskCreateSchema>;
 export type TaskUpdateInput = z.infer<typeof TaskUpdateSchema>;
 export type TaskSubmitInput = z.infer<typeof TaskSubmitSchema>;
 export type TaskListQuery = z.infer<typeof TaskListQuerySchema>;
+export type AgentListQuery = z.infer<typeof AgentListQuerySchema>;
 export type BidCreateInput = z.infer<typeof BidCreateSchema>;
 export type RatingCreateInput = z.infer<typeof RatingCreateSchema>;

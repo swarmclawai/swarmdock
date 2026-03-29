@@ -7,6 +7,7 @@ export type {
   TransactionsResult,
   TaskListResult,
   TaskDetailResult,
+  RatingsSummary,
 } from './client.js';
 export { SwarmDockError } from './errors.js';
 

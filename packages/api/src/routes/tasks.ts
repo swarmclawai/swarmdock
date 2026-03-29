@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
 import { tasks, taskBids, agents } from '../db/schema.js';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql, count, gte, lte, ilike, or } from 'drizzle-orm';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import {
   TaskCreateSchema, TaskUpdateSchema, TaskSubmitSchema, TaskListQuerySchema,
-  TASK_STATUS, BID_STATUS, AGENT_STATUS,
+  TASK_STATUS,
 } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
 import { releaseEscrow, refundEscrow } from '../services/escrow.js';
@@ -20,21 +20,68 @@ app.get('/', async (c) => {
     return c.json({ error: 'Invalid query', details: query.error.flatten() }, 400);
   }
 
-  const { status, skills, budgetMin, budgetMax, requesterId, assigneeId, limit, offset } = query.data;
-
-  let q = db.select().from(tasks).$dynamic();
+  const { q, status, skills, budgetMin, budgetMax, requesterId, assigneeId, limit, offset } = query.data;
 
   const conditions = [];
   if (status) conditions.push(eq(tasks.status, status));
   if (requesterId) conditions.push(eq(tasks.requesterId, requesterId));
   if (assigneeId) conditions.push(eq(tasks.assigneeId, assigneeId));
-
-  if (conditions.length > 0) {
-    q = q.where(and(...conditions));
+  if (q?.trim()) {
+    const pattern = `%${q.trim()}%`;
+    conditions.push(or(
+      ilike(tasks.title, pattern),
+      ilike(tasks.description, pattern),
+    )!);
+  }
+  if (skills) {
+    const skillList = skills
+      .split(',')
+      .map((skill) => skill.trim().toLowerCase())
+      .filter(Boolean);
+    if (skillList.length > 0) {
+      conditions.push(sql`
+        EXISTS (
+          SELECT 1
+          FROM unnest(${tasks.skillRequirements}) AS skill
+          WHERE LOWER(skill) = ANY(${skillList})
+        )
+      `);
+    }
+  }
+  if (budgetMin) {
+    conditions.push(gte(tasks.budgetMax, BigInt(budgetMin)));
+  }
+  if (budgetMax) {
+    conditions.push(lte(sql`COALESCE(${tasks.budgetMin}, ${tasks.budgetMax})`, BigInt(budgetMax)));
   }
 
-  const result = await q.limit(limit).offset(offset);
-  return c.json({ tasks: result, limit, offset });
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const [{ total }] = await db.select({ total: count() }).from(tasks).where(whereClause);
+  const result = await db.select().from(tasks).where(whereClause).limit(limit).offset(offset);
+
+  const taskIds = result.map((task) => task.id);
+  const bidCountRows = taskIds.length > 0
+    ? await db.execute(sql`
+      SELECT ${taskBids.taskId} AS task_id, COUNT(*)::int AS bid_count
+      FROM ${taskBids}
+      WHERE ${taskBids.taskId} = ANY(${taskIds})
+      GROUP BY ${taskBids.taskId}
+    `)
+    : { rows: [] as Array<{ task_id: string; bid_count: number | string }> };
+
+  const bidCountEntries = (bidCountRows.rows as Array<{ task_id: string; bid_count: number | string }>)
+    .map((row) => [row.task_id, Number(row.bid_count)] as const);
+  const bidCounts = new Map<string, number>(bidCountEntries);
+
+  return c.json({
+    tasks: result.map((task) => ({
+      ...task,
+      bidCount: bidCounts.get(task.id) ?? 0,
+    })),
+    limit,
+    offset,
+    total: Number(total),
+  });
 });
 
 // POST /api/v1/tasks — Create task
@@ -93,8 +140,37 @@ app.get('/:id', async (c) => {
   }
 
   const bids = await db.select().from(taskBids).where(eq(taskBids.taskId, id));
+  const relatedAgentIds = Array.from(new Set([
+    task.requesterId,
+    task.assigneeId,
+    ...bids.map((bid) => bid.bidderId),
+  ].filter((value): value is string => Boolean(value))));
 
-  return c.json({ ...task, bids, bidCount: bids.length });
+  const agentRows = relatedAgentIds.length > 0
+    ? await db
+      .select({
+        id: agents.id,
+        displayName: agents.displayName,
+        trustLevel: agents.trustLevel,
+        status: agents.status,
+      })
+      .from(agents)
+      .where(inArray(agents.id, relatedAgentIds))
+    : [];
+
+  const agentMap = new Map(agentRows.map((agent) => [agent.id, agent]));
+
+  return c.json({
+    ...task,
+    requester: agentMap.get(task.requesterId) ?? null,
+    assignee: task.assigneeId ? (agentMap.get(task.assigneeId) ?? null) : null,
+    bids: bids.map((bid) => ({
+      ...bid,
+      bidder: agentMap.get(bid.bidderId) ?? null,
+      bidderDisplayName: agentMap.get(bid.bidderId)?.displayName ?? null,
+    })),
+    bidCount: bids.length,
+  });
 });
 
 // PATCH /api/v1/tasks/:id — Update task (owner only)

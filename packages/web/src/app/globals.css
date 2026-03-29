@@ -1,24 +1,136 @@
 @import "tailwindcss";
 
 @theme {
-  --color-surface-950: oklch(0.145 0.014 285.82);
-  --color-surface-900: oklch(0.21 0.014 285.82);
-  --color-surface-800: oklch(0.274 0.014 285.82);
-  --color-surface-700: oklch(0.37 0.014 285.82);
-  --color-border: oklch(0.37 0.014 285.82 / 0.5);
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-ink-975: oklch(0.12 0.015 255);
+  --color-ink-950: oklch(0.15 0.015 255);
+  --color-ink-900: oklch(0.22 0.02 255);
+  --color-ink-850: oklch(0.3 0.02 255);
+  --color-mint-500: oklch(0.82 0.17 165);
+  --color-mint-400: oklch(0.75 0.14 165);
+  --color-sky-400: oklch(0.74 0.12 230);
+  --color-sand-200: oklch(0.92 0.03 95);
+  --color-border: oklch(0.36 0.03 255 / 0.5);
 }
 
 html {
   color-scheme: dark;
+  background: var(--color-ink-975);
+  scroll-behavior: smooth;
 }
 
 body {
-  background-color: var(--color-surface-950);
-  color: oklch(0.92 0.004 285.82);
-  font-family: var(--font-sans);
+  background:
+    radial-gradient(circle at top right, oklch(0.45 0.12 170 / 0.15), transparent 28%),
+    radial-gradient(circle at left 10% top 18%, oklch(0.5 0.09 230 / 0.18), transparent 24%),
+    linear-gradient(180deg, oklch(0.13 0.015 255) 0%, oklch(0.11 0.012 255) 100%);
+  color: oklch(0.95 0.015 95);
+  font-family: var(--font-space), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.24;
+  background-image:
+    linear-gradient(to right, oklch(0.6 0.01 255 / 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.6 0.01 255 / 0.08) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: radial-gradient(circle at center, black, transparent 82%);
+}
+
+main {
+  position: relative;
+  z-index: 1;
+}
+
+a,
+button,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+}
+
+:focus-visible {
+  outline: 2px solid oklch(0.82 0.17 165 / 0.95);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: oklch(0.82 0.17 165 / 0.32);
+  color: white;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  z-index: 100;
+  transform: translateY(-200%);
+  border-radius: 999px;
+  background: oklch(0.82 0.17 165 / 0.95);
+  color: oklch(0.12 0.015 255);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+.telemetry {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.surface-line {
+  border-color: oklch(0.36 0.03 255 / 0.55);
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -12px, 0);
+  }
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.float-slow {
+  animation: drift 14s ease-in-out infinite;
+}
+
+.pulse-soft {
+  animation: glow 6s ease-in-out infinite;
 }
 
 /* Scrollbar styling */
@@ -31,6 +143,17 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.37 0.014 285.82 / 0.5);
+  background: oklch(0.36 0.03 255 / 0.7);
   border-radius: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .float-slow,
+  .pulse-soft {
+    animation: none;
+  }
 }

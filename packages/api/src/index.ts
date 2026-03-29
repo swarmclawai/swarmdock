@@ -10,6 +10,7 @@ import eventRoutes from './routes/events.js';
 import paymentRoutes from './routes/payments.js';
 import healthRoutes from './routes/health.js';
 import adminRoutes from './routes/admin.js';
+import { getAgentCardById } from './services/agent-card.js';
 
 // Fix BigInt JSON serialization (Drizzle returns bigint columns as JS BigInt)
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
@@ -51,6 +52,15 @@ app.route('/api/v1/events', eventRoutes);
 app.route('/api/v1/payments', paymentRoutes);
 app.route('/api/v1/admin', adminRoutes);
 
+app.get('/agents/:id/.well-known/agent.json', async (c) => {
+  const agentCard = await getAgentCardById(c.req.param('id'));
+  if (!agentCard) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  return c.json(agentCard);
+});
+
 // Root
 app.get('/', (c) =>
   c.json({
@@ -69,28 +79,5 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   process.exit(1);
 }
 
-// Auto-push DB schema on startup
-import { db } from './db/client.js';
-import { sql } from 'drizzle-orm';
-async function ensureSchema() {
-  try {
-    await db.execute(sql`SELECT 1 FROM agents LIMIT 0`);
-    console.log('Database schema verified.');
-  } catch {
-    console.log('Database tables not found. Pushing schema...');
-    const { execFileSync } = await import('child_process');
-    try {
-      const cwd = process.env.NODE_ENV === 'production' ? '/app/packages/api' : process.cwd();
-      execFileSync('npx', ['drizzle-kit', 'push', '--force'], { cwd, stdio: 'inherit', env: { ...process.env } });
-      console.log('Schema pushed successfully.');
-    } catch (e) {
-      console.error('Schema push failed:', e);
-    }
-  }
-}
-
 console.log(`SwarmDock API starting on port ${port}`);
-
-ensureSchema().then(() => {
-  serve({ fetch: app.fetch, port });
-});
+serve({ fetch: app.fetch, port });

@@ -1,56 +1,82 @@
 import { Hono } from 'hono';
-import { db } from '../db/client.js';
-import { escrowTransactions, agents } from '../db/schema.js';
+import { db, type Database } from '../db/client.js';
+import { escrowTransactions } from '../db/schema.js';
 import { eq, or } from 'drizzle-orm';
 import { authMiddleware, type AuthContext } from '../middleware/auth.js';
 
-const app = new Hono<AuthContext>();
+type PaymentsDeps = {
+  db: Pick<Database, 'select'>;
+  authMiddleware: typeof authMiddleware;
+};
 
-// GET /api/v1/agents/:id/balance — Check agent balance (placeholder)
-app.get('/agents/:id/balance', authMiddleware, async (c) => {
-  const id = c.req.param('id');
+export function canAccessAgentPayments(requestedAgentId: string, viewerAgentId: string): boolean {
+  return requestedAgentId === viewerAgentId;
+}
 
-  // TODO: Query actual on-chain USDC balance via Base Sepolia RPC
-  // For MVP, calculate from escrow transactions
-  const transactions = await db
-    .select()
-    .from(escrowTransactions)
-    .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)));
+export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
+  const database = overrides.db ?? db;
+  const requireAuth = overrides.authMiddleware ?? authMiddleware;
+  const app = new Hono<AuthContext>();
 
-  let earned = 0n;
-  let spent = 0n;
-  for (const tx of transactions) {
-    if (tx.payeeId === id && tx.status === 'released') {
-      earned += tx.amount - (tx.platformFee ?? 0n);
+  // GET /api/v1/agents/:id/balance — Check agent balance (placeholder)
+  app.get('/agents/:id/balance', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const agent = c.get('agent');
+
+    if (!canAccessAgentPayments(id, agent.agent_id)) {
+      return c.json({ error: 'Can only view your own balance' }, 403);
     }
-    if (tx.payerId === id && tx.status !== 'refunded') {
-      spent += tx.amount;
-    }
-  }
 
-  return c.json({
-    agentId: id,
-    earned: earned.toString(),
-    spent: spent.toString(),
-    currency: 'USDC',
-    network: 'base-sepolia',
+    // TODO: Query actual on-chain USDC balance via Base Sepolia RPC
+    // For MVP, calculate from escrow transactions
+    const transactions = await database
+      .select()
+      .from(escrowTransactions)
+      .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)));
+
+    let earned = 0n;
+    let spent = 0n;
+    for (const tx of transactions) {
+      if (tx.payeeId === id && tx.status === 'released') {
+        earned += tx.amount - (tx.platformFee ?? 0n);
+      }
+      if (tx.payerId === id && tx.status !== 'refunded') {
+        spent += tx.amount;
+      }
+    }
+
+    return c.json({
+      agentId: id,
+      earned: earned.toString(),
+      spent: spent.toString(),
+      currency: 'USDC',
+      network: 'base-sepolia',
+    });
   });
-});
 
-// GET /api/v1/agents/:id/transactions — Transaction history
-app.get('/agents/:id/transactions', authMiddleware, async (c) => {
-  const id = c.req.param('id');
-  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '20', 10) || 20, 100));
-  const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
+  // GET /api/v1/agents/:id/transactions — Transaction history
+  app.get('/agents/:id/transactions', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const agent = c.get('agent');
 
-  const transactions = await db
-    .select()
-    .from(escrowTransactions)
-    .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)))
-    .limit(Math.min(limit, 100))
-    .offset(offset);
+    if (!canAccessAgentPayments(id, agent.agent_id)) {
+      return c.json({ error: 'Can only view your own transactions' }, 403);
+    }
 
-  return c.json({ transactions, limit, offset });
-});
+    const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '20', 10) || 20, 100));
+    const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
 
-export default app;
+    const transactions = await database
+      .select()
+      .from(escrowTransactions)
+      .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)))
+      .limit(Math.min(limit, 100))
+      .offset(offset);
+
+    return c.json({ transactions, limit, offset });
+  });
+
+  return app;
+}
+
+export default createPaymentsApp();

@@ -1,15 +1,76 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
 import { agents, agentSkills, challenges } from '../db/schema.js';
-import { eq, and, lt, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql, ilike, or, count } from 'drizzle-orm';
 import { generateChallenge, verifySignature, generateDID } from '../lib/crypto.js';
 import { issueAAT } from '../services/identity.js';
 import { embed, embedBatch } from '../services/embeddings.js';
-import { AgentRegisterSchema, AgentVerifySchema, AgentUpdateSchema, AGENT_STATUS } from '@swarmdock/shared';
+import {
+  AgentRegisterSchema,
+  AgentVerifySchema,
+  AgentLoginChallengeSchema,
+  AgentUpdateSchema,
+  AgentListQuerySchema,
+  AGENT_STATUS,
+} from '@swarmdock/shared';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { eventBus } from '../lib/events.js';
+import { getRatingsSummary } from '../services/ratings.js';
+import { getAgentCardById } from '../services/agent-card.js';
 
 const app = new Hono<AuthContext>();
+
+function sanitizeAgent<T extends { publicKey?: string }>(agent: T) {
+  const { publicKey: _publicKey, ...safeAgent } = agent;
+  return safeAgent;
+}
+
+async function consumeValidChallenge(publicKey: string, challenge: string, signature: string) {
+  const [storedChallenge] = await db
+    .select()
+    .from(challenges)
+    .where(
+      and(
+        eq(challenges.publicKey, publicKey),
+        eq(challenges.challenge, challenge),
+        eq(challenges.used, false),
+      ),
+    )
+    .limit(1);
+
+  if (!storedChallenge) {
+    throw new Error('Challenge not found or already used');
+  }
+
+  if (new Date() > storedChallenge.expiresAt) {
+    throw new Error('Challenge expired');
+  }
+
+  if (!verifySignature(publicKey, challenge, signature)) {
+    throw new Error('Invalid signature');
+  }
+
+  await db.update(challenges).set({ used: true }).where(eq(challenges.id, storedChallenge.id));
+}
+
+async function issueAgentSession(agent: { id: string; did: string; trustLevel: number; displayName: string; status: string }) {
+  const token = await issueAAT({
+    id: agent.id,
+    did: agent.did,
+    trustLevel: agent.trustLevel,
+  });
+
+  return {
+    token,
+    agent: {
+      id: agent.id,
+      did: agent.did,
+      displayName: agent.displayName,
+      trustLevel: agent.trustLevel,
+      status: agent.status,
+    },
+  };
+}
 
 // POST /api/v1/agents/register — Start registration, return challenge
 app.post('/register', async (c) => {
@@ -102,6 +163,38 @@ app.post('/register', async (c) => {
   }, 201);
 });
 
+// POST /api/v1/agents/login/challenge — Request a fresh auth challenge
+app.post('/login/challenge', async (c) => {
+  const body = await c.req.json();
+  const parsed = AgentLoginChallengeSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  const [agent] = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.publicKey, parsed.data.publicKey), eq(agents.status, AGENT_STATUS.ACTIVE)))
+    .limit(1);
+
+  if (!agent) {
+    return c.json({ error: 'Active agent not found for this public key' }, 404);
+  }
+
+  const { challenge, expiresAt } = generateChallenge();
+  await db.insert(challenges).values({
+    publicKey: parsed.data.publicKey,
+    challenge,
+    expiresAt,
+  });
+
+  return c.json({
+    challenge,
+    expiresAt: expiresAt.toISOString(),
+  });
+});
+
 // POST /api/v1/agents/verify — Complete challenge-response, issue AAT
 app.post('/verify', async (c) => {
   const body = await c.req.json();
@@ -113,34 +206,12 @@ app.post('/verify', async (c) => {
 
   const { publicKey, challenge, signature } = parsed.data;
 
-  // Find valid challenge
-  const [storedChallenge] = await db
-    .select()
-    .from(challenges)
-    .where(
-      and(
-        eq(challenges.publicKey, publicKey),
-        eq(challenges.challenge, challenge),
-        eq(challenges.used, false),
-      ),
-    )
-    .limit(1);
-
-  if (!storedChallenge) {
-    return c.json({ error: 'Challenge not found or already used' }, 400);
+  try {
+    await consumeValidChallenge(publicKey, challenge, signature);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Challenge verification failed';
+    return c.json({ error: message }, message === 'Invalid signature' ? 401 : 400);
   }
-
-  if (new Date() > storedChallenge.expiresAt) {
-    return c.json({ error: 'Challenge expired' }, 400);
-  }
-
-  // Verify signature
-  if (!verifySignature(publicKey, challenge, signature)) {
-    return c.json({ error: 'Invalid signature' }, 401);
-  }
-
-  // Mark challenge as used
-  await db.update(challenges).set({ used: true }).where(eq(challenges.id, storedChallenge.id));
 
   // Activate agent
   const [agent] = await db
@@ -160,11 +231,12 @@ app.post('/verify', async (c) => {
     updatedAt: new Date(),
   }).where(eq(agents.id, agent.id));
 
-  // Issue AAT
-  const token = await issueAAT({
+  const session = await issueAgentSession({
     id: agent.id,
     did: agent.did,
     trustLevel: 2,
+    displayName: agent.displayName,
+    status: AGENT_STATUS.ACTIVE,
   });
 
   eventBus.broadcast({
@@ -172,16 +244,46 @@ app.post('/verify', async (c) => {
     data: { agentId: agent.id, did: agent.did, displayName: agent.displayName },
   });
 
-  return c.json({
-    token,
-    agent: {
-      id: agent.id,
-      did: agent.did,
-      displayName: agent.displayName,
-      trustLevel: 2,
-      status: AGENT_STATUS.ACTIVE,
-    },
-  });
+  return c.json(session);
+});
+
+// POST /api/v1/agents/login/verify — Verify challenge and issue a fresh token
+app.post('/login/verify', async (c) => {
+  const body = await c.req.json();
+  const parsed = AgentVerifySchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    await consumeValidChallenge(parsed.data.publicKey, parsed.data.challenge, parsed.data.signature);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Challenge verification failed';
+    return c.json({ error: message }, message === 'Invalid signature' ? 401 : 400);
+  }
+
+  const [agent] = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.publicKey, parsed.data.publicKey), eq(agents.status, AGENT_STATUS.ACTIVE)))
+    .limit(1);
+
+  if (!agent) {
+    return c.json({ error: 'Active agent not found for this public key' }, 404);
+  }
+
+  await db.update(agents).set({
+    lastHeartbeat: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(agents.id, agent.id));
+
+  return c.json(await issueAgentSession(agent));
+});
+
+// GET /api/v1/agents/:id/ratings — Canonical public ratings route
+app.get('/:id/ratings', async (c) => {
+  return c.json(await getRatingsSummary(c.req.param('id')));
 });
 
 // GET /api/v1/agents/:id — Public agent profile
@@ -196,49 +298,113 @@ app.get('/:id', async (c) => {
   const skills = await db.select().from(agentSkills).where(eq(agentSkills.agentId, id));
 
   return c.json({
-    ...agent,
-    publicKey: undefined, // Don't expose raw public key in profile
+    ...sanitizeAgent(agent),
+    skillCount: skills.length,
+    topSkills: skills.slice(0, 4).map((skill) => ({
+      skillId: skill.skillId,
+      skillName: skill.skillName,
+      category: skill.category,
+    })),
     skills,
   });
 });
 
 // GET /api/v1/agents — List agents (with optional skill filter)
 app.get('/', async (c) => {
-  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '20', 10) || 20, 100));
-  const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
-  const skillsParam = c.req.query('skills');
-
-  if (skillsParam) {
-    // Filter agents by matching skills
-    const skillList = skillsParam.split(',').map((s) => s.trim().toLowerCase());
-    const matchingAgentIds = await db
-      .selectDistinct({ agentId: agentSkills.agentId })
-      .from(agentSkills)
-      .where(sql`LOWER(${agentSkills.skillId}) = ANY(${skillList})`);
-
-    if (matchingAgentIds.length === 0) {
-      return c.json({ agents: [], limit, offset });
-    }
-
-    const ids = matchingAgentIds.map((r) => r.agentId);
-    const result = await db
-      .select()
-      .from(agents)
-      .where(and(eq(agents.status, AGENT_STATUS.ACTIVE), inArray(agents.id, ids)))
-      .limit(Math.min(limit, 100))
-      .offset(offset);
-
-    return c.json({ agents: result, limit, offset });
+  const query = AgentListQuerySchema.safeParse(c.req.query());
+  if (!query.success) {
+    return c.json({ error: 'Invalid query', details: query.error.flatten() }, 400);
   }
 
+  const { q, skills, limit, offset } = query.data;
+  const conditions = [eq(agents.status, AGENT_STATUS.ACTIVE)];
+
+  if (q?.trim()) {
+    const pattern = `%${q.trim()}%`;
+    conditions.push(or(
+      ilike(agents.displayName, pattern),
+      ilike(agents.description, pattern),
+      ilike(agents.framework, pattern),
+      ilike(agents.modelProvider, pattern),
+      ilike(agents.modelName, pattern),
+    )!);
+  }
+
+  if (skills) {
+    const skillList = skills
+      .split(',')
+      .map((skill) => skill.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (skillList.length > 0) {
+      const matchingAgentIds = await db
+        .selectDistinct({ agentId: agentSkills.agentId })
+        .from(agentSkills)
+        .where(sql`
+          LOWER(${agentSkills.skillId}) = ANY(${skillList})
+          OR LOWER(${agentSkills.skillName}) = ANY(${skillList})
+          OR LOWER(${agentSkills.category}) = ANY(${skillList})
+          OR EXISTS (
+            SELECT 1
+            FROM unnest(${agentSkills.tags}) AS tag
+            WHERE LOWER(tag) = ANY(${skillList})
+          )
+        `);
+
+      if (matchingAgentIds.length === 0) {
+        return c.json({ agents: [], limit, offset, total: 0 });
+      }
+
+      conditions.push(inArray(agents.id, matchingAgentIds.map((row) => row.agentId)));
+    }
+  }
+
+  const whereClause = and(...conditions);
+  const [{ total }] = await db.select({ total: count() }).from(agents).where(whereClause);
   const result = await db
     .select()
     .from(agents)
-    .where(eq(agents.status, AGENT_STATUS.ACTIVE))
-    .limit(Math.min(limit, 100))
+    .where(whereClause)
+    .limit(limit)
     .offset(offset);
 
-  return c.json({ agents: result, limit, offset });
+  const agentIds = result.map((agent) => agent.id);
+  const skillRows = agentIds.length > 0
+    ? await db
+      .select({
+        agentId: agentSkills.agentId,
+        skillId: agentSkills.skillId,
+        skillName: agentSkills.skillName,
+        category: agentSkills.category,
+      })
+      .from(agentSkills)
+      .where(inArray(agentSkills.agentId, agentIds))
+    : [];
+
+  const skillsByAgent = new Map<string, Array<{ skillId: string; skillName: string; category: string }>>();
+  for (const skill of skillRows) {
+    const existing = skillsByAgent.get(skill.agentId) ?? [];
+    existing.push({
+      skillId: skill.skillId,
+      skillName: skill.skillName,
+      category: skill.category,
+    });
+    skillsByAgent.set(skill.agentId, existing);
+  }
+
+  return c.json({
+    agents: result.map((agent) => {
+      const agentSkillRows = skillsByAgent.get(agent.id) ?? [];
+      return {
+        ...sanitizeAgent(agent),
+        skillCount: agentSkillRows.length,
+        topSkills: agentSkillRows.slice(0, 4),
+      };
+    }),
+    limit,
+    offset,
+    total: Number(total),
+  });
 });
 
 // PATCH /api/v1/agents/:id — Update own profile (auth required)
@@ -315,44 +481,10 @@ app.delete('/:id', authMiddleware, async (c) => {
 
 // GET /agents/:id/.well-known/agent.json — A2A Agent Card
 app.get('/:id/.well-known/agent.json', async (c) => {
-  const id = c.req.param('id');
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id)).limit(1);
-
-  if (!agent || agent.status !== AGENT_STATUS.ACTIVE) {
+  const agentCard = await getAgentCardById(c.req.param('id'));
+  if (!agentCard) {
     return c.json({ error: 'Agent not found' }, 404);
   }
-
-  const skills = await db.select().from(agentSkills).where(eq(agentSkills.agentId, id));
-
-  const agentCard = {
-    name: agent.displayName,
-    description: agent.description ?? '',
-    url: `${process.env.PLATFORM_URL ?? 'https://swarmdock.ai'}/agents/${agent.id}`,
-    version: '1.0.0',
-    defaultInputModes: ['text'],
-    defaultOutputModes: ['text'],
-    capabilities: {
-      streaming: false,
-      extendedAgentCard: true,
-    },
-    skills: skills.map((s) => ({
-      id: s.skillId,
-      name: s.skillName,
-      description: s.description,
-      tags: s.tags,
-      examples: s.examplePrompts,
-      inputModes: ['text', 'application/json'],
-      outputModes: ['text', 'application/json'],
-    })),
-    authentication: {
-      schemes: ['bearer'],
-      credentials: 'swarmdock-issued-token',
-    },
-    provider: {
-      organization: agent.framework ?? 'unknown',
-      url: agent.agentCardUrl ?? undefined,
-    },
-  };
 
   return c.json(agentCard);
 });

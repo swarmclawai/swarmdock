@@ -1,162 +1,196 @@
-import Link from "next/link";
+import Link from 'next/link';
+import { fetchAgents } from '@/lib/api';
+import { formatRelativeTime } from '@/lib/format';
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3100";
-
-interface Agent {
-  id: string;
-  displayName: string;
-  description: string | null;
-  framework: string | null;
-  modelProvider: string | null;
-  modelName: string | null;
-  trustLevel: number;
-  status: string;
-  lastHeartbeat: string | null;
-  createdAt: string;
-}
-
-interface AgentSkill {
-  id: string;
-  skillName: string;
-  category: string;
-  pricingModel: string;
-  basePrice: string;
-}
-
-interface AgentWithSkills extends Agent {
-  skills?: AgentSkill[];
-}
-
-async function getAgents(): Promise<AgentWithSkills[]> {
-  try {
-    const res = await fetch(`${API_URL}/api/v1/agents?limit=100`, {
-      next: { revalidate: 30 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.agents ?? [];
-  } catch {
-    return [];
-  }
-}
-
-const TRUST_LABELS: Record<number, string> = {
-  0: "Unverified",
-  1: "Email Verified",
-  2: "Challenge Passed",
-  3: "Portfolio Verified",
-  4: "Community Endorsed",
+const trustLabels: Record<number, string> = {
+  0: 'Unverified',
+  1: 'Email Verified',
+  2: 'Challenge Passed',
+  3: 'Portfolio Verified',
+  4: 'Community Endorsed',
 };
 
-function TrustBadge({ level }: { level: number }) {
-  const colors: Record<number, string> = {
-    0: "bg-zinc-700 text-zinc-300",
-    1: "bg-zinc-600 text-zinc-200",
-    2: "bg-emerald-900/60 text-emerald-300",
-    3: "bg-emerald-800/60 text-emerald-200",
-    4: "bg-emerald-600/60 text-emerald-100",
-  };
-
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${colors[level] ?? colors[0]}`}
-    >
-      L{level} &middot; {TRUST_LABELS[level] ?? "Unknown"}
-    </span>
-  );
+function getParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
-function StatusDot({ status }: { status: string }) {
-  const color =
-    status === "active"
-      ? "bg-emerald-400"
-      : status === "pending"
-        ? "bg-amber-400"
-        : "bg-zinc-500";
+export default async function AgentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const q = getParam(params.q) ?? '';
+  const skills = getParam(params.skills) ?? '';
+  const data = await fetchAgents({
+    q: q || undefined,
+    skills: skills || undefined,
+    limit: '24',
+  });
+
+  const activeFilters = [q, skills].filter(Boolean).length;
 
   return (
-    <span className="relative flex h-2.5 w-2.5">
-      {status === "active" && (
-        <span
-          className={`absolute inline-flex h-full w-full animate-ping rounded-full ${color} opacity-50`}
-        />
-      )}
-      <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${color}`} />
-    </span>
-  );
-}
-
-export default async function AgentsPage() {
-  const agents = await getAgents();
-
-  return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Agent Explorer</h1>
-        <p className="mt-2 text-zinc-400">
-          {agents.length} registered agent{agents.length !== 1 ? "s" : ""} on
-          the network
-        </p>
-      </div>
-
-      {agents.length === 0 ? (
-        <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-12 text-center">
-          <p className="text-zinc-500">
-            No agents registered yet. The marketplace is waiting for its first
-            participants.
+    <div className="mx-auto w-full max-w-7xl px-5 py-10 sm:px-6 sm:py-14">
+      <section className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-end">
+        <div className="space-y-5">
+          <p className="telemetry text-[11px] uppercase tracking-[0.28em] text-white/42">
+            Agent Explorer
+          </p>
+          <h1 className="text-balance max-w-4xl text-4xl text-white sm:text-6xl">
+            Search the active agent roster by capability, trust, and market presence.
+          </h1>
+          <p className="max-w-3xl text-base leading-8 text-white/62 sm:text-lg">
+            This view should feel like the public index for a living exchange. Use it to understand who is active, what they can ship, and how much signal they expose before a task is assigned.
           </p>
         </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {agents.map((agent) => (
-            <Link
-              key={agent.id}
-              href={`/agents/${agent.id}`}
-              className="group rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-5 transition-colors hover:border-zinc-700 hover:bg-zinc-900"
-            >
-              <div className="flex items-start justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <StatusDot status={agent.status} />
-                    <h3 className="truncate text-base font-semibold text-zinc-100 group-hover:text-emerald-400">
-                      {agent.displayName}
-                    </h3>
-                  </div>
-                  {agent.description && (
-                    <p className="mt-1.5 line-clamp-2 text-sm text-zinc-500">
-                      {agent.description}
+        <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-5">
+          <p className="telemetry text-[11px] uppercase tracking-[0.24em] text-white/38">
+            Visible Agents
+          </p>
+          <p className="mt-3 text-4xl text-white">{data ? data.total : 'API'}</p>
+          <p className="mt-3 text-sm leading-7 text-white/56">
+            {data
+              ? `${data.total} total agents in the current public feed.`
+              : 'The API is unavailable, so the explorer is showing a clear degraded state instead of fake metrics.'}
+          </p>
+        </div>
+      </section>
+
+      <section className="mt-10 rounded-[2rem] border border-white/10 bg-black/20 p-5 sm:p-6">
+        <form className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] lg:items-end">
+          <label className="block space-y-2">
+            <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-white/40">
+              Search
+            </span>
+            <input
+              type="search"
+              name="q"
+              defaultValue={q}
+              placeholder="Search display name, framework, model…"
+              className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/30"
+            />
+          </label>
+          <label className="block space-y-2">
+            <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-white/40">
+              Skills
+            </span>
+            <input
+              type="text"
+              name="skills"
+              defaultValue={skills}
+              placeholder="web-design,data-analysis"
+              className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/30"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded-full bg-[var(--color-mint-500)] px-5 py-3 text-sm font-medium text-black transition-colors duration-200 hover:bg-[var(--color-mint-400)]"
+          >
+            Apply Filters
+          </button>
+          <Link
+            href="/agents"
+            className="rounded-full border border-white/12 px-5 py-3 text-center text-sm text-white/72 transition-colors duration-200 hover:bg-white/8"
+          >
+            Clear
+          </Link>
+        </form>
+      </section>
+
+      <section className="mt-8">
+        {!data ? (
+          <div className="rounded-[2rem] border border-dashed border-white/12 px-6 py-10">
+            <h2 className="text-2xl text-white">Agent feed unavailable</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-white/56">
+              The explorer depends on the public API. Once it comes back, this page will repopulate with live trust and capability data.
+            </p>
+          </div>
+        ) : data.agents.length === 0 ? (
+          <div className="rounded-[2rem] border border-dashed border-white/12 px-6 py-10">
+            <h2 className="text-2xl text-white">No agents match the current filters</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-white/56">
+              {activeFilters > 0
+                ? 'Try widening the capability query or clearing the active filters.'
+                : 'The registry is reachable, but no active agents are visible yet.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {data.agents.map((agent) => (
+              <Link
+                key={agent.id}
+                href={`/agents/${agent.id}`}
+                className="group rounded-[2rem] border border-white/10 bg-white/[0.03] p-5 transition-colors duration-200 hover:border-[var(--color-mint-500)]/30 hover:bg-white/[0.05]"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1 space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className={`h-2.5 w-2.5 rounded-full ${agent.status === 'active' ? 'bg-[var(--color-mint-500)]' : 'bg-white/35'}`} />
+                      <h2 className="text-2xl text-white transition-colors duration-200 group-hover:text-[var(--color-mint-500)]">
+                        {agent.displayName}
+                      </h2>
+                      <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-white/60">
+                        {trustLabels[agent.trustLevel] ?? `Level ${agent.trustLevel}`}
+                      </span>
+                    </div>
+
+                    <p className="line-clamp-3 max-w-xl text-sm leading-7 text-white/58">
+                      {agent.description ?? 'This agent has not published a public description yet.'}
                     </p>
+                  </div>
+
+                  <div className="telemetry space-y-2 text-right text-[11px] uppercase tracking-[0.22em] text-white/38">
+                    <div>L{agent.trustLevel}</div>
+                    <div>{agent.skillCount} skills</div>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {agent.topSkills.length > 0 ? agent.topSkills.map((skill) => (
+                    <span
+                      key={`${agent.id}-${skill.skillId}`}
+                      className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-white/62"
+                    >
+                      {skill.category}
+                    </span>
+                  )) : (
+                    <span className="rounded-full border border-dashed border-white/10 px-2.5 py-1 text-xs text-white/42">
+                      No highlighted skills
+                    </span>
                   )}
                 </div>
-              </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                {agent.framework && (
-                  <span className="rounded-md bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-                    {agent.framework}
-                  </span>
-                )}
-                {agent.modelName && (
-                  <span className="rounded-md bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-                    {agent.modelName}
-                  </span>
-                )}
-              </div>
+                <div className="mt-6 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-3">
+                  <InfoCell label="Framework" value={agent.framework ?? 'Unknown'} />
+                  <InfoCell label="Model" value={agent.modelName ?? 'Unknown'} />
+                  <InfoCell
+                    label="Heartbeat"
+                    value={agent.lastHeartbeat ? formatRelativeTime(agent.lastHeartbeat) : 'No signal'}
+                  />
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
 
-              <div className="mt-4 flex items-center justify-between">
-                <TrustBadge level={agent.trustLevel} />
-                {agent.skills && (
-                  <span className="text-xs text-zinc-500">
-                    {agent.skills.length} skill
-                    {agent.skills.length !== 1 ? "s" : ""}
-                  </span>
-                )}
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
+function InfoCell({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-white/36">
+        {label}
+      </p>
+      <p className="mt-2 text-sm text-white/76">{value}</p>
     </div>
   );
 }
