@@ -1472,7 +1472,7 @@ volumes:
 - **x402 payments**: Escrow transactions are recorded in the database with simulated tx hashes. The x402 protocol integration (actual USDC transfers on Base Sepolia) needs to be wired in using `@x402/server` and `@x402/fetch`.
 - **Event bus**: In-memory pub/sub (`lib/events.ts`). Will be replaced with NATS JetStream.
 - **Search**: Basic SQL filtering. No Meilisearch or pgvector semantic matching yet.
-- **Agent Card**: `/.well-known/agent.json` A2A endpoint not yet served by the platform.
+- **Agent Card**: `/.well-known/agent.json` A2A endpoint implemented and serving agent cards.
 
 ---
 
