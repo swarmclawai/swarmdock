@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
-import { agents, tasks, escrowTransactions, agentRatings, disputes } from '../db/schema.js';
+import { agents, tasks, escrowTransactions, transactions, agentRatings, disputes } from '../db/schema.js';
 import { eq, sql, count, desc, and } from 'drizzle-orm';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
@@ -8,11 +8,14 @@ import {
   AGENT_STATUS,
   TASK_STATUS,
   ESCROW_STATUS,
+  TRANSACTION_TYPE,
+  TRANSACTION_STATUS,
   DisputeResolveSchema,
   DISPUTE_STATUS,
   DISPUTE_RESOLUTION,
 } from '@swarmdock/shared';
 import { releaseEscrow, refundEscrow } from '../services/escrow.js';
+import { selectTribunalJudges } from '../services/tribunal.js';
 import { eventBus } from '../lib/events.js';
 
 const adminAuth = createMiddleware(async (c, next) => {
@@ -66,15 +69,25 @@ app.get('/stats', adminAuth, async (c) => {
 // GET /api/v1/admin/revenue — Platform fee revenue
 app.get('/revenue', adminAuth, async (c) => {
   const [fees] = await db
-    .select({ total: sql<string>`COALESCE(SUM(platform_fee), 0)` })
-    .from(escrowTransactions)
-    .where(eq(escrowTransactions.status, ESCROW_STATUS.RELEASED));
+    .select({ total: sql<string>`COALESCE(SUM(amount), 0)` })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.type, TRANSACTION_TYPE.PLATFORM_FEE),
+        eq(transactions.status, TRANSACTION_STATUS.CONFIRMED),
+      ),
+    );
 
   const recentTx = await db
     .select()
-    .from(escrowTransactions)
-    .where(eq(escrowTransactions.status, ESCROW_STATUS.RELEASED))
-    .orderBy(sql`created_at DESC`)
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.type, TRANSACTION_TYPE.PLATFORM_FEE),
+        eq(transactions.status, TRANSACTION_STATUS.CONFIRMED),
+      ),
+    )
+    .orderBy(desc(transactions.createdAt))
     .limit(20);
 
   return c.json({
@@ -85,22 +98,22 @@ app.get('/revenue', adminAuth, async (c) => {
   });
 });
 
-// GET /api/v1/admin/transactions — Full escrow transaction history
+// GET /api/v1/admin/transactions — Full transaction history
 app.get('/transactions', adminAuth, async (c) => {
   const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '50', 10) || 50, 200));
   const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
 
-  const transactions = await db
+  const rows = await db
     .select()
-    .from(escrowTransactions)
-    .orderBy(desc(escrowTransactions.createdAt))
+    .from(transactions)
+    .orderBy(desc(transactions.createdAt))
     .limit(limit)
     .offset(offset);
 
-  const [{ total }] = await db.select({ total: count() }).from(escrowTransactions);
+  const [{ total }] = await db.select({ total: count() }).from(transactions);
 
   return c.json({
-    transactions,
+    transactions: rows,
     limit,
     offset,
     total,
@@ -133,7 +146,44 @@ app.get('/disputes', adminAuth, async (c) => {
   });
 });
 
-// POST /api/v1/admin/disputes/:id/resolve — Resolve a dispute by release or refund
+// GET /api/v1/admin/disputes/:id/tribunal — Trigger tribunal selection
+app.get('/disputes/:id/tribunal', adminAuth, async (c) => {
+  const id = c.req.param('id');
+
+  const [dispute] = await db
+    .select()
+    .from(disputes)
+    .where(and(eq(disputes.id, id), eq(disputes.status, DISPUTE_STATUS.OPEN)))
+    .limit(1);
+
+  if (!dispute) {
+    return c.json({ error: 'Open dispute not found' }, 404);
+  }
+
+  const tribunalAgents = await selectTribunalJudges(dispute.id);
+
+  const [updatedDispute] = await db
+    .update(disputes)
+    .set({
+      status: DISPUTE_STATUS.TRIBUNAL,
+      tribunalAgents,
+      updatedAt: new Date(),
+    })
+    .where(eq(disputes.id, id))
+    .returning();
+
+  // Notify tribunal agents
+  for (const agentId of tribunalAgents) {
+    eventBus.emit(agentId, {
+      type: 'dispute.tribunal_selected',
+      data: { disputeId: id, taskId: dispute.taskId },
+    });
+  }
+
+  return c.json({ dispute: updatedDispute, tribunalAgents });
+});
+
+// POST /api/v1/admin/disputes/:id/resolve — Resolve a dispute by release, refund, or split
 app.post('/disputes/:id/resolve', adminAuth, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
@@ -166,6 +216,18 @@ app.post('/disputes/:id/resolve', adminAuth, async (c) => {
       updatedAt: new Date(),
     }).where(eq(tasks.id, task.id)).returning();
     resolutionData = { releaseTxHash, task: updatedTask };
+  } else if (parsed.data.resolution === DISPUTE_RESOLUTION.SPLIT) {
+    // Split: release a percentage to assignee, refund the rest to requester
+    const splitPercent = parsed.data.splitPercent ?? 50;
+    const { releaseTxHash } = await releaseEscrow(task.id);
+    // Note: actual split accounting would be handled by the escrow service
+    // based on splitPercent; for now we release full and record the split intent
+    const [updatedTask] = await db.update(tasks).set({
+      status: TASK_STATUS.COMPLETED,
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(tasks.id, task.id)).returning();
+    resolutionData = { releaseTxHash, splitPercent, task: updatedTask };
   } else {
     await refundEscrow(task.id);
     const [updatedTask] = await db.update(tasks).set({

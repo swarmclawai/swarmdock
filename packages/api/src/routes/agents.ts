@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
-import { agents, agentSkills, challenges } from '../db/schema.js';
+import { agents, agentSkills, challenges, portfolioItems, tasks } from '../db/schema.js';
 import { eq, and, inArray, sql, ilike, or, count } from 'drizzle-orm';
 import { generateChallenge, verifySignature, generateDID } from '../lib/crypto.js';
 import { issueAAT } from '../services/identity.js';
@@ -11,13 +11,15 @@ import {
   AgentLoginChallengeSchema,
   AgentUpdateSchema,
   AgentListQuerySchema,
+  PortfolioItemUpdateSchema,
   AGENT_STATUS,
+  TASK_STATUS,
 } from '@swarmdock/shared';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { eventBus } from '../lib/events.js';
 import { getRatingsSummary } from '../services/ratings.js';
 import { getAgentCardById } from '../services/agent-card.js';
-import { getAgentPortfolio } from '../services/portfolio.js';
+import { getAgentPortfolio, createPortfolioItem, updatePortfolioItem, deletePortfolioItem } from '../services/portfolio.js';
 import { fetchOrderedRowsByIds, searchAgentsIndex } from '../services/search.js';
 
 const app = new Hono<AuthContext>();
@@ -84,6 +86,7 @@ app.post('/register', async (c) => {
   }
 
   const { publicKey, displayName, description, framework, frameworkVersion, modelProvider, modelName, walletAddress, agentCardUrl, skills } = parsed.data;
+  const agentCard = (body as Record<string, unknown>).agentCard ?? null;
 
   // Check if agent already exists with this public key
   const existing = await db.select().from(agents).where(eq(agents.publicKey, publicKey)).limit(1);
@@ -107,6 +110,7 @@ app.post('/register', async (c) => {
     agentId = existing[0].id;
     await db.update(agents).set({
       displayName, description, framework, frameworkVersion, modelProvider, modelName, walletAddress, agentCardUrl,
+      agentCard,
       status: AGENT_STATUS.PENDING,
       updatedAt: new Date(),
     }).where(eq(agents.id, agentId));
@@ -115,6 +119,7 @@ app.post('/register', async (c) => {
     const [agent] = await db.insert(agents).values({
       did: tempDid,
       publicKey, displayName, description, framework, frameworkVersion, modelProvider, modelName, walletAddress, agentCardUrl,
+      agentCard,
       status: AGENT_STATUS.PENDING,
     }).returning();
     agentId = agent.id;
@@ -229,7 +234,9 @@ app.post('/verify', async (c) => {
   await db.update(agents).set({
     status: AGENT_STATUS.ACTIVE,
     trustLevel: 2, // L2: Challenge completed
+    verifiedAt: new Date(),
     lastHeartbeat: new Date(),
+    lastActiveAt: new Date(),
     updatedAt: new Date(),
   }).where(eq(agents.id, agent.id));
 
@@ -510,6 +517,7 @@ app.post('/:id/heartbeat', authMiddleware, async (c) => {
 
   await db.update(agents).set({
     lastHeartbeat: new Date(),
+    lastActiveAt: new Date(),
     updatedAt: new Date(),
   }).where(eq(agents.id, id));
 
@@ -544,6 +552,72 @@ app.delete('/:id', authMiddleware, async (c) => {
   });
 
   return c.json({ message: 'Agent deregistered' });
+});
+
+// POST /api/v1/agents/:id/portfolio — Create portfolio item from completed task
+app.post('/:id/portfolio', authMiddleware, requireScope('portfolio.write'), async (c) => {
+  const id = c.req.param('id');
+  const agent = c.get('agent');
+
+  if (agent.agent_id !== id) {
+    return c.json({ error: 'Can only manage your own portfolio' }, 403);
+  }
+
+  const body = await c.req.json();
+  const { taskId } = body as { taskId: string };
+
+  if (!taskId) {
+    return c.json({ error: 'taskId is required' }, 400);
+  }
+
+  try {
+    const item = await createPortfolioItem(id, taskId);
+    return c.json(item, 201);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'Failed to create portfolio item' }, 400);
+  }
+});
+
+// PATCH /api/v1/agents/:id/portfolio/:itemId — Update portfolio item pin/order
+app.patch('/:id/portfolio/:itemId', authMiddleware, requireScope('portfolio.write'), async (c) => {
+  const id = c.req.param('id');
+  const itemId = c.req.param('itemId');
+  const agent = c.get('agent');
+
+  if (agent.agent_id !== id) {
+    return c.json({ error: 'Can only manage your own portfolio' }, 403);
+  }
+
+  const body = await c.req.json();
+  const parsed = PortfolioItemUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    const item = await updatePortfolioItem(itemId, id, parsed.data);
+    return c.json(item);
+  } catch {
+    return c.json({ error: 'Portfolio item not found' }, 404);
+  }
+});
+
+// DELETE /api/v1/agents/:id/portfolio/:itemId — Delete portfolio item
+app.delete('/:id/portfolio/:itemId', authMiddleware, requireScope('portfolio.write'), async (c) => {
+  const id = c.req.param('id');
+  const itemId = c.req.param('itemId');
+  const agent = c.get('agent');
+
+  if (agent.agent_id !== id) {
+    return c.json({ error: 'Can only manage your own portfolio' }, 403);
+  }
+
+  try {
+    await deletePortfolioItem(itemId, id);
+    return c.json({ message: 'Portfolio item deleted' });
+  } catch {
+    return c.json({ error: 'Portfolio item not found' }, 404);
+  }
 });
 
 // GET /agents/:id/.well-known/agent.json — A2A Agent Card

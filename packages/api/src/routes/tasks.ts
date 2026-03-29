@@ -10,6 +10,8 @@ import {
 } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
 import { releaseEscrow, refundEscrow } from '../services/escrow.js';
+import { verifyTaskOutput } from '../services/quality.js';
+import { appendAuditLog } from '../services/audit.js';
 import { embed } from '../services/embeddings.js';
 import { persistTaskSubmission } from '../services/storage.js';
 import { fetchOrderedRowsByIds, searchTasksIndex } from '../services/search.js';
@@ -144,7 +146,7 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
   }
 
   const agent = c.get('agent');
-  const { title, description, skillRequirements, inputData, matchingMode, budgetMin, budgetMax, deadline, directAssigneeId } = parsed.data;
+  const { title, description, skillRequirements, inputData, inputFiles, matchingMode, budgetMin, budgetMax, deadline, directAssigneeId } = parsed.data;
 
   const [task] = await db.insert(tasks).values({
     requesterId: agent.agent_id,
@@ -153,6 +155,7 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
     description,
     skillRequirements,
     inputData: inputData ?? null,
+    inputFiles: inputFiles.length > 0 ? inputFiles : null,
     matchingMode,
     budgetMin: budgetMin ? BigInt(budgetMin) : null,
     budgetMax: BigInt(budgetMax),
@@ -363,6 +366,21 @@ app.post('/:id/approve', authMiddleware, async (c) => {
   if (task.requesterId !== agent.agent_id) return c.json({ error: 'Not task owner' }, 403);
   if (task.status !== TASK_STATUS.REVIEW) return c.json({ error: 'Task not in review status' }, 400);
 
+  // Run quality verification before releasing escrow
+  let qualityScore: number | null = null;
+  let qualityDetails: unknown = null;
+  try {
+    const artifacts = Array.isArray(task.resultArtifacts) ? task.resultArtifacts : [];
+    const qualityReport = verifyTaskOutput(
+      { id: task.id, inputData: task.inputData as Record<string, unknown> | null },
+      artifacts,
+    );
+    qualityScore = qualityReport.overallScore ?? null;
+    qualityDetails = qualityReport;
+  } catch (err) {
+    console.error('[TASKS] quality verification failed (non-blocking):', err);
+  }
+
   // Release escrow
   let releaseTxHash: string;
   let fee: bigint;
@@ -375,6 +393,8 @@ app.post('/:id/approve', authMiddleware, async (c) => {
   const [updated] = await db.update(tasks).set({
     status: TASK_STATUS.COMPLETED,
     completedAt: new Date(),
+    qualityScore,
+    qualityDetails,
     updatedAt: new Date(),
   }).where(eq(tasks.id, id)).returning();
 
@@ -388,6 +408,15 @@ app.post('/:id/approve', authMiddleware, async (c) => {
     type: 'task.updated',
     data: { taskId: id, status: TASK_STATUS.COMPLETED, assigneeId: task.assigneeId },
   });
+
+  // Fire-and-forget: audit log
+  appendAuditLog({
+    eventType: 'task.completed',
+    actorId: agent.agent_id,
+    targetId: id,
+    targetType: 'task',
+    payload: { qualityScore },
+  }).catch((err) => console.error('[TASKS] audit log failed:', err));
 
   return c.json({ ...updated, releaseTxHash });
 });
@@ -496,6 +525,15 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
     type: 'task.updated',
     data: { taskId: id, status: TASK_STATUS.DISPUTED, assigneeId: task.assigneeId, requesterId: task.requesterId },
   });
+
+  // Fire-and-forget: audit log
+  appendAuditLog({
+    eventType: 'task.disputed',
+    actorId: agent.agent_id,
+    targetId: id,
+    targetType: 'task',
+    payload: { disputeId: dispute.id, reason: parsed.data.reason },
+  }).catch((err) => console.error('[TASKS] audit log failed:', err));
 
   return c.json(dispute, 201);
 });

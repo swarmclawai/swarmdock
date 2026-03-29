@@ -6,6 +6,7 @@ import {
   BID_STATUS,
   SCOPES,
   DISPUTE_RESOLUTION,
+  DISPUTE_VERDICT,
 } from './constants.js';
 
 // Agent registration
@@ -13,6 +14,8 @@ export const AgentRegisterSchema = z.object({
   publicKey: z.string().min(1, 'Public key is required'),
   displayName: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
+  avatarUrl: z.string().url().optional(),
+  ownerDid: z.string().optional(),
   framework: z.string().optional(),
   frameworkVersion: z.string().optional(),
   modelProvider: z.string().optional(),
@@ -25,6 +28,8 @@ export const AgentRegisterSchema = z.object({
     description: z.string().min(1),
     category: z.string().min(1),
     tags: z.array(z.string()).default([]),
+    inputModes: z.array(z.string()).default(['text']),
+    outputModes: z.array(z.string()).default(['text']),
     pricingModel: z.enum([
       PRICING_MODEL.PER_TASK,
       PRICING_MODEL.PER_HOUR,
@@ -34,6 +39,8 @@ export const AgentRegisterSchema = z.object({
     ]).default(PRICING_MODEL.PER_TASK),
     basePrice: z.string().min(1), // USDC amount as string (6 decimals)
     examplePrompts: z.array(z.string()).default([]),
+    benchmarkScores: z.unknown().optional(),
+    sampleOutputs: z.unknown().optional(),
   })).default([]),
 });
 
@@ -50,6 +57,8 @@ export const AgentLoginChallengeSchema = z.object({
 export const AgentUpdateSchema = z.object({
   displayName: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
+  avatarUrl: z.string().url().nullable().optional(),
+  ownerDid: z.string().nullable().optional(),
   framework: z.string().optional(),
   frameworkVersion: z.string().optional(),
   modelProvider: z.string().optional(),
@@ -64,6 +73,7 @@ export const TaskCreateSchema = z.object({
   description: z.string().min(1).max(10000),
   skillRequirements: z.array(z.string().min(1)).min(1),
   inputData: z.unknown().optional(),
+  inputFiles: z.array(z.string().url()).default([]),
   matchingMode: z.enum([
     MATCHING_MODE.DIRECT,
     MATCHING_MODE.OPEN,
@@ -92,12 +102,24 @@ export const TaskSubmitSchema = z.object({
 
 export const TaskDisputeSchema = z.object({
   reason: z.string().min(1).max(5000),
+  evidence: z.unknown().optional(),
 });
 
 export const DisputeResolveSchema = z.object({
   resolution: z.enum([
     DISPUTE_RESOLUTION.RELEASE,
     DISPUTE_RESOLUTION.REFUND,
+    DISPUTE_RESOLUTION.SPLIT,
+  ]),
+  notes: z.string().max(5000).optional(),
+  splitPercent: z.number().min(0).max(100).optional(), // assignee's share when split
+});
+
+export const TribunalVoteSchema = z.object({
+  verdict: z.enum([
+    DISPUTE_VERDICT.REQUESTER_WINS,
+    DISPUTE_VERDICT.ASSIGNEE_WINS,
+    DISPUTE_VERDICT.SPLIT,
   ]),
   notes: z.string().max(5000).optional(),
 });
@@ -117,6 +139,8 @@ export const TaskListQuerySchema = z.object({
 export const AgentListQuerySchema = z.object({
   q: z.string().optional(),
   skills: z.string().optional(), // comma-separated
+  framework: z.string().optional(),
+  minTrustLevel: z.coerce.number().min(0).max(4).optional(),
   limit: z.coerce.number().min(1).max(100).default(20),
   offset: z.coerce.number().min(0).default(0),
 });
@@ -130,15 +154,23 @@ export const BidCreateSchema = z.object({
   portfolioRefs: z.array(z.string().url()).default([]),
 });
 
-// Ratings
+// Ratings (float 0-1 scale)
 export const RatingCreateSchema = z.object({
   taskId: z.string().uuid(),
   rateeId: z.string().uuid(),
-  qualityScore: z.number().int().min(1).max(5),
-  speedScore: z.number().int().min(1).max(5).optional(),
-  communicationScore: z.number().int().min(1).max(5).optional(),
-  reliabilityScore: z.number().int().min(1).max(5).optional(),
+  qualityScore: z.number().min(0).max(1),
+  speedScore: z.number().min(0).max(1).optional(),
+  communicationScore: z.number().min(0).max(1).optional(),
+  reliabilityScore: z.number().min(0).max(1).optional(),
+  valueScore: z.number().min(0).max(1).optional(),
+  evidence: z.unknown().optional(),
   comment: z.string().max(2000).optional(),
+});
+
+// Portfolio
+export const PortfolioItemUpdateSchema = z.object({
+  isPinned: z.boolean().optional(),
+  displayOrder: z.number().int().min(0).optional(),
 });
 
 export type AgentRegisterInput = z.infer<typeof AgentRegisterSchema>;
@@ -150,7 +182,9 @@ export type TaskUpdateInput = z.infer<typeof TaskUpdateSchema>;
 export type TaskSubmitInput = z.infer<typeof TaskSubmitSchema>;
 export type TaskDisputeInput = z.infer<typeof TaskDisputeSchema>;
 export type DisputeResolveInput = z.infer<typeof DisputeResolveSchema>;
+export type TribunalVoteInput = z.infer<typeof TribunalVoteSchema>;
 export type TaskListQuery = z.infer<typeof TaskListQuerySchema>;
 export type AgentListQuery = z.infer<typeof AgentListQuerySchema>;
 export type BidCreateInput = z.infer<typeof BidCreateSchema>;
 export type RatingCreateInput = z.infer<typeof RatingCreateSchema>;
+export type PortfolioItemUpdateInput = z.infer<typeof PortfolioItemUpdateSchema>;

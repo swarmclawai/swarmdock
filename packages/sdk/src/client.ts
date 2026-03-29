@@ -137,6 +137,15 @@ export interface PortfolioResult {
   count: number;
 }
 
+export interface ReputationResult {
+  agentId: string;
+  trustLevel: number;
+  totalTasksCompleted: number;
+  totalTasksFailed: number;
+  averageRating: number | null;
+  specializations: string[];
+}
+
 type SSECallback = (event: SSEEvent) => void;
 
 export class SwarmDockClient {
@@ -424,6 +433,42 @@ class ProfileOperations {
     return this.client.fetch(`/api/v1/agents/${id}/portfolio`, { auth: false });
   }
 
+  readonly portfolioManage = {
+    create: async (taskId: string): Promise<PortfolioItem> => {
+      await this.client.authenticate();
+      const id = this.client.getAgentId();
+      return this.client.fetch(`/api/v1/agents/${id}/portfolio`, {
+        method: 'POST',
+        body: { taskId },
+      });
+    },
+
+    update: async (itemId: string, updates: { isPinned?: boolean; displayOrder?: number }): Promise<PortfolioItem> => {
+      await this.client.authenticate();
+      const id = this.client.getAgentId();
+      return this.client.fetch(`/api/v1/agents/${id}/portfolio/${itemId}`, {
+        method: 'PATCH',
+        body: updates,
+      });
+    },
+
+    remove: async (itemId: string): Promise<void> => {
+      await this.client.authenticate();
+      const id = this.client.getAgentId();
+      await this.client.fetch(`/api/v1/agents/${id}/portfolio/${itemId}`, {
+        method: 'DELETE',
+      });
+    },
+  };
+
+  async reputation(agentId?: string): Promise<ReputationResult> {
+    if (!agentId) {
+      await this.client.authenticate();
+    }
+    const id = agentId ?? this.client.getAgentId();
+    return this.client.fetch(`/api/v1/agents/${id}/reputation`, { auth: false });
+  }
+
   async match(params: { description: string; skills?: string[]; limit?: number }): Promise<{ matches: Agent[] }> {
     return this.client.fetch('/api/v1/agents/match', { method: 'POST', body: params, auth: false });
   }
@@ -616,5 +661,266 @@ class PaymentOperations {
     return this.client.fetch(`/api/v1/payments/agents/${id}/transactions`, {
       query: { limit: limit ?? undefined, offset: offset ?? undefined },
     });
+  }
+}
+
+// -- Agent mode types --
+
+export interface TaskContext {
+  id: string;
+  title: string;
+  description: string;
+  inputData: unknown;
+  inputFiles: string[];
+  skillRequirements: string[];
+  budgetMax: string;
+
+  /** Mark the task as in-progress */
+  start(): Promise<void>;
+  /** Submit the completed result */
+  complete(result: TaskResult): Promise<void>;
+}
+
+export interface TaskResult {
+  artifacts: Array<{ type: string; content: unknown }>;
+  files?: string[];
+  notes?: string;
+}
+
+export interface TaskListing {
+  id: string;
+  title: string;
+  description: string;
+  skillRequirements: string[];
+  budgetMin: string | null;
+  budgetMax: string;
+  matchingMode: string;
+}
+
+export interface SwarmDockAgentOptions {
+  baseUrl?: string;
+  name: string;
+  skills: Array<{
+    id: string;
+    name: string;
+    description: string;
+    category: string;
+    pricing?: { model?: string; basePrice: number };
+    examples?: string[];
+    inputModes?: string[];
+    outputModes?: string[];
+  }>;
+  framework?: string;
+  modelProvider?: string;
+  modelName?: string;
+  walletAddress: string;
+  privateKey?: string;
+  paymentPrivateKey?: `0x${string}`;
+}
+
+type TaskHandler = (task: TaskContext) => Promise<TaskResult>;
+type TaskAvailableHandler = (listing: TaskListing) => Promise<void>;
+
+const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+export class SwarmDockAgent {
+  private client: SwarmDockClient;
+  private readonly options: SwarmDockAgentOptions;
+  private taskHandlers: Map<string, TaskHandler> = new Map();
+  private taskAvailableHandler?: TaskAvailableHandler;
+  private heartbeatInterval?: ReturnType<typeof setInterval>;
+  private eventUnsubscribe?: () => void;
+  private running = false;
+
+  constructor(options: SwarmDockAgentOptions) {
+    this.options = options;
+    this.client = new SwarmDockClient({
+      baseUrl: options.baseUrl ?? 'https://api.swarmdock.ai',
+      privateKey: options.privateKey,
+      paymentPrivateKey: options.paymentPrivateKey,
+    });
+  }
+
+  /**
+   * Register a handler for tasks that match a specific skill.
+   * When this agent is assigned a task whose skillRequirements include
+   * the given skillId, the handler will be invoked.
+   */
+  onTask(skillId: string, handler: TaskHandler): void {
+    this.taskHandlers.set(skillId, handler);
+  }
+
+  /**
+   * Register a handler that fires when a new task is created on the
+   * marketplace that matches this agent's skills. Useful for auto-bidding.
+   */
+  onTaskAvailable(handler: TaskAvailableHandler): void {
+    this.taskAvailableHandler = handler;
+  }
+
+  /**
+   * Start the agent: register (or authenticate), begin heartbeat,
+   * and subscribe to the SSE event stream.
+   */
+  async start(): Promise<void> {
+    if (this.running) return;
+
+    // Register or authenticate
+    try {
+      await this.client.register({
+        displayName: this.options.name,
+        framework: this.options.framework,
+        modelProvider: this.options.modelProvider,
+        modelName: this.options.modelName,
+        walletAddress: this.options.walletAddress,
+        skills: this.options.skills.map((s) => ({
+          skillId: s.id,
+          skillName: s.name,
+          description: s.description,
+          category: s.category,
+          tags: [],
+          pricingModel: s.pricing?.model ?? 'fixed',
+          basePrice: String(s.pricing?.basePrice ?? 0),
+          examplePrompts: s.examples ?? [],
+        })),
+      });
+    } catch (err) {
+      // If already registered, authenticate instead
+      if (err instanceof SwarmDockError && (err.status === 409 || err.message.includes('already registered'))) {
+        await this.client.authenticate();
+      } else {
+        throw err;
+      }
+    }
+
+    this.running = true;
+
+    // Start heartbeat
+    this.heartbeatInterval = setInterval(async () => {
+      try {
+        await this.client.heartbeat();
+      } catch {
+        // Heartbeat failures are non-fatal; the next one will retry
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+
+    // Subscribe to SSE events
+    const agentId = this.client.getAgentId();
+
+    this.client.events.subscribe((event) => {
+      this.handleEvent(event, agentId).catch(() => {
+        // Event handling errors are non-fatal
+      });
+    });
+
+    this.eventUnsubscribe = () => this.client.events.unsubscribe();
+  }
+
+  /**
+   * Stop the agent: unsubscribe from events, clear heartbeat,
+   * and mark as not running.
+   */
+  async stop(): Promise<void> {
+    if (!this.running) return;
+    this.running = false;
+
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = undefined;
+    }
+
+    if (this.eventUnsubscribe) {
+      this.eventUnsubscribe();
+      this.eventUnsubscribe = undefined;
+    }
+  }
+
+  /**
+   * Submit a bid on a task.
+   */
+  async bid(taskId: string, options: { price: number; confidence?: number; proposal?: string }): Promise<TaskBid> {
+    return this.client.tasks.bid(taskId, {
+      proposedPrice: String(options.price),
+      confidenceScore: options.confidence,
+      proposal: options.proposal,
+      portfolioRefs: [],
+    });
+  }
+
+  /** Expose the underlying client for advanced use cases */
+  getClient(): SwarmDockClient {
+    return this.client;
+  }
+
+  // -- Private helpers --
+
+  private async handleEvent(event: SSEEvent, agentId: string): Promise<void> {
+    if (!this.running) return;
+
+    const data = event.data as Record<string, unknown>;
+
+    if (event.type === 'task.assigned' && data.assigneeId === agentId) {
+      await this.handleTaskAssigned(data.taskId as string);
+    } else if (event.type === 'task.created' && this.taskAvailableHandler) {
+      await this.handleTaskCreated(data);
+    }
+  }
+
+  private async handleTaskAssigned(taskId: string): Promise<void> {
+    const detail = await this.client.tasks.get(taskId);
+
+    // Find the first matching handler based on skill requirements
+    let matchedHandler: TaskHandler | undefined;
+    for (const skillReq of detail.skillRequirements ?? []) {
+      matchedHandler = this.taskHandlers.get(skillReq);
+      if (matchedHandler) break;
+    }
+
+    if (!matchedHandler) return;
+
+    const ctx: TaskContext = {
+      id: detail.id,
+      title: detail.title,
+      description: detail.description ?? '',
+      inputData: detail.inputData ?? null,
+      inputFiles: detail.inputFiles ?? [],
+      skillRequirements: detail.skillRequirements ?? [],
+      budgetMax: detail.budgetMax ?? '0',
+
+      start: async () => {
+        await this.client.tasks.start(taskId);
+      },
+
+      complete: async (result: TaskResult) => {
+        await this.client.tasks.submit(taskId, {
+          artifacts: result.artifacts,
+          files: result.files ?? [],
+          notes: result.notes,
+        });
+      },
+    };
+
+    const result = await matchedHandler(ctx);
+
+    // If the handler returns a result directly, auto-submit it
+    if (result && result.artifacts) {
+      await ctx.complete(result);
+    }
+  }
+
+  private async handleTaskCreated(data: Record<string, unknown>): Promise<void> {
+    if (!this.taskAvailableHandler) return;
+
+    const listing: TaskListing = {
+      id: data.taskId as string,
+      title: (data.title as string) ?? '',
+      description: (data.description as string) ?? '',
+      skillRequirements: (data.skillRequirements as string[]) ?? [],
+      budgetMin: (data.budgetMin as string) ?? null,
+      budgetMax: (data.budgetMax as string) ?? '0',
+      matchingMode: (data.matchingMode as string) ?? 'manual',
+    };
+
+    await this.taskAvailableHandler(listing);
   }
 }

@@ -8,6 +8,8 @@ export const AGENT_STATUS = {
   ACTIVE: 'active',
   SUSPENDED: 'suspended',
   DEREGISTERED: 'deregistered',
+  DORMANT: 'dormant',
+  BANNED: 'banned',
 } as const;
 
 export const TASK_STATUS = {
@@ -40,20 +42,54 @@ export const ESCROW_STATUS = {
 
 export const DISPUTE_STATUS = {
   OPEN: 'open',
+  TRIBUNAL: 'tribunal',
   RESOLVED: 'resolved',
+  ESCALATED: 'escalated',
 } as const;
 
 export const DISPUTE_RESOLUTION = {
   RELEASE: 'release',
   REFUND: 'refund',
+  SPLIT: 'split',
 } as const;
 
+export const DISPUTE_VERDICT = {
+  REQUESTER_WINS: 'requester_wins',
+  ASSIGNEE_WINS: 'assignee_wins',
+  SPLIT: 'split',
+} as const;
+
+export const TRANSACTION_TYPE = {
+  ESCROW_DEPOSIT: 'escrow_deposit',
+  ESCROW_RELEASE: 'escrow_release',
+  ESCROW_REFUND: 'escrow_refund',
+  PLATFORM_FEE: 'platform_fee',
+  TRIBUNAL_FEE: 'tribunal_fee',
+  DISPUTE_REFUND: 'dispute_refund',
+} as const;
+
+export const TRANSACTION_STATUS = {
+  PENDING: 'pending',
+  CONFIRMED: 'confirmed',
+  FAILED: 'failed',
+} as const;
+
+export const REPUTATION_DIMENSIONS = [
+  'quality',
+  'reliability',
+  'speed',
+  'communication',
+  'value',
+] as const;
+
+export type ReputationDimension = (typeof REPUTATION_DIMENSIONS)[number];
+
 export const TRUST_LEVELS = {
-  L0: 0, // Unverified
-  L1: 1, // Email verified
-  L2: 2, // Challenge completed
-  L3: 3, // Portfolio verified
-  L4: 4, // Community endorsed
+  L0: 0, // Unverified — anonymous agent
+  L1: 1, // Challenge completed — basic registration
+  L2: 2, // Tasks completed — has track record
+  L3: 3, // Portfolio verified — consistently good work
+  L4: 4, // Community endorsed — top reputation
 } as const;
 
 export const MATCHING_MODE = {
@@ -76,6 +112,7 @@ export const SCOPES = [
   'bids.write',
   'profile.write',
   'ratings.write',
+  'portfolio.write',
 ] as const;
 
 export type Scope = (typeof SCOPES)[number];

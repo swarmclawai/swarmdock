@@ -1,7 +1,7 @@
 import { db } from '../db/client.js';
-import { escrowTransactions, tasks, agents } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
-import { PLATFORM_FEE_PERCENT, ESCROW_STATUS } from '@swarmdock/shared';
+import { escrowTransactions, tasks, agents, transactions } from '../db/schema.js';
+import { eq, sql } from 'drizzle-orm';
+import { PLATFORM_FEE_PERCENT, ESCROW_STATUS, TRANSACTION_TYPE, TRANSACTION_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
 import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -71,6 +71,17 @@ export async function fundEscrow(params: {
     network: process.env.X402_NETWORK ?? 'base-sepolia',
   }).returning();
 
+  await db.insert(transactions).values({
+    taskId: params.taskId,
+    type: TRANSACTION_TYPE.ESCROW_DEPOSIT,
+    fromAgentId: params.payerId,
+    amount: params.amount,
+    txHash: simulatedTxHash,
+    network: process.env.X402_NETWORK ?? 'base-sepolia',
+    status: TRANSACTION_STATUS.CONFIRMED,
+    confirmedAt: new Date(),
+  });
+
   eventBus.emit(params.payerId, {
     type: 'payment.escrowed',
     data: { taskId: params.taskId, amount: params.amount.toString(), txHash: simulatedTxHash },
@@ -104,24 +115,71 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
       })
     : null;
 
+  const finalTxHash = releaseTxHash ?? simulatedReleaseTxHash;
+
   await db
     .update(escrowTransactions)
     .set({
       status: ESCROW_STATUS.RELEASED,
       platformFee: fee,
-      releaseTxHash: releaseTxHash ?? simulatedReleaseTxHash,
+      releaseTxHash: finalTxHash,
       updatedAt: new Date(),
     })
     .where(eq(escrowTransactions.id, escrow.id));
 
+  // Record release transaction for payee
+  await db.insert(transactions).values({
+    taskId,
+    type: TRANSACTION_TYPE.ESCROW_RELEASE,
+    toAgentId: escrow.payeeId,
+    amount: payout,
+    txHash: finalTxHash,
+    network: escrow.network,
+    status: TRANSACTION_STATUS.CONFIRMED,
+    confirmedAt: new Date(),
+  });
+
+  // Record platform fee transaction
+  await db.insert(transactions).values({
+    taskId,
+    type: TRANSACTION_TYPE.PLATFORM_FEE,
+    toAgentId: null,
+    amount: fee,
+    txHash: finalTxHash,
+    network: escrow.network,
+    status: TRANSACTION_STATUS.CONFIRMED,
+    confirmedAt: new Date(),
+  });
+
+  // Update payee earnings total
+  if (escrow.payeeId) {
+    await db
+      .update(agents)
+      .set({
+        earningTotal: sql`COALESCE(${agents.earningTotal}, 0) + ${payout}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.id, escrow.payeeId));
+  }
+
+  // Update task with platform fee and payment tx ID
+  await db
+    .update(tasks)
+    .set({
+      platformFee: fee,
+      paymentTxId: finalTxHash,
+      updatedAt: new Date(),
+    })
+    .where(eq(tasks.id, taskId));
+
   if (escrow.payeeId) {
     eventBus.emit(escrow.payeeId, {
       type: 'payment.released',
-      data: { taskId, amount: payout.toString(), fee: fee.toString(), txHash: releaseTxHash ?? simulatedReleaseTxHash },
+      data: { taskId, amount: payout.toString(), fee: fee.toString(), txHash: finalTxHash },
     });
   }
 
-  return { releaseTxHash: releaseTxHash ?? simulatedReleaseTxHash, fee };
+  return { releaseTxHash: finalTxHash, fee };
 }
 
 export async function refundEscrow(taskId: string): Promise<void> {
@@ -144,17 +202,31 @@ export async function refundEscrow(taskId: string): Promise<void> {
       })
     : null;
 
+  const finalRefundTxHash = refundTxHash ?? simulatedRefundTxHash;
+
   await db
     .update(escrowTransactions)
     .set({
       status: ESCROW_STATUS.REFUNDED,
-      releaseTxHash: refundTxHash ?? simulatedRefundTxHash,
+      releaseTxHash: finalRefundTxHash,
       updatedAt: new Date(),
     })
     .where(eq(escrowTransactions.id, escrow.id));
 
+  // Record refund transaction
+  await db.insert(transactions).values({
+    taskId,
+    type: TRANSACTION_TYPE.ESCROW_REFUND,
+    toAgentId: escrow.payerId,
+    amount: escrow.amount,
+    txHash: finalRefundTxHash,
+    network: escrow.network,
+    status: TRANSACTION_STATUS.CONFIRMED,
+    confirmedAt: new Date(),
+  });
+
   eventBus.emit(escrow.payerId, {
     type: 'payment.refunded',
-    data: { taskId, amount: escrow.amount.toString(), txHash: refundTxHash ?? simulatedRefundTxHash },
+    data: { taskId, amount: escrow.amount.toString(), txHash: finalRefundTxHash },
   });
 }

@@ -1,4 +1,4 @@
-export { SwarmDockClient } from './client.js';
+export { SwarmDockClient, SwarmDockAgent } from './client.js';
 export type {
   SwarmDockClientOptions,
   RegisterParams,
@@ -9,6 +9,11 @@ export type {
   TaskDetailResult,
   RatingsSummary,
   PortfolioResult,
+  ReputationResult,
+  TaskContext,
+  TaskResult,
+  TaskListing,
+  SwarmDockAgentOptions,
 } from './client.js';
 export { SwarmDockError } from './errors.js';
 

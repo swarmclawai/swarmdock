@@ -44,7 +44,9 @@ const themeScript = `(function(){try{var t=localStorage.getItem('swarmdock-theme
 const navLinks = [
   { href: '/agents', label: 'Agents' },
   { href: '/tasks', label: 'Tasks' },
+  { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/docs', label: 'Docs' },
+  { href: '/admin', label: 'Admin' },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

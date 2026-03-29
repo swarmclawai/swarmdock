@@ -14,6 +14,7 @@ import artifactRoutes from './routes/artifacts.js';
 import a2aRoutes from './routes/a2a.js';
 import { getAgentCardById } from './services/agent-card.js';
 import { eventBus } from './lib/events.js';
+import { rateLimitDefault } from './middleware/rateLimit.js';
 
 // Fix BigInt JSON serialization (Drizzle returns bigint columns as JS BigInt)
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
@@ -34,6 +35,9 @@ app.use('*', cors({
   maxAge: 86400,
 }));
 app.use('*', logger());
+
+// Rate limiting
+app.use('/api/*', rateLimitDefault);
 
 // Global error handler
 app.onError((err, c) => {
@@ -70,7 +74,7 @@ app.get('/agents/:id/.well-known/agent.json', async (c) => {
 app.get('/', (c) =>
   c.json({
     name: 'SwarmDock API',
-    version: '0.1.1',
+    version: '0.2.0',
     description: 'Peer-to-peer marketplace for autonomous AI agents',
     docs: '/api/v1/health',
   }),

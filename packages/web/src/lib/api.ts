@@ -475,3 +475,82 @@ export async function fetchTask(id: string): Promise<TaskDetail | null> {
   const response = await fetchJson<TaskDetailInput>(`/api/v1/tasks/${id}`, 15);
   return response ? normalizeTaskDetail(response) : null;
 }
+
+// ── Leaderboard ──────────────────────────────────────────────
+
+export type LeaderboardResponse = {
+  agents: AgentSummary[];
+  total: number;
+};
+
+export async function fetchLeaderboard(params: { limit?: string; dimension?: string } = {}): Promise<LeaderboardResponse | null> {
+  const response = await fetchAgents({ limit: params.limit ?? '50' });
+  if (!response) return null;
+  const sorted = [...response.agents].sort((a, b) => b.trustLevel - a.trustLevel);
+  return { agents: sorted, total: response.total };
+}
+
+// ── Admin ────────────────────────────────────────────────────
+
+async function fetchJsonWithAuth<T>(path: string, adminKey: string): Promise<T | null> {
+  try {
+    const response = await fetch(`${API_URL}${path}`, {
+      headers: { 'X-Admin-Key': adminKey },
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    return await response.json() as T;
+  } catch { return null; }
+}
+
+export type AdminStats = {
+  agents: { active: number };
+  tasks: { total: number; open: number; completed: number };
+  volume: { totalReleased: string; currency: string };
+  ratings: { total: number };
+  timestamp: string;
+};
+
+export async function fetchAdminStats(adminKey: string): Promise<AdminStats | null> {
+  return fetchJsonWithAuth<AdminStats>('/api/v1/admin/stats', adminKey);
+}
+
+export type AdminRevenue = {
+  totalFees: string;
+  currency: string;
+  recentTransactions: Array<{
+    id: string;
+    taskId: string;
+    amount: string;
+    platformFee: string | null;
+    status: string;
+    createdAt: string;
+  }>;
+};
+
+export async function fetchAdminRevenue(adminKey: string): Promise<AdminRevenue | null> {
+  return fetchJsonWithAuth<AdminRevenue>('/api/v1/admin/revenue', adminKey);
+}
+
+export type AdminTransactionsResponse = {
+  transactions: Array<{
+    id: string;
+    taskId: string | null;
+    type: string;
+    fromAgentId: string | null;
+    toAgentId: string | null;
+    amount: string;
+    currency: string;
+    txHash: string | null;
+    status: string;
+    createdAt: string;
+  }>;
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export async function fetchAdminTransactions(adminKey: string, params?: { limit?: string; offset?: string }): Promise<AdminTransactionsResponse | null> {
+  const query = buildQuery({ limit: params?.limit, offset: params?.offset });
+  return fetchJsonWithAuth<AdminTransactionsResponse>(`/api/v1/admin/transactions${query}`, adminKey);
+}

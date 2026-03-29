@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db, type Database } from '../db/client.js';
-import { escrowTransactions } from '../db/schema.js';
-import { eq, or } from 'drizzle-orm';
+import { escrowTransactions, transactions } from '../db/schema.js';
+import { eq, or, desc } from 'drizzle-orm';
 import { authMiddleware, type AuthContext } from '../middleware/auth.js';
 
 type PaymentsDeps = {
@@ -19,7 +19,7 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
   const app = new Hono<AuthContext>();
   const settlementNetwork = process.env.X402_NETWORK ?? 'base-sepolia';
 
-  // GET /api/v1/agents/:id/balance — Check agent balance (placeholder)
+  // GET /api/v1/agents/:id/balance — Check agent balance
   app.get('/agents/:id/balance', requireAuth, async (c) => {
     const id = c.req.param('id');
     const agent = c.get('agent');
@@ -28,9 +28,8 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
       return c.json({ error: 'Can only view your own balance' }, 403);
     }
 
-    // TODO: Query actual on-chain USDC balance via Base Sepolia RPC
-    // For MVP, calculate from escrow transactions
-    const transactions = await database
+    // Calculate from escrow transactions (legacy)
+    const escrowTxs = await database
       .select()
       .from(escrowTransactions)
       .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)));
@@ -39,7 +38,7 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
     let spent = 0n;
     let escrowed = 0n;
     let released = 0n;
-    for (const tx of transactions) {
+    for (const tx of escrowTxs) {
       if (tx.payeeId === id && tx.status === 'released') {
         const payout = tx.amount - (tx.platformFee ?? 0n);
         earned += payout;
@@ -52,6 +51,27 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
         escrowed += tx.amount;
       }
     }
+
+    // Also query from transactions table for a more complete picture
+    const txRows = await database
+      .select()
+      .from(transactions)
+      .where(or(eq(transactions.fromAgentId, id), eq(transactions.toAgentId, id)));
+
+    for (const tx of txRows) {
+      if (tx.status !== 'confirmed') continue;
+      if (tx.toAgentId === id && tx.type === 'escrow_release') {
+        earned += tx.amount;
+      }
+      if (tx.fromAgentId === id && tx.type === 'escrow_deposit') {
+        spent += tx.amount;
+      }
+    }
+
+    // TODO: Query actual on-chain USDC balance via viem
+    // For now we calculate from transactions; a future implementation would use:
+    //   import { createPublicClient, http } from 'viem';
+    //   const balance = await publicClient.readContract({ address: USDC_ADDRESS, abi: erc20Abi, functionName: 'balanceOf', args: [agentWallet] });
 
     return c.json({
       agentId: id,
@@ -76,14 +96,28 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
     const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '20', 10) || 20, 100));
     const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
 
-    const transactions = await database
+    // Query from transactions table first
+    const txRows = await database
       .select()
-      .from(escrowTransactions)
-      .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)))
-      .limit(Math.min(limit, 100))
+      .from(transactions)
+      .where(or(eq(transactions.fromAgentId, id), eq(transactions.toAgentId, id)))
+      .orderBy(desc(transactions.createdAt))
+      .limit(limit)
       .offset(offset);
 
-    return c.json({ transactions, limit, offset });
+    // Fall back to escrow transactions if no rows in new table
+    if (txRows.length === 0) {
+      const escrowTxs = await database
+        .select()
+        .from(escrowTransactions)
+        .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)))
+        .limit(Math.min(limit, 100))
+        .offset(offset);
+
+      return c.json({ transactions: escrowTxs, limit, offset, source: 'escrow' });
+    }
+
+    return c.json({ transactions: txRows, limit, offset });
   });
 
   return app;
