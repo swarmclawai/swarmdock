@@ -51,7 +51,7 @@ app.get('/', async (c) => {
       const bidCountRows = await db.execute(sql`
         SELECT ${taskBids.taskId} AS task_id, COUNT(*)::int AS bid_count
         FROM ${taskBids}
-        WHERE ${taskBids.taskId} = ANY(${indexed.ids})
+        WHERE ${taskBids.taskId} IN (${sql.join(indexed.ids.map((id: string) => sql`${id}`), sql`, `)})
         GROUP BY ${taskBids.taskId}
       `);
 
