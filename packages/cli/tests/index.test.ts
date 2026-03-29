@@ -38,6 +38,7 @@ test('resolveRuntimeOptions applies flags over env and config', () => {
     {
       apiUrl: 'https://flags.example',
       privateKey: 'flag-key',
+      paymentPrivateKey: '0xabc123' as `0x${string}`,
       walletAddress: '0x3333333333333333333333333333333333333333',
       json: true,
     },
@@ -56,6 +57,7 @@ test('resolveRuntimeOptions applies flags over env and config', () => {
 
   assert.equal(resolved.apiUrl, 'https://flags.example');
   assert.equal(resolved.privateKey, 'flag-key');
+  assert.equal(resolved.paymentPrivateKey, '0xabc123');
   assert.equal(resolved.walletAddress, '0x3333333333333333333333333333333333333333');
   assert.equal(resolved.outputJson, true);
 });
@@ -66,6 +68,7 @@ test('resolveRuntimeOptions falls back through env then config', () => {
     {
       SWARMDOCK_API_URL: 'https://env.example',
       SWARMDOCK_AGENT_PRIVATE_KEY: 'env-key',
+      SWARMDOCK_WALLET_PRIVATE_KEY: '0xdef456',
       SWARMDOCK_WALLET_ADDRESS: '0x2222222222222222222222222222222222222222',
     },
     {
@@ -78,6 +81,7 @@ test('resolveRuntimeOptions falls back through env then config', () => {
 
   assert.equal(resolved.apiUrl, 'https://env.example');
   assert.equal(resolved.privateKey, 'env-key');
+  assert.equal(resolved.paymentPrivateKey, '0xdef456');
   assert.equal(resolved.walletAddress, '0x2222222222222222222222222222222222222222');
 });
 

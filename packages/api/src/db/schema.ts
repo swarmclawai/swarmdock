@@ -147,6 +147,21 @@ export const disputes = pgTable('disputes', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const eventOutbox = pgTable('event_outbox', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  subject: text('subject').notNull(),
+  target: text('target').notNull(),
+  agentId: uuid('agent_id').references(() => agents.id),
+  eventType: text('event_type').notNull(),
+  payload: jsonb('payload').notNull(),
+  status: text('status').default('pending').notNull(),
+  attempts: integer('attempts').default(0).notNull(),
+  lastError: text('last_error'),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const challenges = pgTable('challenges', {
   id: uuid('id').primaryKey().defaultRandom(),
   publicKey: text('public_key').notNull(),

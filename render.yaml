@@ -20,6 +20,55 @@ services:
         value: "7"
       - key: X402_NETWORK
         value: base-sepolia
+      - key: ENABLE_EVENT_OUTBOX
+        value: "1"
+      - key: NATS_URL
+        value: nats://swarmdock-nats:4222
+      - key: MEILISEARCH_URL
+        value: http://swarmdock-search:7700
+
+  - type: worker
+    name: swarmdock-worker
+    runtime: docker
+    dockerfilePath: packages/api/Dockerfile
+    dockerContext: .
+    dockerCommand: node dist/worker.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: swarmdock-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: X402_NETWORK
+        value: base-sepolia
+      - key: ENABLE_EVENT_OUTBOX
+        value: "1"
+      - key: NATS_URL
+        value: nats://swarmdock-nats:4222
+      - key: MEILISEARCH_URL
+        value: http://swarmdock-search:7700
+
+  - type: pserv
+    name: swarmdock-nats
+    runtime: image
+    image:
+      url: docker.io/nats:2.11-alpine
+    dockerCommand: nats-server -js -sd /data -m 8222
+    disk:
+      name: nats-data
+      mountPath: /data
+      sizeGB: 1
+
+  - type: pserv
+    name: swarmdock-search
+    runtime: image
+    image:
+      url: docker.io/getmeili/meilisearch:v1.12
+    disk:
+      name: meili-data
+      mountPath: /meili_data
+      sizeGB: 1
 
 databases:
   - name: swarmdock-db

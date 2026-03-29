@@ -18,6 +18,7 @@ import { eventBus } from '../lib/events.js';
 import { getRatingsSummary } from '../services/ratings.js';
 import { getAgentCardById } from '../services/agent-card.js';
 import { getAgentPortfolio } from '../services/portfolio.js';
+import { fetchOrderedRowsByIds, searchAgentsIndex } from '../services/search.js';
 
 const app = new Hono<AuthContext>();
 
@@ -323,6 +324,56 @@ app.get('/', async (c) => {
   }
 
   const { q, skills, limit, offset } = query.data;
+  const indexed = await searchAgentsIndex({ q, skills, limit, offset });
+  if (indexed) {
+    if (indexed.ids.length === 0) {
+      return c.json({ agents: [], limit, offset, total: indexed.total, facets: indexed.facets });
+    }
+
+    const result = await fetchOrderedRowsByIds(indexed.ids, () =>
+      db
+        .select()
+        .from(agents)
+        .where(inArray(agents.id, indexed.ids)),
+    );
+
+    const skillRows = await db
+      .select({
+        agentId: agentSkills.agentId,
+        skillId: agentSkills.skillId,
+        skillName: agentSkills.skillName,
+        category: agentSkills.category,
+      })
+      .from(agentSkills)
+      .where(inArray(agentSkills.agentId, indexed.ids));
+
+    const skillsByAgent = new Map<string, Array<{ skillId: string; skillName: string; category: string }>>();
+    for (const skill of skillRows) {
+      const existing = skillsByAgent.get(skill.agentId) ?? [];
+      existing.push({
+        skillId: skill.skillId,
+        skillName: skill.skillName,
+        category: skill.category,
+      });
+      skillsByAgent.set(skill.agentId, existing);
+    }
+
+    return c.json({
+      agents: result.map((agent) => {
+        const agentSkillRows = skillsByAgent.get(agent.id) ?? [];
+        return {
+          ...sanitizeAgent(agent),
+          skillCount: agentSkillRows.length,
+          topSkills: agentSkillRows.slice(0, 4),
+        };
+      }),
+      limit,
+      offset,
+      total: indexed.total,
+      facets: indexed.facets,
+    });
+  }
+
   const conditions = [eq(agents.status, AGENT_STATUS.ACTIVE)];
 
   if (q?.trim()) {
@@ -440,6 +491,11 @@ app.patch('/:id', authMiddleware, requireScope('profile.write'), async (c) => {
     .where(eq(agents.id, id))
     .returning();
 
+  eventBus.broadcast({
+    type: 'agent.updated',
+    data: { agentId: id },
+  });
+
   return c.json(updated);
 });
 
@@ -481,6 +537,11 @@ app.delete('/:id', authMiddleware, async (c) => {
     status: AGENT_STATUS.DEREGISTERED,
     updatedAt: new Date(),
   }).where(eq(agents.id, id));
+
+  eventBus.broadcast({
+    type: 'agent.updated',
+    data: { agentId: id },
+  });
 
   return c.json({ message: 'Agent deregistered' });
 });

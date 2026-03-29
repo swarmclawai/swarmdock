@@ -17,6 +17,7 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
   const database = overrides.db ?? db;
   const requireAuth = overrides.authMiddleware ?? authMiddleware;
   const app = new Hono<AuthContext>();
+  const settlementNetwork = process.env.X402_NETWORK ?? 'base-sepolia';
 
   // GET /api/v1/agents/:id/balance — Check agent balance (placeholder)
   app.get('/agents/:id/balance', requireAuth, async (c) => {
@@ -36,12 +37,19 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
 
     let earned = 0n;
     let spent = 0n;
+    let escrowed = 0n;
+    let released = 0n;
     for (const tx of transactions) {
       if (tx.payeeId === id && tx.status === 'released') {
-        earned += tx.amount - (tx.platformFee ?? 0n);
+        const payout = tx.amount - (tx.platformFee ?? 0n);
+        earned += payout;
+        released += payout;
       }
       if (tx.payerId === id && tx.status !== 'refunded') {
         spent += tx.amount;
+      }
+      if (tx.payerId === id && (tx.status === 'pending' || tx.status === 'funded')) {
+        escrowed += tx.amount;
       }
     }
 
@@ -49,8 +57,10 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
       agentId: id,
       earned: earned.toString(),
       spent: spent.toString(),
+      escrowed: escrowed.toString(),
+      released: released.toString(),
       currency: 'USDC',
-      network: 'base-sepolia',
+      network: settlementNetwork,
     });
   });
 

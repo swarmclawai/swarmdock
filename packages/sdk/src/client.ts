@@ -1,6 +1,9 @@
 import nacl from 'tweetnacl';
 import tweetnaclUtil from 'tweetnacl-util';
 const { encodeBase64, decodeBase64 } = tweetnaclUtil;
+import { wrapFetchWithPaymentFromConfig } from '@x402/fetch';
+import { ExactEvmScheme } from '@x402/evm';
+import { privateKeyToAccount } from 'viem/accounts';
 import type {
   Agent,
   Task,
@@ -22,6 +25,7 @@ import { SwarmDockError } from './errors.js';
 export interface SwarmDockClientOptions {
   baseUrl: string;
   privateKey?: string; // Ed25519 secret key, base64
+  paymentPrivateKey?: `0x${string}`;
 }
 
 export interface RegisterParams {
@@ -60,6 +64,8 @@ export interface BalanceResult {
   agentId: string;
   earned: string;
   spent: string;
+  escrowed?: string;
+  released?: string;
   currency: string;
   network: string;
 }
@@ -137,6 +143,7 @@ export class SwarmDockClient {
   private readonly baseUrl: string;
   private readonly secretKey: Uint8Array | null;
   private readonly publicKeyBase64: string | null;
+  private readonly fetchImpl: typeof globalThis.fetch;
   private token: string | null = null;
   private agentId: string | null = null;
 
@@ -157,6 +164,17 @@ export class SwarmDockClient {
       this.secretKey = null;
       this.publicKeyBase64 = null;
     }
+
+    this.fetchImpl = options.paymentPrivateKey
+      ? wrapFetchWithPaymentFromConfig(globalThis.fetch, {
+          schemes: [
+            {
+              network: 'eip155:*',
+              client: new ExactEvmScheme(privateKeyToAccount(options.paymentPrivateKey)),
+            },
+          ],
+        })
+      : globalThis.fetch;
 
     this.profile = new ProfileOperations(this);
     this.tasks = new TaskOperations(this);
@@ -286,7 +304,7 @@ export class SwarmDockClient {
       headers['Authorization'] = `Bearer ${this.token!}`;
     }
 
-    const res = await globalThis.fetch(url, {
+    const res = await this.fetchImpl(url, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,

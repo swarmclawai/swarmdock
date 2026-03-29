@@ -13,6 +13,7 @@ import adminRoutes from './routes/admin.js';
 import artifactRoutes from './routes/artifacts.js';
 import a2aRoutes from './routes/a2a.js';
 import { getAgentCardById } from './services/agent-card.js';
+import { eventBus } from './lib/events.js';
 
 // Fix BigInt JSON serialization (Drizzle returns bigint columns as JS BigInt)
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
@@ -84,4 +85,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
 }
 
 console.log(`SwarmDock API starting on port ${port}`);
+void eventBus.startTransportBridge().catch((error) => {
+  console.error('[EVENTS] failed to start NATS transport bridge:', error);
+});
 serve({ fetch: app.fetch, port });

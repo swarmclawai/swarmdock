@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { BidCreateSchema, TASK_STATUS, BID_STATUS, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
+import { getX402Network, microUsdcToUsdPrice, requireX402Payment } from '../services/x402.js';
 
 type BidContext = AuthContext & { Variables: AuthContext['Variables'] };
 
@@ -14,6 +15,7 @@ type BidRouteDeps = {
   requireScope: typeof requireScope;
   eventBus: Pick<typeof eventBus, 'emit'>;
   createTxHash: () => string;
+  requirePayment: typeof requireX402Payment;
 };
 
 function createSimulatedTxHash(): string {
@@ -26,6 +28,7 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
   const withScope = overrides.requireScope ?? requireScope;
   const events = overrides.eventBus ?? eventBus;
   const createTxHash = overrides.createTxHash ?? createSimulatedTxHash;
+  const requirePayment = overrides.requirePayment ?? requireX402Payment;
   const app = new Hono<BidContext>();
 
   // POST /api/v1/tasks/:taskId/bids — Submit bid
@@ -79,6 +82,10 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
       await database.update(tasks).set({ status: TASK_STATUS.BIDDING, updatedAt: new Date() }).where(eq(tasks.id, taskId));
     }
 
+    eventBus.broadcast({
+      type: 'task.updated',
+      data: { taskId, status: TASK_STATUS.BIDDING },
+    });
     events.emit(task.requesterId, {
       type: 'task.bid_received',
       data: { taskId, bidderId: agent.agent_id, price: parsed.data.proposedPrice },
@@ -116,9 +123,33 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
     if (!bid) return c.json({ error: 'Bid not found' }, 404);
     if (bid.status !== BID_STATUS.PENDING) return c.json({ error: 'Bid no longer pending' }, 400);
 
-    const escrowTxHash = createTxHash();
+    const paymentGate = await requirePayment(c, {
+      accepts: {
+        scheme: 'exact',
+        price: microUsdcToUsdPrice(bid.proposedPrice),
+        network: getX402Network(),
+        payTo: process.env.PLATFORM_WALLET_ADDRESS ?? '0x0000000000000000000000000000000000000000',
+      },
+      description: `Fund escrow for task ${task.title}`,
+      mimeType: 'application/json',
+      unpaidResponseBody: () => ({
+        contentType: 'application/json',
+        body: {
+          error: 'Payment required to fund escrow',
+          taskId,
+          bidId,
+          amount: bid.proposedPrice.toString(),
+        },
+      }),
+    });
 
-    // Accept this bid, assign the task, and record funded escrow in one transaction.
+    if (paymentGate.response) {
+      return paymentGate.response;
+    }
+
+    const pendingEscrowTxHash = paymentGate.pendingSettlement ? null : createTxHash();
+
+    // Accept this bid, assign the task, and record pending/funded escrow in one transaction.
     const { updatedTask, escrow } = await database.transaction(async (tx) => {
       await tx.update(taskBids).set({ status: BID_STATUS.ACCEPTED }).where(eq(taskBids.id, bidId));
       await tx.update(taskBids).set({ status: BID_STATUS.REJECTED })
@@ -136,13 +167,52 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
         payerId: agent.agent_id,
         payeeId: bid.bidderId,
         amount: bid.proposedPrice,
-        status: ESCROW_STATUS.FUNDED,
-        escrowTxHash,
+        status: paymentGate.pendingSettlement ? ESCROW_STATUS.PENDING : ESCROW_STATUS.FUNDED,
+        escrowTxHash: pendingEscrowTxHash,
         network: process.env.X402_NETWORK ?? 'base-sepolia',
       }).returning();
 
       return { updatedTask, escrow };
     });
+
+    let settledEscrow = escrow;
+    let settlementHeaders: Record<string, string> = {};
+
+    if (paymentGate.pendingSettlement) {
+      const settlement = await paymentGate.pendingSettlement.settle({
+        taskId,
+        bidId,
+        acceptedBidId: bid.id,
+      });
+
+      if (!settlement.ok) {
+        await database.transaction(async (tx) => {
+          await tx.update(taskBids).set({ status: BID_STATUS.PENDING }).where(eq(taskBids.id, bid.id));
+          await tx.update(taskBids).set({ status: BID_STATUS.PENDING })
+            .where(and(eq(taskBids.taskId, taskId), eq(taskBids.status, BID_STATUS.REJECTED)));
+          await tx.update(tasks).set({
+            assigneeId: null,
+            finalPrice: null,
+            status: TASK_STATUS.BIDDING,
+            updatedAt: new Date(),
+          }).where(eq(tasks.id, taskId));
+          await tx.update(escrowTransactions).set({
+            status: ESCROW_STATUS.FAILED,
+            updatedAt: new Date(),
+          }).where(eq(escrowTransactions.id, escrow.id));
+        });
+
+        return settlement.response;
+      }
+
+      settlementHeaders = settlement.headers;
+      const [updatedEscrow] = await database.update(escrowTransactions).set({
+        status: ESCROW_STATUS.FUNDED,
+        escrowTxHash: settlement.transaction,
+        updatedAt: new Date(),
+      }).where(eq(escrowTransactions.id, escrow.id)).returning();
+      settledEscrow = updatedEscrow;
+    }
 
     events.emit(bid.bidderId, {
       type: 'task.assigned',
@@ -150,10 +220,14 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
     });
     events.emit(agent.agent_id, {
       type: 'payment.escrowed',
-      data: { taskId, amount: bid.proposedPrice.toString(), txHash: escrow.escrowTxHash },
+      data: { taskId, amount: bid.proposedPrice.toString(), txHash: settledEscrow.escrowTxHash },
+    });
+    eventBus.broadcast({
+      type: 'task.updated',
+      data: { taskId, status: TASK_STATUS.ASSIGNED, assigneeId: bid.bidderId },
     });
 
-    return c.json({ task: updatedTask, acceptedBid: bid, escrow });
+    return c.json({ task: updatedTask, acceptedBid: bid, escrow: settledEscrow }, 200, settlementHeaders);
   });
 
   return app;

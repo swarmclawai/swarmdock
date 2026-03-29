@@ -32,6 +32,7 @@ type GlobalOptions = {
   config?: string;
   json?: boolean;
   privateKey?: string;
+  paymentPrivateKey?: `0x${string}`;
   walletAddress?: string;
 };
 
@@ -199,10 +200,14 @@ export function resolveRuntimeOptions(
   options: GlobalOptions,
   env: NodeJS.ProcessEnv,
   config: CliConfig,
-): Pick<ExecutionContext, 'apiUrl' | 'walletAddress' | 'outputJson'> & { privateKey?: string } {
+): Pick<ExecutionContext, 'apiUrl' | 'walletAddress' | 'outputJson'> & {
+  privateKey?: string;
+  paymentPrivateKey?: `0x${string}`;
+} {
   return {
     apiUrl: options.apiUrl ?? env.SWARMDOCK_API_URL ?? config.apiUrl ?? DEFAULT_API_URL,
     privateKey: options.privateKey ?? env.SWARMDOCK_AGENT_PRIVATE_KEY,
+    paymentPrivateKey: options.paymentPrivateKey ?? env.SWARMDOCK_WALLET_PRIVATE_KEY as `0x${string}` | undefined,
     walletAddress: options.walletAddress ?? env.SWARMDOCK_WALLET_ADDRESS ?? config.profile?.walletAddress,
     outputJson: Boolean(options.json) || !process.stdout.isTTY,
   };
@@ -216,7 +221,11 @@ async function getContext(command: Command): Promise<ExecutionContext> {
 
   return {
     apiUrl: runtime.apiUrl,
-    client: new SwarmDockClient({ baseUrl: runtime.apiUrl, privateKey: runtime.privateKey }),
+    client: new SwarmDockClient({
+      baseUrl: runtime.apiUrl,
+      privateKey: runtime.privateKey,
+      paymentPrivateKey: runtime.paymentPrivateKey,
+    }),
     config,
     configPath,
     outputJson: runtime.outputJson,
@@ -252,6 +261,7 @@ program
   .option('--config <path>', 'Override the config path')
   .option('--json', 'Emit JSON output')
   .option('--private-key <base64>', 'Override the Ed25519 private key for authenticated commands')
+  .option('--payment-private-key <hex>', 'Override the EVM private key used for x402-protected requests')
   .option('--wallet-address <address>', 'Override the wallet address used by register')
   .showHelpAfterError();
 
@@ -383,6 +393,7 @@ program
         `Skills: ${profile.skills.length}`,
         `Earned: ${formatUsdc(balance.earned)}`,
         `Spent: ${formatUsdc(balance.spent)}`,
+        `Escrowed: ${formatUsdc(balance.escrowed)}`,
         `Ratings: ${ratings.count}`,
         `Portfolio Items: ${portfolio.count}`,
         `Created Tasks: ${data.tasks.created}`,
@@ -758,6 +769,7 @@ program
         `Agent ID: ${balance.agentId}`,
         `Earned: ${formatUsdc(balance.earned)}`,
         `Spent: ${formatUsdc(balance.spent)}`,
+        `Escrowed: ${formatUsdc(balance.escrowed)}`,
         `Network: ${balance.network}`,
       ].join('\n'));
     } catch (error) {

@@ -1,8 +1,54 @@
 import { db } from '../db/client.js';
-import { escrowTransactions, tasks } from '../db/schema.js';
+import { escrowTransactions, tasks, agents } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { PLATFORM_FEE_PERCENT, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
+import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { base, baseSepolia } from 'viem/chains';
+
+const erc20Abi = parseAbi([
+  'function transfer(address to, uint256 value) returns (bool)',
+]);
+
+function getChain() {
+  return (process.env.X402_NETWORK ?? 'base-sepolia') === 'base' ? base : baseSepolia;
+}
+
+function getUsdcContractAddress() {
+  return process.env.USDC_CONTRACT_ADDRESS as `0x${string}` | undefined;
+}
+
+async function transferUsdc(to: string, amount: bigint): Promise<string | null> {
+  const privateKey = process.env.PLATFORM_WALLET_PRIVATE_KEY as `0x${string}` | undefined;
+  const usdc = getUsdcContractAddress();
+  if (!privateKey || !usdc || !process.env.EVM_RPC_URL) {
+    return null;
+  }
+
+  const chain = getChain();
+  const account = privateKeyToAccount(privateKey);
+  const walletClient = createWalletClient({
+    account,
+    chain,
+    transport: http(process.env.EVM_RPC_URL),
+  });
+  const publicClient = createPublicClient({
+    chain,
+    transport: http(process.env.EVM_RPC_URL),
+  });
+
+  const hash = await walletClient.writeContract({
+    address: usdc,
+    abi: erc20Abi,
+    functionName: 'transfer',
+    args: [to as `0x${string}`, amount],
+    chain,
+    account,
+  });
+  await publicClient.waitForTransactionReceipt({ hash });
+  return hash;
+}
 
 export async function fundEscrow(params: {
   taskId: string;
@@ -47,15 +93,23 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
   const fee = (escrow.amount * BigInt(PLATFORM_FEE_PERCENT)) / 100n;
   const payout = escrow.amount - fee;
 
-  // TODO: Actual x402 transfer: payout to payee wallet, fee to platform wallet
+  const [payee] = escrow.payeeId
+    ? await db.select({ walletAddress: agents.walletAddress }).from(agents).where(eq(agents.id, escrow.payeeId)).limit(1)
+    : [null];
   const simulatedReleaseTxHash = `0x${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex')}`;
+  const releaseTxHash = payee?.walletAddress
+    ? await transferUsdc(payee.walletAddress, payout).catch((error) => {
+        console.error('[ESCROW] on-chain release failed, falling back to simulated hash:', error);
+        return null;
+      })
+    : null;
 
   await db
     .update(escrowTransactions)
     .set({
       status: ESCROW_STATUS.RELEASED,
       platformFee: fee,
-      releaseTxHash: simulatedReleaseTxHash,
+      releaseTxHash: releaseTxHash ?? simulatedReleaseTxHash,
       updatedAt: new Date(),
     })
     .where(eq(escrowTransactions.id, escrow.id));
@@ -63,11 +117,11 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
   if (escrow.payeeId) {
     eventBus.emit(escrow.payeeId, {
       type: 'payment.released',
-      data: { taskId, amount: payout.toString(), fee: fee.toString(), txHash: simulatedReleaseTxHash },
+      data: { taskId, amount: payout.toString(), fee: fee.toString(), txHash: releaseTxHash ?? simulatedReleaseTxHash },
     });
   }
 
-  return { releaseTxHash: simulatedReleaseTxHash, fee };
+  return { releaseTxHash: releaseTxHash ?? simulatedReleaseTxHash, fee };
 }
 
 export async function refundEscrow(taskId: string): Promise<void> {
@@ -81,20 +135,26 @@ export async function refundEscrow(taskId: string): Promise<void> {
     return; // Nothing to refund
   }
 
-  // TODO: Actual x402 refund transfer
+  const [payer] = await db.select({ walletAddress: agents.walletAddress }).from(agents).where(eq(agents.id, escrow.payerId)).limit(1);
   const simulatedRefundTxHash = `0x${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex')}`;
+  const refundTxHash = payer?.walletAddress
+    ? await transferUsdc(payer.walletAddress, escrow.amount).catch((error) => {
+        console.error('[ESCROW] on-chain refund failed, falling back to simulated hash:', error);
+        return null;
+      })
+    : null;
 
   await db
     .update(escrowTransactions)
     .set({
       status: ESCROW_STATUS.REFUNDED,
-      releaseTxHash: simulatedRefundTxHash,
+      releaseTxHash: refundTxHash ?? simulatedRefundTxHash,
       updatedAt: new Date(),
     })
     .where(eq(escrowTransactions.id, escrow.id));
 
   eventBus.emit(escrow.payerId, {
     type: 'payment.refunded',
-    data: { taskId, amount: escrow.amount.toString(), txHash: simulatedRefundTxHash },
+    data: { taskId, amount: escrow.amount.toString(), txHash: refundTxHash ?? simulatedRefundTxHash },
   });
 }

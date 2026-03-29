@@ -194,7 +194,21 @@ function createFakeDb(state: FakeState, options: { failEscrowInsert?: boolean } 
 
 function createMountedBidsApp(
   state: FakeState,
-  options: { failEscrowInsert?: boolean; emitted?: Array<{ agentId: string; event: unknown }> } = {},
+  options: {
+    failEscrowInsert?: boolean;
+    emitted?: Array<{ agentId: string; event: unknown }>;
+    requirePayment?: () => Promise<
+      | { pendingSettlement: null; response?: Response }
+      | {
+          pendingSettlement: {
+            settle: () => Promise<
+              | { ok: true; transaction: string; network: string; headers: Record<string, string> }
+              | { ok: false; response: Response }
+            >;
+          };
+        }
+    >;
+  } = {},
 ) {
   const emitted = options.emitted ?? [];
   const app = new Hono();
@@ -209,6 +223,7 @@ function createMountedBidsApp(
     },
     createTxHash: () => '0xtesthash',
     db: createFakeDb(state, { failEscrowInsert: options.failEscrowInsert }),
+    requirePayment: options.requirePayment ?? (async () => ({ pendingSettlement: null })),
   }));
   return { app, emitted };
 }
@@ -294,4 +309,96 @@ test('accepting a bid rolls task and bid state back when escrow funding fails', 
   assert.deepEqual(state.bids[0], original.bid);
   assert.equal(state.escrows.length, 0);
   assert.deepEqual(emitted, []);
+});
+
+test('accepting a bid returns 402 when x402 payment is required and missing', async () => {
+  const state: FakeState = {
+    tasks: [{
+      id: 'task-1',
+      requesterId: 'requester-1',
+      assigneeId: null,
+      finalPrice: null,
+      status: TASK_STATUS.BIDDING,
+      updatedAt: new Date('2026-03-29T12:00:00.000Z'),
+    }],
+    bids: [{
+      id: 'bid-accepted',
+      taskId: 'task-1',
+      bidderId: 'agent-1',
+      proposedPrice: 3_000_000n,
+      status: BID_STATUS.PENDING,
+    }],
+    escrows: [],
+  };
+
+  const { app } = createMountedBidsApp(state, {
+    requirePayment: async () => ({
+      pendingSettlement: null,
+      response: new Response(JSON.stringify({ error: 'Payment required' }), {
+        status: 402,
+        headers: { 'PAYMENT-REQUIRED': 'mock' },
+      }),
+    }),
+  });
+
+  const response = await app.request('http://swarmdock.test/tasks/task-1/bids/bid-accepted/accept', {
+    method: 'POST',
+  });
+
+  assert.equal(response.status, 402);
+  assert.equal(state.tasks[0]?.assigneeId, null);
+  assert.equal(state.tasks[0]?.finalPrice, null);
+  assert.equal(state.escrows.length, 0);
+});
+
+test('accepting a bid rolls state back when x402 settlement fails after provisional assignment', async () => {
+  const state: FakeState = {
+    tasks: [{
+      id: 'task-1',
+      requesterId: 'requester-1',
+      assigneeId: null,
+      finalPrice: null,
+      status: TASK_STATUS.BIDDING,
+      updatedAt: new Date('2026-03-29T12:00:00.000Z'),
+    }],
+    bids: [
+      {
+        id: 'bid-accepted',
+        taskId: 'task-1',
+        bidderId: 'agent-1',
+        proposedPrice: 3_000_000n,
+        status: BID_STATUS.PENDING,
+      },
+      {
+        id: 'bid-rejected',
+        taskId: 'task-1',
+        bidderId: 'agent-2',
+        proposedPrice: 4_000_000n,
+        status: BID_STATUS.PENDING,
+      },
+    ],
+    escrows: [],
+  };
+
+  const { app } = createMountedBidsApp(state, {
+    requirePayment: async () => ({
+      pendingSettlement: {
+        settle: async () => ({
+          ok: false,
+          response: new Response(JSON.stringify({ error: 'settlement failed' }), { status: 402 }),
+        }),
+      },
+    }),
+  });
+
+  const response = await app.request('http://swarmdock.test/tasks/task-1/bids/bid-accepted/accept', {
+    method: 'POST',
+  });
+
+  assert.equal(response.status, 402);
+  assert.equal(state.tasks[0]?.assigneeId, null);
+  assert.equal(state.tasks[0]?.finalPrice, null);
+  assert.equal(state.tasks[0]?.status, TASK_STATUS.BIDDING);
+  assert.deepEqual(state.bids.map((bid) => bid.status), [BID_STATUS.PENDING, BID_STATUS.PENDING]);
+  assert.equal(state.escrows[0]?.status, ESCROW_STATUS.FAILED);
 });

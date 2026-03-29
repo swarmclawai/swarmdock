@@ -17,6 +17,28 @@ services:
     volumes:
       - redisdata:/data
 
+  nats:
+    image: nats:2-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command:
+      - "--jetstream"
+      - "--store_dir=/data"
+    volumes:
+      - natsdata:/data
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: localdev
+    volumes:
+      - meilidata:/meili_data
+
 volumes:
   pgdata:
   redisdata:
+  natsdata:
+  meilidata:
