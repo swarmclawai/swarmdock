@@ -2,260 +2,167 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fetchTask } from '@/lib/api';
 import { formatDateTime, formatStatusLabel, formatUsdc, truncateId } from '@/lib/format';
-import { statusColor } from '@/lib/status';
-import { Breadcrumb } from '@/components/layout/Breadcrumb';
-import { Metric } from '@/components/ui/Metric';
-import { Badge } from '@/components/ui/Badge';
-import { StatusBadge } from '@/components/tasks/StatusBadge';
-import { LifecycleTimeline } from '@/components/tasks/LifecycleTimeline';
-import { BidCard } from '@/components/tasks/BidCard';
-import { SkillTag } from '@/components/agents/SkillTag';
+import { statusColor, statusLabel, trustLabels } from '@/lib/status';
 
-type Artifact = {
-  type?: string;
-  content?: unknown;
-  storage?: {
-    url?: string;
-    contentType?: string;
-    byteLength?: number;
-  };
-};
+type Artifact = { type?: string; content?: unknown; storage?: { url?: string } };
+function artifactList(v: unknown): Artifact[] { return Array.isArray(v) ? (v as Artifact[]) : []; }
 
-function artifactList(value: unknown): Artifact[] {
-  return Array.isArray(value) ? (value as Artifact[]) : [];
-}
-
-export default async function TaskDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const task = await fetchTask(id);
-
-  if (!task) {
-    notFound();
-  }
+  if (!task) notFound();
 
   const timeline = [
-    { label: 'Task Created', time: task.createdAt },
-    ...(task.startedAt ? [{ label: 'Work Started', time: task.startedAt }] : []),
-    ...(task.submittedAt ? [{ label: 'Artifacts Submitted', time: task.submittedAt }] : []),
-    ...(task.dispute ? [{
-      label: task.dispute.status === 'resolved' ? 'Dispute Resolved' : 'Dispute Opened',
-      time: task.dispute.resolvedAt ?? task.dispute.createdAt,
-    }] : []),
-    ...(task.completedAt ? [{ label: 'Task Completed', time: task.completedAt }] : []),
+    { label: 'Created', time: task.createdAt, done: true },
+    ...(task.startedAt ? [{ label: 'Work Started', time: task.startedAt, done: true }] : [{ label: 'Work Started', time: null, done: false }]),
+    ...(task.submittedAt ? [{ label: 'Artifacts Submitted', time: task.submittedAt, done: true }] : [{ label: 'Artifacts', time: null, done: false }]),
+    ...(task.dispute ? [{ label: task.dispute.status === 'resolved' ? 'Dispute Resolved' : 'Dispute Opened', time: task.dispute.resolvedAt ?? task.dispute.createdAt, done: true }] : []),
+    ...(task.completedAt ? [{ label: 'Completed', time: task.completedAt, done: true }] : [{ label: 'Completion', time: null, done: false }]),
   ];
 
   const artifacts = artifactList(task.resultArtifacts);
   const color = statusColor(task.status);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-5 py-10 sm:px-6 sm:py-14">
-      <Breadcrumb items={[{ label: 'Tasks', href: '/tasks' }, { label: truncateId(task.id) }]} />
+    <div className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-6 sm:py-14">
+      {/* Breadcrumb */}
+      <nav className="mono text-xs text-[var(--color-text-3)]">
+        <Link href="/tasks" className="hover:text-[var(--color-text-2)] transition-colors">Tasks</Link>
+        <span className="mx-2">/</span>
+        <span className="text-[var(--color-text-2)]">{truncateId(task.id)}</span>
+      </nav>
 
-      {/* ===== TASK HEADER ===== */}
-      <section className="mt-8 grid gap-8 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:p-8 animate-entrance">
-        <div className="space-y-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <StatusBadge status={task.status} />
-            <Badge variant="outline">{formatStatusLabel(task.matchingMode)}</Badge>
-            <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
-              {task.bidCount} bids
-            </span>
-          </div>
+      {/* Title + status */}
+      <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
+        <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">{task.title}</h1>
+        <span className="mono flex items-center gap-2 text-sm text-[var(--color-text-2)]">
+          <span className="dot" style={{ background: color }} />
+          {statusLabel(task.status)}
+        </span>
+      </div>
 
-          <div className="space-y-4">
-            <p className="telemetry text-[11px] uppercase tracking-[0.28em] text-[var(--color-text-muted)]">
-              Task Detail
-            </p>
-            <h1 className="text-balance max-w-4xl text-4xl text-[var(--color-text)] sm:text-5xl">
-              {task.title}
-            </h1>
-            <p className="max-w-3xl text-base leading-8 text-[var(--color-text-sec)] sm:text-lg">
-              {task.description}
-            </p>
-          </div>
+      <hr className="hairline mt-4" />
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric
-              label="Budget"
-              value={task.budgetMin ? `${formatUsdc(task.budgetMin)} – ${formatUsdc(task.budgetMax)}` : `Up to ${formatUsdc(task.budgetMax)}`}
-              subvalue={task.finalPrice ? `Final ${formatUsdc(task.finalPrice)}` : undefined}
-            />
-            <Metric label="Requester" value={task.requester?.displayName ?? truncateId(task.requesterId)} />
-            <Metric label="Assignee" value={task.assignee?.displayName ?? (task.assigneeId ? truncateId(task.assigneeId) : 'Unassigned')} />
-            <Metric label="Deadline" value={task.deadline ? formatDateTime(task.deadline) : 'No deadline'} />
+      {/* Meta line */}
+      <p className="mono mt-4 text-sm text-[var(--color-text-2)]">
+        Budget <span className="text-[var(--color-accent)]">{task.budgetMin ? `${formatUsdc(task.budgetMin)}–${formatUsdc(task.budgetMax)}` : formatUsdc(task.budgetMax)}</span>
+        {task.finalPrice && <> · Final <span className="text-[var(--color-accent)]">{formatUsdc(task.finalPrice)}</span></>}
+        {' · '}{task.requester?.displayName ?? truncateId(task.requesterId)}
+        {' · '}{task.deadline ? `Due ${formatDateTime(task.deadline)}` : 'No deadline'}
+        {' · '}{task.bidCount} bids
+        {' · '}{formatStatusLabel(task.matchingMode)} matching
+      </p>
+
+      {/* Description */}
+      <p className="mt-4 max-w-3xl text-base leading-relaxed text-[var(--color-text-2)]">{task.description}</p>
+
+      {task.skillRequirements.length > 0 && (
+        <p className="mono mt-3 text-sm text-[var(--color-text-3)]">
+          Skills: {task.skillRequirements.join(' · ')}
+        </p>
+      )}
+
+      {/* Timeline */}
+      <div className="section-rule mt-10"><span>Timeline</span></div>
+      <div className="mt-4 space-y-3">
+        {timeline.map((entry, i) => (
+          <div key={`${entry.label}-${i}`} className="flex items-start gap-3">
+            <span className={`dot mt-1.5 ${entry.done ? '' : ''}`} style={{ background: entry.done ? color : 'var(--color-text-3)', opacity: entry.done ? 1 : 0.3 }} />
+            <div>
+              <span className={`text-sm ${entry.done ? 'text-[var(--color-text)]' : 'text-[var(--color-text-3)]'}`}>{entry.label}</span>
+              {entry.time && <span className="mono ml-3 text-xs text-[var(--color-text-3)]">{formatDateTime(entry.time)}</span>}
+            </div>
           </div>
+        ))}
+      </div>
+
+      {/* Bids */}
+      <div className="section-rule mt-10"><span>Bids ({task.bidCount})</span></div>
+      {task.bids.length > 0 ? (
+        <table className="data-table mt-4">
+          <thead>
+            <tr>
+              <th style={{ width: 20 }} />
+              <th>Agent</th>
+              <th>Price</th>
+              <th className="hidden sm:table-cell">Confidence</th>
+              <th className="hidden md:table-cell">Status</th>
+              <th className="hidden lg:table-cell">Proposal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {task.bids.map((bid) => (
+              <tr key={bid.id} className={bid.status === 'accepted' ? 'bg-[var(--color-success)]/5' : ''}>
+                <td><span className="dot" style={{ background: statusColor(bid.status) }} /></td>
+                <td>
+                  <Link href={`/agents/${bid.bidderId}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
+                    {bid.bidderDisplayName ?? truncateId(bid.bidderId)}
+                  </Link>
+                </td>
+                <td className="text-[var(--color-accent)]">{formatUsdc(bid.proposedPrice)}</td>
+                <td className="hidden sm:table-cell">{bid.confidenceScore !== null ? `${(bid.confidenceScore * 100).toFixed(0)}%` : '—'}</td>
+                <td className="hidden md:table-cell">{statusLabel(bid.status)}</td>
+                <td className="hidden lg:table-cell max-w-xs truncate">{bid.proposal ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="mono mt-4 text-sm text-[var(--color-text-3)]">No bids submitted.</p>
+      )}
+
+      {/* Artifacts */}
+      <div className="section-rule mt-10"><span>Artifacts</span></div>
+      {artifacts.length > 0 || (task.resultFiles?.length ?? 0) > 0 ? (
+        <div className="mt-4 space-y-4">
+          {artifacts.map((a, i) => (
+            <div key={`${a.type}-${i}`}>
+              <p className="mono text-xs text-[var(--color-text-3)]">{a.type ?? 'artifact'} {a.storage?.url && <a href={a.storage.url} target="_blank" rel="noreferrer" className="text-[var(--color-accent)]">↗ stored</a>}</p>
+              <pre className="mono mt-2 overflow-x-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-xs leading-relaxed text-[var(--color-text-2)]">
+                {typeof a.content === 'string' ? a.content : JSON.stringify(a.content, null, 2)}
+              </pre>
+            </div>
+          ))}
+          {task.resultFiles?.map((f) => (
+            <p key={f} className="mono text-sm"><a href={f} target="_blank" rel="noreferrer" className="text-[var(--color-accent)] hover:brightness-125">{f}</a></p>
+          ))}
         </div>
+      ) : (
+        <p className="mono mt-4 text-sm text-[var(--color-text-3)]">No artifacts submitted.</p>
+      )}
 
-        <aside className="space-y-5 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-abyss)]/30 p-5">
-          <div>
-            <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Task ID</p>
-            <p className="telemetry mt-2 break-all text-sm text-[var(--color-text-sec)]">{task.id}</p>
-          </div>
-          <div>
-            <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Created</p>
-            <p className="mt-2 text-sm text-[var(--color-text-sec)]">{formatDateTime(task.createdAt)}</p>
-          </div>
-          <div>
-            <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Required Skills</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {task.skillRequirements.map((skill) => (
-                <SkillTag key={skill}>{skill}</SkillTag>
-              ))}
-            </div>
-          </div>
-        </aside>
-      </section>
-
-      {/* ===== TIMELINE, BIDS, ARTIFACTS ===== */}
-      <section className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="space-y-6">
-          {/* Lifecycle */}
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 animate-entrance stagger-1">
-            <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Lifecycle</p>
-            <h2 className="mt-3 text-3xl text-[var(--color-text)]">Task timeline</h2>
-            <div className="mt-8">
-              <LifecycleTimeline entries={timeline} currentStatus={task.status} />
-            </div>
-          </section>
-
-          {/* Bids */}
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 animate-entrance stagger-2">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Bids</p>
-                <h2 className="mt-3 text-3xl text-[var(--color-text)]">Market response</h2>
-              </div>
-              <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
-                {task.bidCount} total
-              </p>
-            </div>
-
-            <div className="mt-8 space-y-4">
-              {task.bids.length > 0 ? task.bids.map((bid) => (
-                <BidCard key={bid.id} bid={bid} />
-              )) : (
-                <div className="rounded-xl border border-dashed border-[var(--color-border)] px-5 py-6 text-sm leading-7 text-[var(--color-text-sec)]">
-                  No bids have been submitted for this task yet.
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Artifacts */}
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-abyss)]/30 p-6 animate-entrance stagger-3">
-            <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Artifacts</p>
-            <h2 className="mt-3 text-3xl text-[var(--color-text)]">Submitted output</h2>
-
-            {artifacts.length > 0 || (task.resultFiles?.length ?? 0) > 0 ? (
-              <div className="mt-8 space-y-4">
-                {artifacts.map((artifact, index) => (
-                  <div key={`${artifact.type ?? 'artifact'}-${index}`} className="rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-5">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <p className="text-lg text-[var(--color-text)]">{artifact.type ?? 'artifact'}</p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">inline</Badge>
-                        {artifact.storage?.url && (
-                          <a
-                            href={artifact.storage.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="telemetry rounded-full border border-[var(--color-border)] px-2.5 py-1 text-[11px] uppercase tracking-[0.2em] text-[var(--color-cyan)] hover:brightness-125 transition-all"
-                          >
-                            stored copy
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                    <pre className="telemetry mt-4 overflow-x-auto whitespace-pre-wrap rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-abyss)] p-4 text-xs leading-6 text-[var(--color-sand-200)]">
-                      {typeof artifact.content === 'string'
-                        ? artifact.content
-                        : JSON.stringify(artifact.content, null, 2)}
-                    </pre>
-                  </div>
-                ))}
-
-                {task.resultFiles?.map((file) => (
-                  <div key={file} className="rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-5">
-                    <Badge variant="outline">file</Badge>
-                    <a
-                      href={file}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 block break-all text-sm leading-7 text-[var(--color-cyan)] hover:brightness-125 transition-all"
-                    >
-                      {file}
-                    </a>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm leading-7 text-[var(--color-text-sec)]">
-                No artifacts have been submitted yet.
-              </p>
-            )}
-          </section>
+      {/* Participants & Quality */}
+      <div className="section-rule mt-10"><span>Details</span></div>
+      <div className="mono mt-4 space-y-2 text-sm">
+        <div className="flex gap-4">
+          <span className="w-20 shrink-0 text-[var(--color-text-3)]">Requester</span>
+          <Link href={`/agents/${task.requesterId}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
+            {task.requester?.displayName ?? truncateId(task.requesterId)}
+          </Link>
         </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 animate-entrance stagger-2">
-            <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Participants</p>
-            <div className="mt-5 space-y-3 text-sm">
-              <Link
-                href={`/agents/${task.requesterId}`}
-                className="block rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-abyss)]/20 px-4 py-3 text-[var(--color-text-sec)] transition-all duration-200 hover:border-[var(--color-cyan)]/30 hover:text-[var(--color-text)]"
-              >
-                Requester: {task.requester?.displayName ?? truncateId(task.requesterId)}
-              </Link>
-              {task.assigneeId ? (
-                <Link
-                  href={`/agents/${task.assigneeId}`}
-                  className="block rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-abyss)]/20 px-4 py-3 text-[var(--color-text-sec)] transition-all duration-200 hover:border-[var(--color-cyan)]/30 hover:text-[var(--color-text)]"
-                >
-                  Assignee: {task.assignee?.displayName ?? truncateId(task.assigneeId)}
-                </Link>
-              ) : (
-                <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-3 text-[var(--color-text-muted)]">
-                  No assignee selected yet.
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-abyss)]/30 p-5 animate-entrance stagger-3">
-            <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Quality</p>
-            <p className="mt-3 text-3xl text-[var(--color-text)]">
-              {task.qualityScore !== null ? `${task.qualityScore}/5` : 'Pending'}
-            </p>
-            <p className="mt-3 text-sm leading-7 text-[var(--color-text-sec)]">
-              Quality verification is lightweight — showing what exists without overstating certainty.
-            </p>
-          </section>
-
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 animate-entrance stagger-4">
-            <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Dispute</p>
-            {task.dispute ? (
-              <>
-                <p className="mt-3 text-2xl text-[var(--color-text)]">{formatStatusLabel(task.dispute.status)}</p>
-                <p className="mt-3 text-sm leading-7 text-[var(--color-text-sec)]">{task.dispute.reason}</p>
-                <div className="mt-4 space-y-2 text-xs text-[var(--color-text-muted)]">
-                  <p>Raised: {formatDateTime(task.dispute.createdAt)}</p>
-                  {task.dispute.resolution && <p>Resolution: {formatStatusLabel(task.dispute.resolution)}</p>}
-                  {task.dispute.resolutionNotes && <p>Notes: {task.dispute.resolutionNotes}</p>}
-                </div>
-              </>
-            ) : (
-              <p className="mt-3 text-sm leading-7 text-[var(--color-text-sec)]">
-                No dispute has been opened for this task.
-              </p>
-            )}
-          </section>
+        <div className="flex gap-4">
+          <span className="w-20 shrink-0 text-[var(--color-text-3)]">Assignee</span>
+          {task.assigneeId ? (
+            <Link href={`/agents/${task.assigneeId}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
+              {task.assignee?.displayName ?? truncateId(task.assigneeId)}
+            </Link>
+          ) : <span className="text-[var(--color-text-3)]">unassigned</span>}
         </div>
-      </section>
+        <div className="flex gap-4">
+          <span className="w-20 shrink-0 text-[var(--color-text-3)]">Quality</span>
+          <span className="text-[var(--color-text-2)]">{task.qualityScore !== null ? `${task.qualityScore}/5` : 'pending'}</span>
+        </div>
+        <div className="flex gap-4">
+          <span className="w-20 shrink-0 text-[var(--color-text-3)]">Dispute</span>
+          {task.dispute ? (
+            <span className="text-[var(--color-danger)]">{formatStatusLabel(task.dispute.status)}: {task.dispute.reason}</span>
+          ) : <span className="text-[var(--color-text-3)]">none</span>}
+        </div>
+        <div className="flex gap-4">
+          <span className="w-20 shrink-0 text-[var(--color-text-3)]">Task ID</span>
+          <span className="text-[var(--color-text-2)] break-all">{task.id}</span>
+        </div>
+      </div>
     </div>
   );
 }

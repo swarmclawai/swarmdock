@@ -1,35 +1,25 @@
-/** Maps task/bid status to a CSS variable name for color */
 export function statusColor(status: string): string {
   switch (status) {
-    case 'open':
-      return 'var(--color-status-open)';
-    case 'bidding':
-      return 'var(--color-status-bidding)';
+    case 'open': return 'var(--color-success)';
+    case 'bidding': return 'var(--color-warning)';
     case 'assigned':
-      return 'var(--color-status-assigned)';
-    case 'in_progress':
-      return 'var(--color-status-in-progress)';
-    case 'review':
-      return 'var(--color-status-review)';
-    case 'completed':
-      return 'var(--color-status-completed)';
-    case 'disputed':
-      return 'var(--color-status-disputed)';
+    case 'in_progress': return 'var(--color-info)';
+    case 'review': return 'var(--color-review)';
+    case 'completed': return 'var(--color-muted)';
+    case 'disputed': return 'var(--color-danger)';
     case 'cancelled':
-    case 'expired':
-      return 'var(--color-status-cancelled)';
-    case 'failed':
-      return 'var(--color-status-failed)';
-    case 'accepted':
-      return 'var(--color-status-open)';
-    case 'pending':
-      return 'var(--color-status-bidding)';
+    case 'expired': return 'var(--color-muted)';
+    case 'failed': return 'var(--color-danger)';
+    case 'accepted': return 'var(--color-success)';
+    case 'pending': return 'var(--color-warning)';
     case 'rejected':
-    case 'withdrawn':
-      return 'var(--color-status-cancelled)';
-    default:
-      return 'var(--color-text-muted)';
+    case 'withdrawn': return 'var(--color-muted)';
+    default: return 'var(--color-text-3)';
   }
+}
+
+export function statusLabel(status: string): string {
+  return status.replace(/_/g, ' ');
 }
 
 export const trustLabels: Record<number, string> = {

@@ -1,158 +1,84 @@
 import Link from 'next/link';
 import { fetchTasks } from '@/lib/api';
-import { toMicroUsdc } from '@/lib/format';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { TaskCard } from '@/components/tasks/TaskCard';
-import { Button } from '@/components/ui/Button';
+import { formatRelativeTime, formatUsdc, toMicroUsdc } from '@/lib/format';
+import { statusColor, statusLabel } from '@/lib/status';
 
-const statusOptions = [
-  { value: '', label: 'All Statuses' },
-  { value: 'open', label: 'Open' },
-  { value: 'bidding', label: 'Bidding' },
-  { value: 'assigned', label: 'Assigned' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'review', label: 'Review' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
+const statusOpts = [
+  { value: '', label: 'All' }, { value: 'open', label: 'Open' }, { value: 'bidding', label: 'Bidding' },
+  { value: 'assigned', label: 'Assigned' }, { value: 'in_progress', label: 'In Progress' },
+  { value: 'review', label: 'Review' }, { value: 'completed', label: 'Completed' }, { value: 'cancelled', label: 'Cancelled' },
 ];
 
-function getParam(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
+function getParam(v: string | string[] | undefined) { return Array.isArray(v) ? v[0] : v; }
 
-export default async function TasksPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function TasksPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
-  const q = getParam(params.q) ?? '';
-  const status = getParam(params.status) ?? '';
-  const skills = getParam(params.skills) ?? '';
-  const budgetMin = getParam(params.budgetMin) ?? '';
-  const budgetMax = getParam(params.budgetMax) ?? '';
-
-  const data = await fetchTasks({
-    q: q || undefined,
-    status: status || undefined,
-    skills: skills || undefined,
-    budgetMin: toMicroUsdc(budgetMin),
-    budgetMax: toMicroUsdc(budgetMax),
-    limit: '24',
-  });
-
+  const q = getParam(params.q) ?? '', status = getParam(params.status) ?? '', skills = getParam(params.skills) ?? '';
+  const budgetMin = getParam(params.budgetMin) ?? '', budgetMax = getParam(params.budgetMax) ?? '';
+  const data = await fetchTasks({ q: q || undefined, status: status || undefined, skills: skills || undefined, budgetMin: toMicroUsdc(budgetMin), budgetMax: toMicroUsdc(budgetMax), limit: '30' });
   const activeFilters = [q, status, skills, budgetMin, budgetMax].filter(Boolean).length;
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-5 py-10 sm:px-6 sm:py-14">
-      <PageHeader
-        eyebrow="Task Board"
-        title="Inspect active work, current budgets, and where the market is actually clearing."
-        description="Live market structure — clear pricing, matching mode, bid pressure, and a state machine you can follow."
-        metricLabel="Visible Tasks"
-        metricValue={data ? String(data.total) : 'API'}
-        metricDescription={
-          data
-            ? `${data.total} tasks match the current public query.`
-            : 'The API is currently unavailable.'
-        }
-      />
+    <div className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-6 sm:py-14">
+      <div className="flex flex-wrap items-baseline justify-between gap-4">
+        <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">Task Board</h1>
+        <span className="mono text-sm text-[var(--color-text-3)]">{data ? `${data.total} visible` : 'API unavailable'}</span>
+      </div>
 
-      {/* Filter bar */}
-      <section className="mt-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-6">
-        <form className="grid gap-4 lg:grid-cols-5 lg:items-end">
-          <label className="block space-y-2 lg:col-span-2">
-            <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Search</span>
-            <input
-              type="search"
-              name="q"
-              defaultValue={q}
-              placeholder="Search task title or description..."
-              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-abyss)] px-4 py-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-shadow duration-200 focus:shadow-[0_0_0_2px_var(--color-cyan)_inset] focus:outline-none"
-            />
-          </label>
-
-          <label className="block space-y-2">
-            <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Status</span>
-            <select
-              name="status"
-              defaultValue={status}
-              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-abyss)] px-4 py-3 text-sm text-[var(--color-text)]"
-            >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value} className="bg-[var(--color-surface)]">
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block space-y-2">
-            <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Skills</span>
-            <input
-              type="text"
-              name="skills"
-              defaultValue={skills}
-              placeholder="web-design,data-analysis"
-              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-abyss)] px-4 py-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-shadow duration-200 focus:shadow-[0_0_0_2px_var(--color-cyan)_inset] focus:outline-none"
-            />
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:col-span-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
-            <label className="block space-y-2">
-              <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Min Budget (USDC)</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                name="budgetMin"
-                defaultValue={budgetMin}
-                placeholder="3.00"
-                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-abyss)] px-4 py-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-shadow duration-200 focus:shadow-[0_0_0_2px_var(--color-cyan)_inset] focus:outline-none"
-              />
-            </label>
-            <label className="block space-y-2">
-              <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">Max Budget (USDC)</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                name="budgetMax"
-                defaultValue={budgetMax}
-                placeholder="12.00"
-                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-abyss)] px-4 py-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-shadow duration-200 focus:shadow-[0_0_0_2px_var(--color-cyan)_inset] focus:outline-none"
-              />
-            </label>
-            <Button type="submit">Apply Filters</Button>
-            <Button href="/tasks" variant="secondary">Clear</Button>
-          </div>
-        </form>
-      </section>
+      {/* Filters */}
+      <form className="mt-6 flex flex-wrap gap-3">
+        <input type="search" name="q" defaultValue={q} placeholder="Search..."
+          className="flex-1 min-w-[160px] rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] transition-colors" />
+        <select name="status" defaultValue={status}
+          className="rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] transition-colors">
+          {statusOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <input type="text" name="skills" defaultValue={skills} placeholder="Skills..."
+          className="w-36 rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] transition-colors" />
+        <input type="text" inputMode="decimal" name="budgetMin" defaultValue={budgetMin} placeholder="Min $"
+          className="w-20 rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] transition-colors" />
+        <input type="text" inputMode="decimal" name="budgetMax" defaultValue={budgetMax} placeholder="Max $"
+          className="w-20 rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] transition-colors" />
+        <button type="submit" className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 transition-all">Filter</button>
+        {activeFilters > 0 && <Link href="/tasks" className="rounded-md border border-[var(--color-border-hard)] px-4 py-2 text-sm text-[var(--color-text-2)] hover:text-[var(--color-text)] transition-colors">Clear</Link>}
+      </form>
 
       {/* Task list */}
-      <section className="mt-8">
+      <div className="mt-8">
         {!data ? (
-          <div className="rounded-2xl border border-dashed border-[var(--color-border)] px-6 py-10">
-            <h2 className="text-2xl text-[var(--color-text)]">Task feed unavailable</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-text-sec)]">
-              This board depends on the public task API. When it is back, the live market feed will repopulate automatically.
-            </p>
-          </div>
+          <p className="mono text-sm text-[var(--color-text-3)]">Task feed unavailable.</p>
         ) : data.tasks.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[var(--color-border)] px-6 py-10">
-            <h2 className="text-2xl text-[var(--color-text)]">No tasks match the current query</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-text-sec)]">
-              {activeFilters > 0
-                ? 'Try widening the search, adjusting status, or removing the budget filters.'
-                : 'The board is live but there are no public tasks available right now.'}
-            </p>
-          </div>
+          <p className="mono text-sm text-[var(--color-text-3)]">{activeFilters > 0 ? 'No tasks match filters.' : 'No tasks available.'}</p>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-0">
             {data.tasks.map((task) => (
-              <TaskCard key={task.id} task={task} />
+              <Link
+                key={task.id}
+                href={`/tasks/${task.id}`}
+                className="group block border-b border-[var(--color-border)] py-4 transition-colors hover:bg-[var(--color-surface)]/50"
+              >
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="dot" style={{ background: statusColor(task.status) }} />
+                  <span className="mono text-xs text-[var(--color-text-3)] w-16">{statusLabel(task.status)}</span>
+                  <span className="text-[var(--color-text)] font-medium group-hover:text-[var(--color-accent)] transition-colors flex-1 min-w-0 truncate">
+                    {task.title}
+                  </span>
+                  <span className="mono text-sm text-[var(--color-accent)]">
+                    {task.budgetMin ? `${formatUsdc(task.budgetMin)}–${formatUsdc(task.budgetMax)}` : formatUsdc(task.budgetMax)}
+                  </span>
+                  <span className="mono text-xs text-[var(--color-text-3)]">{task.bidCount} bids</span>
+                  <span className="mono text-xs text-[var(--color-text-3)]">{formatRelativeTime(task.createdAt)}</span>
+                </div>
+                {task.skillRequirements.length > 0 && (
+                  <p className="mono mt-1.5 pl-[18px] text-xs text-[var(--color-text-3)]">
+                    {task.skillRequirements.join(' · ')}
+                  </p>
+                )}
+              </Link>
             ))}
           </div>
         )}
-      </section>
+      </div>
     </div>
   );
 }

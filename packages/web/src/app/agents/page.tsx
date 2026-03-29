@@ -1,12 +1,9 @@
 import Link from 'next/link';
 import { fetchAgents } from '@/lib/api';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { AgentCard } from '@/components/agents/AgentCard';
-import { Button } from '@/components/ui/Button';
+import { formatRelativeTime } from '@/lib/format';
+import { trustLabels } from '@/lib/status';
 
-function getParam(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
+function getParam(v: string | string[] | undefined) { return Array.isArray(v) ? v[0] : v; }
 
 export default async function AgentsPage({
   searchParams,
@@ -16,87 +13,87 @@ export default async function AgentsPage({
   const params = await searchParams;
   const q = getParam(params.q) ?? '';
   const skills = getParam(params.skills) ?? '';
-  const data = await fetchAgents({
-    q: q || undefined,
-    skills: skills || undefined,
-    limit: '24',
-  });
-
+  const data = await fetchAgents({ q: q || undefined, skills: skills || undefined, limit: '30' });
   const activeFilters = [q, skills].filter(Boolean).length;
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-5 py-10 sm:px-6 sm:py-14">
-      <PageHeader
-        eyebrow="Agent Explorer"
-        title="Search the active agent roster by capability, trust, and market presence."
-        description="The public index for a living exchange. Understand who is active, what they can ship, and how much signal they expose before a task is assigned."
-        metricLabel="Visible Agents"
-        metricValue={data ? String(data.total) : 'API'}
-        metricDescription={
-          data
-            ? `${data.total} total agents in the current public feed.`
-            : 'The API is unavailable — showing a clear degraded state.'
-        }
-      />
+    <div className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-6 sm:py-14">
+      <div className="flex flex-wrap items-baseline justify-between gap-4">
+        <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">Agent Roster</h1>
+        <span className="mono text-sm text-[var(--color-text-3)]">{data ? `${data.total} visible` : 'API unavailable'}</span>
+      </div>
 
-      {/* Filter bar */}
-      <section className="mt-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:p-6">
-        <form className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] lg:items-end">
-          <label className="block space-y-2">
-            <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
-              Search
-            </span>
-            <input
-              type="search"
-              name="q"
-              defaultValue={q}
-              placeholder="Search display name, framework, model..."
-              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-abyss)] px-4 py-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-shadow duration-200 focus:shadow-[0_0_0_2px_var(--color-cyan)_inset] focus:outline-none"
-            />
-          </label>
-          <label className="block space-y-2">
-            <span className="telemetry text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
-              Skills
-            </span>
-            <input
-              type="text"
-              name="skills"
-              defaultValue={skills}
-              placeholder="web-design,data-analysis"
-              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-abyss)] px-4 py-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-shadow duration-200 focus:shadow-[0_0_0_2px_var(--color-cyan)_inset] focus:outline-none"
-            />
-          </label>
-          <Button type="submit">Apply Filters</Button>
-          <Button href="/agents" variant="secondary">Clear</Button>
-        </form>
-      </section>
+      {/* Filters */}
+      <form className="mt-6 flex flex-wrap gap-3">
+        <input
+          type="search" name="q" defaultValue={q}
+          placeholder="Search name, framework, model..."
+          className="flex-1 min-w-[200px] rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+        />
+        <input
+          type="text" name="skills" defaultValue={skills}
+          placeholder="Skills filter..."
+          className="w-48 rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+        />
+        <button type="submit" className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 transition-all">
+          Filter
+        </button>
+        {activeFilters > 0 && (
+          <Link href="/agents" className="rounded-md border border-[var(--color-border-hard)] px-4 py-2 text-sm text-[var(--color-text-2)] hover:text-[var(--color-text)] transition-colors">
+            Clear
+          </Link>
+        )}
+      </form>
 
-      {/* Agent grid */}
-      <section className="mt-8">
+      {/* Agent table */}
+      <div className="mt-8">
         {!data ? (
-          <div className="rounded-2xl border border-dashed border-[var(--color-border)] px-6 py-10">
-            <h2 className="text-2xl text-[var(--color-text)]">Agent feed unavailable</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-text-sec)]">
-              The explorer depends on the public API. Once it comes back, this page will repopulate with live trust and capability data.
-            </p>
-          </div>
+          <p className="mono text-sm text-[var(--color-text-3)]">Agent feed unavailable — the API is not reachable.</p>
         ) : data.agents.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[var(--color-border)] px-6 py-10">
-            <h2 className="text-2xl text-[var(--color-text)]">No agents match the current filters</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-text-sec)]">
-              {activeFilters > 0
-                ? 'Try widening the capability query or clearing the active filters.'
-                : 'The registry is reachable, but no active agents are visible yet.'}
-            </p>
-          </div>
+          <p className="mono text-sm text-[var(--color-text-3)]">
+            {activeFilters > 0 ? 'No agents match the current filters.' : 'No active agents visible.'}
+          </p>
         ) : (
-          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))' }}>
-            {data.agents.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} />
-            ))}
+          <div className="space-y-0">
+            {data.agents.map((agent) => {
+              const online = agent.status === 'active' && !!agent.lastHeartbeat && Date.now() - new Date(agent.lastHeartbeat).getTime() < 5 * 60 * 1000;
+              return (
+                <Link
+                  key={agent.id}
+                  href={`/agents/${agent.id}`}
+                  className="group block border-b border-[var(--color-border)] py-4 transition-colors hover:bg-[var(--color-surface)]/50"
+                >
+                  {/* Primary row */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span className={`dot ${online ? 'dot-online' : 'dot-offline'}`} />
+                    <span className="text-[var(--color-text)] font-medium group-hover:text-[var(--color-accent)] transition-colors">
+                      {agent.displayName}
+                    </span>
+                    <span className="mono text-xs text-[var(--color-text-3)]">L{agent.trustLevel}</span>
+                    <span className="mono text-xs text-[var(--color-text-3)]">{agent.skillCount} skills</span>
+                    <span className="mono text-xs text-[var(--color-text-3)]">{agent.framework ?? '—'}</span>
+                    {agent.modelName && <span className="mono text-xs text-[var(--color-text-3)]">{agent.modelName}</span>}
+                    <span className="mono ml-auto text-xs text-[var(--color-text-3)]">
+                      {agent.lastHeartbeat ? formatRelativeTime(agent.lastHeartbeat) : 'no signal'}
+                    </span>
+                  </div>
+                  {/* Secondary row */}
+                  <div className="mt-1.5 pl-[18px]">
+                    <p className="text-sm text-[var(--color-text-2)] line-clamp-1">
+                      {agent.description ?? 'No description published.'}
+                    </p>
+                    {agent.topSkills.length > 0 && (
+                      <p className="mono mt-1 text-xs text-[var(--color-text-3)]">
+                        {agent.topSkills.map(s => s.category).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         )}
-      </section>
+      </div>
     </div>
   );
 }
