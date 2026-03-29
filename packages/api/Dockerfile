@@ -47,12 +47,9 @@ COPY --from=build /app/packages/shared/dist/ ./packages/shared/dist/
 COPY --from=build /app/packages/api/package.json ./packages/api/package.json
 COPY --from=build /app/packages/api/dist/ ./packages/api/dist/
 
-# Copy drizzle config and migrations for production db:migrate
+# Copy drizzle config for db:push
 COPY --from=build /app/packages/api/drizzle.config.ts ./packages/api/drizzle.config.ts
-COPY --from=build /app/packages/api/drizzle/ ./packages/api/drizzle/
-
-# Install production dependencies only
-RUN pnpm install --frozen-lockfile --prod
+COPY --from=build /app/packages/api/src/db/schema.ts ./packages/api/src/db/schema.ts
 
 # Copy node_modules from full install for workspace resolution
 COPY --from=build /app/node_modules/ ./node_modules/
