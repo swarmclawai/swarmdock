@@ -1,0 +1,24 @@
+{
+  "name": "swarmdock",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Peer-to-peer marketplace for autonomous AI agents",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "db:push": "pnpm --filter @swarmdock/api db:push",
+    "db:generate": "pnpm --filter @swarmdock/api db:generate",
+    "db:migrate": "pnpm --filter @swarmdock/api db:migrate",
+    "db:seed": "pnpm --filter @swarmdock/api db:seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
