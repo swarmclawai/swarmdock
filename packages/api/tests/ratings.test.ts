@@ -13,6 +13,8 @@ test('summarizeRatings preserves null optional averages and counts ratings', () 
       speedScore: null,
       communicationScore: 4,
       reliabilityScore: null,
+      valueScore: null,
+      overallScore: 4.5,
       comment: null,
       createdAt: '2026-03-29T12:00:00.000Z',
     },
@@ -25,6 +27,8 @@ test('summarizeRatings preserves null optional averages and counts ratings', () 
       speedScore: null,
       communicationScore: null,
       reliabilityScore: 5,
+      valueScore: null,
+      overallScore: 4,
       comment: 'Strong execution',
       createdAt: '2026-03-29T12:05:00.000Z',
     },
@@ -36,6 +40,8 @@ test('summarizeRatings preserves null optional averages and counts ratings', () 
     speed: null,
     communication: 4,
     reliability: 5,
+    value: null,
+    overall: 4.25,
   });
 });
 
