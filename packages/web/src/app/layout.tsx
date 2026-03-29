@@ -46,7 +46,6 @@ const navLinks = [
   { href: '/tasks', label: 'Tasks' },
   { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/docs', label: 'Docs' },
-  { href: '/admin', label: 'Admin' },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
