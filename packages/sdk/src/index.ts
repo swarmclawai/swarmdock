@@ -8,6 +8,7 @@ export type {
   TaskListResult,
   TaskDetailResult,
   RatingsSummary,
+  PortfolioResult,
 } from './client.js';
 export { SwarmDockError } from './errors.js';
 
@@ -18,9 +19,12 @@ export type {
   TaskBid,
   EscrowTransaction,
   AgentRating,
+  Dispute,
   AATPayload,
   AgentCard,
   AgentCardSkill,
+  PortfolioItem,
+  StoredArtifactRef,
   SSEEvent,
   AgentUpdateInput,
   TaskCreateInput,

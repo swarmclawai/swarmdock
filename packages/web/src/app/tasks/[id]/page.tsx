@@ -6,6 +6,11 @@ import { formatDateTime, formatStatusLabel, formatUsdc, truncateId } from '@/lib
 type Artifact = {
   type?: string;
   content?: unknown;
+  storage?: {
+    url?: string;
+    contentType?: string;
+    byteLength?: number;
+  };
 };
 
 function artifactList(value: unknown): Artifact[] {
@@ -28,6 +33,10 @@ export default async function TaskDetailPage({
     { label: 'Task Created', time: task.createdAt },
     ...(task.startedAt ? [{ label: 'Work Started', time: task.startedAt }] : []),
     ...(task.submittedAt ? [{ label: 'Artifacts Submitted', time: task.submittedAt }] : []),
+    ...(task.dispute ? [{
+      label: task.dispute.status === 'resolved' ? 'Dispute Resolved' : 'Dispute Opened',
+      time: task.dispute.resolvedAt ?? task.dispute.createdAt,
+    }] : []),
     ...(task.completedAt ? [{ label: 'Task Completed', time: task.completedAt }] : []),
   ];
 
@@ -199,11 +208,23 @@ export default async function TaskDetailPage({
               <div className="mt-8 space-y-4">
                 {artifacts.map((artifact, index) => (
                   <div key={`${artifact.type ?? 'artifact'}-${index}`} className="rounded-[1.75rem] border border-white/10 bg-white/[0.03] p-5">
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
                       <p className="text-lg text-white">{artifact.type ?? 'artifact'}</p>
-                      <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-white/35">
-                        inline
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-white/35">
+                          inline
+                        </p>
+                        {artifact.storage?.url ? (
+                          <a
+                            href={artifact.storage.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="telemetry rounded-full border border-white/10 px-2.5 py-1 text-[11px] uppercase tracking-[0.2em] text-[var(--color-mint-500)] hover:text-[var(--color-mint-400)]"
+                          >
+                            stored copy
+                          </a>
+                        ) : null}
+                      </div>
                     </div>
                     <pre className="telemetry mt-4 overflow-x-auto whitespace-pre-wrap rounded-[1.25rem] border border-white/8 bg-black/22 p-4 text-xs leading-6 text-[var(--color-sand-200)]">
                       {typeof artifact.content === 'string'
@@ -274,6 +295,27 @@ export default async function TaskDetailPage({
             <p className="mt-3 text-sm leading-7 text-white/56">
               Quality verification remains lightweight in the current stack, so the website should show what exists without overstating certainty.
             </p>
+          </section>
+
+          <section className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-5">
+            <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-white/40">
+              Dispute
+            </p>
+            {task.dispute ? (
+              <>
+                <p className="mt-3 text-2xl text-white">{formatStatusLabel(task.dispute.status)}</p>
+                <p className="mt-3 text-sm leading-7 text-white/60">{task.dispute.reason}</p>
+                <div className="mt-4 space-y-2 text-xs text-white/45">
+                  <p>Raised: {formatDateTime(task.dispute.createdAt)}</p>
+                  {task.dispute.resolution ? <p>Resolution: {formatStatusLabel(task.dispute.resolution)}</p> : null}
+                  {task.dispute.resolutionNotes ? <p>Notes: {task.dispute.resolutionNotes}</p> : null}
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 text-sm leading-7 text-white/56">
+                No dispute has been opened for this task.
+              </p>
+            )}
           </section>
         </div>
       </section>

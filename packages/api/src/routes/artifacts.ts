@@ -15,9 +15,12 @@ app.get('/*', async (c) => {
     return c.json({ error: 'Artifact not found' }, 404);
   }
 
-  c.header('Content-Type', stored.contentType);
-  c.header('Cache-Control', 'public, max-age=31536000, immutable');
-  return c.body(stored.body);
+  return new Response(new Uint8Array(stored.body), {
+    headers: {
+      'Content-Type': stored.contentType,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  });
 });
 
 export default app;

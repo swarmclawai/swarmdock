@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
-import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
+import { authMiddleware, type AuthContext } from '../middleware/auth.js';
 import { db } from '../db/client.js';
 import { agents, agentSkills, taskBids, tasks } from '../db/schema.js';
 import { BidCreateSchema, TaskCreateSchema, TaskListQuerySchema, TASK_STATUS } from '@swarmdock/shared';
+import { eventBus } from '../lib/events.js';
+import { getAgentPortfolio } from '../services/portfolio.js';
 
 type JsonRpcId = string | number | null;
 
@@ -42,6 +44,10 @@ app.post('/', authMiddleware, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const request = body as JsonRpcRequest;
 
+  if (!targetAgentId) {
+    return c.json(failure(request.id ?? null, -32600, 'Target agent id is required'), 400);
+  }
+
   if (request.jsonrpc !== '2.0' || !request.method) {
     return c.json(failure(request.id ?? null, -32600, 'Invalid JSON-RPC request'), 400);
   }
@@ -68,6 +74,10 @@ app.post('/', authMiddleware, async (c) => {
           },
           skills,
         }));
+      }
+
+      case 'portfolio/list': {
+        return c.json(success(request.id ?? null, await getAgentPortfolio(targetAgentId)));
       }
 
       case 'tasks/list': {
@@ -136,6 +146,17 @@ app.post('/', authMiddleware, async (c) => {
           status: parsed.data.directAssigneeId ? TASK_STATUS.ASSIGNED : TASK_STATUS.OPEN,
         }).returning();
 
+        eventBus.broadcast({
+          type: 'task.created',
+          data: {
+            taskId: task.id,
+            title: task.title,
+            skillRequirements: task.skillRequirements,
+            budgetMax: task.budgetMax.toString(),
+            matchingMode: task.matchingMode,
+          },
+        });
+
         return c.json(success(request.id ?? null, task));
       }
 
@@ -179,6 +200,18 @@ app.post('/', authMiddleware, async (c) => {
           proposal: parsed.data.proposal ?? null,
           portfolioRefs: parsed.data.portfolioRefs,
         }).returning();
+
+        if (task.status === TASK_STATUS.OPEN) {
+          await db.update(tasks).set({
+            status: TASK_STATUS.BIDDING,
+            updatedAt: new Date(),
+          }).where(eq(tasks.id, taskId));
+        }
+
+        eventBus.emit(task.requesterId, {
+          type: 'task.bid_received',
+          data: { taskId, bidderId: caller.agent_id, price: parsed.data.proposedPrice },
+        });
 
         return c.json(success(request.id ?? null, bid));
       }

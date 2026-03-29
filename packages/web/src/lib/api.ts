@@ -74,6 +74,25 @@ export type RatingsSummary = {
   count: number;
 };
 
+export type PortfolioItem = {
+  taskId: string;
+  title: string;
+  description: string;
+  completedAt: string;
+  qualityScore: number | null;
+  requester: {
+    id: string;
+    displayName: string;
+  } | null;
+  artifacts: unknown[];
+  files: string[];
+};
+
+export type PortfolioResponse = {
+  items: PortfolioItem[];
+  count: number;
+};
+
 export type AgentListResponse = {
   agents: AgentSummary[];
   limit: number;
@@ -86,6 +105,20 @@ export type TaskParty = {
   displayName: string;
   trustLevel: number;
   status: string;
+};
+
+export type TaskDispute = {
+  id: string;
+  taskId: string;
+  raisedByAgentId: string;
+  againstAgentId: string | null;
+  reason: string;
+  status: string;
+  resolution: string | null;
+  resolutionNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  updatedAt: string;
 };
 
 export type TaskListItem = {
@@ -131,6 +164,7 @@ export type TaskDetail = TaskListItem & {
     bidderDisplayName: string | null;
     bidder: TaskParty | null;
   }>;
+  dispute: TaskDispute | null;
 };
 
 export type TaskListResponse = {
@@ -154,6 +188,7 @@ type TaskDetailInput = TaskListItemInput & {
   requester?: TaskParty | null;
   assignee?: TaskParty | null;
   bids?: TaskDetail['bids'];
+  dispute?: TaskDispute | null;
 };
 
 async function fetchJson<T>(path: string, revalidate: number): Promise<T | null> {
@@ -309,6 +344,21 @@ function normalizeTaskDetail(task: TaskDetailInput): TaskDetail {
           bidder: bid.bidder ?? null,
         }))
       : [],
+    dispute: task.dispute
+      ? {
+          id: String(task.dispute.id ?? ''),
+          taskId: String(task.dispute.taskId ?? summary.id),
+          raisedByAgentId: String(task.dispute.raisedByAgentId ?? ''),
+          againstAgentId: task.dispute.againstAgentId ?? null,
+          reason: String(task.dispute.reason ?? ''),
+          status: String(task.dispute.status ?? 'open'),
+          resolution: task.dispute.resolution ?? null,
+          resolutionNotes: task.dispute.resolutionNotes ?? null,
+          createdAt: String(task.dispute.createdAt ?? new Date(0).toISOString()),
+          resolvedAt: task.dispute.resolvedAt ?? null,
+          updatedAt: String(task.dispute.updatedAt ?? new Date(0).toISOString()),
+        }
+      : null,
   };
 }
 
@@ -356,6 +406,36 @@ export async function fetchAgentRatings(id: string): Promise<RatingsSummary | nu
   }
 
   return fetchJson<RatingsSummary>(`/api/v1/ratings/agents/${id}`, 60);
+}
+
+export async function fetchAgentPortfolio(id: string): Promise<PortfolioResponse | null> {
+  const response = await fetchJson<{
+    items?: Array<Partial<PortfolioItem>>;
+    count?: number;
+  }>(`/api/v1/agents/${id}/portfolio`, 30);
+
+  if (!response || !Array.isArray(response.items)) {
+    return null;
+  }
+
+  return {
+    items: response.items.map((item) => ({
+      taskId: String(item.taskId ?? ''),
+      title: String(item.title ?? 'Untitled Task'),
+      description: String(item.description ?? ''),
+      completedAt: String(item.completedAt ?? new Date(0).toISOString()),
+      qualityScore: typeof item.qualityScore === 'number' ? item.qualityScore : null,
+      requester: item.requester
+        ? {
+            id: String(item.requester.id ?? ''),
+            displayName: String(item.requester.displayName ?? 'Unknown requester'),
+          }
+        : null,
+      artifacts: Array.isArray(item.artifacts) ? item.artifacts : [],
+      files: Array.isArray(item.files) ? item.files.map(String) : [],
+    })),
+    count: typeof response.count === 'number' ? response.count : response.items.length,
+  };
 }
 
 export async function fetchTasks(params: {

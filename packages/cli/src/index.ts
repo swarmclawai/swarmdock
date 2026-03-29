@@ -255,6 +255,8 @@ program
   .option('--wallet-address <address>', 'Override the wallet address used by register')
   .showHelpAfterError();
 
+export { program };
+
 program
   .command('register')
   .description('Register an agent on SwarmDock')
@@ -338,9 +340,10 @@ program
       await context.client.authenticate();
 
       const profile = await context.client.profile.get();
-      const [balance, ratings, createdTasks, assignedTasks] = await Promise.all([
+      const [balance, ratings, portfolio, createdTasks, assignedTasks] = await Promise.all([
         context.client.payments.balance(),
         context.client.profile.ratings(profile.id),
+        context.client.profile.portfolio(profile.id),
         context.client.tasks.list({ requesterId: profile.id, limit: 1 }),
         context.client.tasks.list({ assigneeId: profile.id, limit: 1 }),
       ]);
@@ -361,6 +364,9 @@ program
         },
         balance,
         ratings,
+        portfolio: {
+          items: portfolio.count,
+        },
         tasks: {
           created: createdTasks.total ?? createdTasks.tasks.length,
           assigned: assignedTasks.total ?? assignedTasks.tasks.length,
@@ -378,9 +384,39 @@ program
         `Earned: ${formatUsdc(balance.earned)}`,
         `Spent: ${formatUsdc(balance.spent)}`,
         `Ratings: ${ratings.count}`,
+        `Portfolio Items: ${portfolio.count}`,
         `Created Tasks: ${data.tasks.created}`,
         `Assigned Tasks: ${data.tasks.assigned}`,
       ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+program
+  .command('portfolio')
+  .description('Show portfolio items derived from completed tasks')
+  .argument('[agentId]', 'Agent id to inspect publicly')
+  .action(async (agentId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      const portfolio = await context.client.profile.portfolio(agentId);
+
+      output(command, portfolio, () => {
+        if (portfolio.items.length === 0) {
+          return 'No completed portfolio items with stored artifacts are available yet.';
+        }
+
+        return [
+          `Portfolio items: ${portfolio.count}`,
+          ...portfolio.items.map((item) => [
+            `${item.taskId}`,
+            item.title,
+            item.requester?.displayName ?? 'Unknown requester',
+            formatTimestamp(item.completedAt),
+          ].join(' | ')),
+        ].join('\n');
+      });
     } catch (error) {
       handleError(command, error);
     }
@@ -687,6 +723,25 @@ program
       const context = await getContext(command);
       const task = await context.client.tasks.reject(taskId, options.reason);
       output(command, task, () => `Rejected task ${task.id} (${task.status})`);
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+program
+  .command('dispute')
+  .description('Open a dispute for a task in review')
+  .argument('<taskId>', 'Task id')
+  .requiredOption('--reason <text>', 'Dispute reason')
+  .action(async (taskId, options, command) => {
+    try {
+      const context = await getContext(command);
+      const dispute = await context.client.tasks.dispute(taskId, options.reason);
+      output(command, dispute, () => [
+        `Opened dispute ${dispute.id}`,
+        `Task: ${dispute.taskId}`,
+        `Status: ${dispute.status}`,
+      ].join('\n'));
     } catch (error) {
       handleError(command, error);
     }

@@ -8,6 +8,8 @@ import type {
   EscrowTransaction,
   AgentRating,
   AgentSkill,
+  Dispute,
+  PortfolioItem,
   SSEEvent,
   AgentUpdateInput,
   TaskCreateInput,
@@ -110,6 +112,7 @@ export interface TaskDetailResult extends Task {
     } | null;
   }>;
   bidCount: number;
+  dispute: Dispute | null;
 }
 
 export interface RatingsSummary {
@@ -120,6 +123,11 @@ export interface RatingsSummary {
     communication: number | null;
     reliability: number | null;
   } | null;
+  count: number;
+}
+
+export interface PortfolioResult {
+  items: PortfolioItem[];
   count: number;
 }
 
@@ -390,6 +398,14 @@ class ProfileOperations {
     return this.client.fetch(`/api/v1/agents/${id}/ratings`, { auth: false });
   }
 
+  async portfolio(agentId?: string): Promise<PortfolioResult> {
+    if (!agentId) {
+      await this.client.authenticate();
+    }
+    const id = agentId ?? this.client.getAgentId();
+    return this.client.fetch(`/api/v1/agents/${id}/portfolio`, { auth: false });
+  }
+
   async match(params: { description: string; skills?: string[]; limit?: number }): Promise<{ matches: Agent[] }> {
     return this.client.fetch('/api/v1/agents/match', { method: 'POST', body: params, auth: false });
   }
@@ -465,6 +481,13 @@ class TaskOperations {
     return this.client.fetch(`/api/v1/tasks/${taskId}/reject`, {
       method: 'POST',
       body: reason ? { reason } : undefined,
+    });
+  }
+
+  async dispute(taskId: string, reason: string): Promise<Dispute> {
+    return this.client.fetch(`/api/v1/tasks/${taskId}/dispute`, {
+      method: 'POST',
+      body: { reason },
     });
   }
 }

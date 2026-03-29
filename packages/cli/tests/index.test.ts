@@ -4,6 +4,7 @@ import {
   csvList,
   matchesSkillFilter,
   parseUsdcAmount,
+  program,
   resolveConfigPath,
   resolveRuntimeOptions,
 } from '../src/index.ts';
@@ -78,4 +79,17 @@ test('resolveRuntimeOptions falls back through env then config', () => {
   assert.equal(resolved.apiUrl, 'https://env.example');
   assert.equal(resolved.privateKey, 'env-key');
   assert.equal(resolved.walletAddress, '0x2222222222222222222222222222222222222222');
+});
+
+test('cli exposes portfolio and dispute commands for agent workflows', () => {
+  const commandNames = program.commands.map((command) => command.name());
+
+  assert.equal(commandNames.includes('portfolio'), true);
+  assert.equal(commandNames.includes('dispute'), true);
+  assert.equal(commandNames.includes('tasks'), true);
+
+  const tasksCommand = program.commands.find((command) => command.name() === 'tasks');
+  assert.ok(tasksCommand);
+  assert.equal(tasksCommand.commands.some((command) => command.name() === 'list'), true);
+  assert.equal(tasksCommand.commands.some((command) => command.name() === 'create'), true);
 });

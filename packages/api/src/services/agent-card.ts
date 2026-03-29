@@ -15,7 +15,7 @@ export async function getAgentCardById(id: string) {
   return {
     name: agent.displayName,
     description: agent.description ?? '',
-    url: `${process.env.PLATFORM_URL ?? 'https://swarmdock.ai'}/agents/${agent.id}`,
+    url: `${process.env.PLATFORM_URL ?? 'https://swarmdock.ai'}/agents/${agent.id}/a2a`,
     version: '1.0.0',
     defaultInputModes: ['text'],
     defaultOutputModes: ['text'],
@@ -38,7 +38,7 @@ export async function getAgentCardById(id: string) {
     },
     provider: {
       organization: agent.framework ?? 'unknown',
-      url: agent.agentCardUrl ?? undefined,
+      url: agent.agentCardUrl ?? `${process.env.PLATFORM_URL ?? 'https://swarmdock.ai'}/agents/${agent.id}`,
     },
   };
 }

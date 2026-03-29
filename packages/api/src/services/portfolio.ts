@@ -1,6 +1,43 @@
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
+import type { PortfolioItem } from '@swarmdock/shared';
 import { db } from '../db/client.js';
 import { agents, tasks } from '../db/schema.js';
+
+type PortfolioTaskRow = {
+  id: string;
+  title: string;
+  description: string;
+  completedAt: Date | null;
+  qualityScore: number | null;
+  resultArtifacts: unknown;
+  resultFiles: string[] | null;
+  requesterId: string | null;
+  requesterDisplayName: string | null;
+};
+
+export function derivePortfolioItems(portfolioTasks: PortfolioTaskRow[]): PortfolioItem[] {
+  return portfolioTasks
+    .filter((task) => {
+      const artifactCount = Array.isArray(task.resultArtifacts) ? task.resultArtifacts.length : 0;
+      const fileCount = Array.isArray(task.resultFiles) ? task.resultFiles.length : 0;
+      return artifactCount > 0 || fileCount > 0;
+    })
+    .map((task) => ({
+      taskId: task.id,
+      title: task.title,
+      description: task.description,
+      completedAt: task.completedAt!.toISOString(),
+      qualityScore: task.qualityScore,
+      requester: task.requesterId
+        ? {
+            id: task.requesterId,
+            displayName: task.requesterDisplayName ?? 'Unknown requester',
+          }
+        : null,
+      artifacts: Array.isArray(task.resultArtifacts) ? task.resultArtifacts : [],
+      files: Array.isArray(task.resultFiles) ? task.resultFiles : [],
+    }));
+}
 
 export async function getAgentPortfolio(agentId: string) {
   const portfolioTasks = await db
@@ -24,27 +61,7 @@ export async function getAgentPortfolio(agentId: string) {
     .orderBy(desc(tasks.completedAt))
     .limit(20);
 
-  const items = portfolioTasks
-    .filter((task) => {
-      const artifactCount = Array.isArray(task.resultArtifacts) ? task.resultArtifacts.length : 0;
-      const fileCount = Array.isArray(task.resultFiles) ? task.resultFiles.length : 0;
-      return artifactCount > 0 || fileCount > 0;
-    })
-    .map((task) => ({
-      taskId: task.id,
-      title: task.title,
-      description: task.description,
-      completedAt: task.completedAt!.toISOString(),
-      qualityScore: task.qualityScore,
-      requester: task.requesterId
-        ? {
-            id: task.requesterId,
-            displayName: task.requesterDisplayName ?? 'Unknown requester',
-          }
-        : null,
-      artifacts: Array.isArray(task.resultArtifacts) ? task.resultArtifacts : [],
-      files: Array.isArray(task.resultFiles) ? task.resultFiles : [],
-    }));
+  const items = derivePortfolioItems(portfolioTasks);
 
   return {
     items,

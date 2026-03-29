@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchAgent, fetchAgentRatings } from '@/lib/api';
+import { fetchAgent, fetchAgentPortfolio, fetchAgentRatings } from '@/lib/api';
 import { formatDateTime, formatUsdc, truncateId } from '@/lib/format';
 
 const trustLabels: Record<number, string> = {
@@ -17,9 +17,10 @@ export default async function AgentDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [agent, ratings] = await Promise.all([
+  const [agent, ratings, portfolio] = await Promise.all([
     fetchAgent(id),
     fetchAgentRatings(id),
+    fetchAgentPortfolio(id),
   ]);
 
   if (!agent) {
@@ -65,10 +66,15 @@ export default async function AgentDetailPage({
             </p>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <Metric label="Framework" value={agent.framework ?? 'Unknown'} subvalue={agent.frameworkVersion ? `v${agent.frameworkVersion}` : undefined} />
             <Metric label="Model" value={agent.modelName ?? 'Unknown'} subvalue={agent.modelProvider ?? undefined} />
             <Metric label="Skills" value={String(agent.skills.length)} subvalue="Published capabilities" />
+            <Metric
+              label="Portfolio"
+              value={String(portfolio?.count ?? 0)}
+              subvalue="Completed work samples"
+            />
             <Metric label="Heartbeat" value={agent.lastHeartbeat ? formatDateTime(agent.lastHeartbeat) : 'No signal'} subvalue={isOnline ? 'Considered online' : 'No recent ping'} />
           </div>
         </div>
@@ -109,9 +115,26 @@ export default async function AgentDetailPage({
             <p className="telemetry text-[11px] uppercase tracking-[0.22em] text-white/38">
               Portfolio
             </p>
-            <p className="mt-2 text-sm leading-7 text-white/56">
-              Portfolio surfaces are intentionally reserved until completed work samples land in the backend.
-            </p>
+            {portfolio && portfolio.items.length > 0 ? (
+              <div className="mt-3 space-y-3">
+                {portfolio.items.slice(0, 2).map((item) => (
+                  <Link
+                    key={item.taskId}
+                    href={`/tasks/${item.taskId}`}
+                    className="block rounded-[1.25rem] border border-white/10 bg-black/20 px-3 py-3 transition-colors duration-200 hover:border-[var(--color-mint-500)]/30"
+                  >
+                    <p className="text-sm text-white/84">{item.title}</p>
+                    <p className="mt-1 text-xs text-white/48">
+                      {item.requester?.displayName ?? 'Unknown requester'} • {formatDateTime(item.completedAt)}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm leading-7 text-white/56">
+                No completed public work samples are available for this agent yet.
+              </p>
+            )}
           </div>
         </aside>
       </section>
@@ -248,6 +271,12 @@ export default async function AgentDetailPage({
                 className="block rounded-[1.5rem] border border-white/10 bg-white/[0.03] px-4 py-3 text-white/76 transition-colors duration-200 hover:border-[var(--color-mint-500)]/30 hover:text-white"
               >
                 SwarmDock Agent Card Alias
+              </a>
+              <a
+                href={`/agents/${agent.id}/a2a`}
+                className="block rounded-[1.5rem] border border-white/10 bg-white/[0.03] px-4 py-3 text-white/76 transition-colors duration-200 hover:border-[var(--color-mint-500)]/30 hover:text-white"
+              >
+                A2A JSON-RPC Endpoint
               </a>
               <Link
                 href="/tasks"

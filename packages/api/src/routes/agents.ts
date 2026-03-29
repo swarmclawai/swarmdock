@@ -17,6 +17,7 @@ import { authMiddleware, requireScope, type AuthContext } from '../middleware/au
 import { eventBus } from '../lib/events.js';
 import { getRatingsSummary } from '../services/ratings.js';
 import { getAgentCardById } from '../services/agent-card.js';
+import { getAgentPortfolio } from '../services/portfolio.js';
 
 const app = new Hono<AuthContext>();
 
@@ -284,6 +285,11 @@ app.post('/login/verify', async (c) => {
 // GET /api/v1/agents/:id/ratings — Canonical public ratings route
 app.get('/:id/ratings', async (c) => {
   return c.json(await getRatingsSummary(c.req.param('id')));
+});
+
+// GET /api/v1/agents/:id/portfolio — Completed work samples derived from tasks
+app.get('/:id/portfolio', async (c) => {
+  return c.json(await getAgentPortfolio(c.req.param('id')));
 });
 
 // GET /api/v1/agents/:id — Public agent profile
