@@ -12,6 +12,7 @@ import { eventBus } from '../lib/events.js';
 import { releaseEscrow, refundEscrow } from '../services/escrow.js';
 import { embed } from '../services/embeddings.js';
 import { persistTaskSubmission } from '../services/storage.js';
+import { fetchOrderedRowsByIds, searchTasksIndex } from '../services/search.js';
 
 const app = new Hono<AuthContext>();
 
@@ -23,6 +24,53 @@ app.get('/', async (c) => {
   }
 
   const { q, status, skills, budgetMin, budgetMax, requesterId, assigneeId, limit, offset } = query.data;
+
+  if (!budgetMin && !budgetMax) {
+    const indexed = await searchTasksIndex({
+      q,
+      status,
+      skills,
+      requesterId,
+      assigneeId,
+      limit,
+      offset,
+    });
+
+    if (indexed) {
+      if (indexed.ids.length === 0) {
+        return c.json({ tasks: [], limit, offset, total: indexed.total, facets: indexed.facets });
+      }
+
+      const result = await fetchOrderedRowsByIds(indexed.ids, () =>
+        db
+          .select()
+          .from(tasks)
+          .where(inArray(tasks.id, indexed.ids)),
+      );
+
+      const bidCountRows = await db.execute(sql`
+        SELECT ${taskBids.taskId} AS task_id, COUNT(*)::int AS bid_count
+        FROM ${taskBids}
+        WHERE ${taskBids.taskId} = ANY(${indexed.ids})
+        GROUP BY ${taskBids.taskId}
+      `);
+
+      const bidCountEntries = (bidCountRows.rows as Array<{ task_id: string; bid_count: number | string }>)
+        .map((row) => [row.task_id, Number(row.bid_count)] as const);
+      const bidCounts = new Map<string, number>(bidCountEntries);
+
+      return c.json({
+        tasks: result.map((task) => ({
+          ...task,
+          bidCount: bidCounts.get(task.id) ?? 0,
+        })),
+        limit,
+        offset,
+        total: indexed.total,
+        facets: indexed.facets,
+      });
+    }
+  }
 
   const conditions = [];
   if (status) conditions.push(eq(tasks.status, status));
@@ -66,7 +114,7 @@ app.get('/', async (c) => {
     ? await db.execute(sql`
       SELECT ${taskBids.taskId} AS task_id, COUNT(*)::int AS bid_count
       FROM ${taskBids}
-      WHERE ${taskBids.taskId} = ANY(${taskIds})
+      WHERE ${taskBids.taskId} IN (${sql.join(taskIds.map(id => sql`${id}`), sql`, `)})
       GROUP BY ${taskBids.taskId}
     `)
     : { rows: [] as Array<{ task_id: string; bid_count: number | string }> };
@@ -209,6 +257,11 @@ app.patch('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
     .where(eq(tasks.id, id))
     .returning();
 
+  eventBus.broadcast({
+    type: 'task.updated',
+    data: { taskId: id, status: updated.status },
+  });
+
   return c.json(updated);
 });
 
@@ -225,6 +278,11 @@ app.delete('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
   }
 
   await db.update(tasks).set({ status: TASK_STATUS.CANCELLED, updatedAt: new Date() }).where(eq(tasks.id, id));
+
+  eventBus.broadcast({
+    type: 'task.updated',
+    data: { taskId: id, status: TASK_STATUS.CANCELLED },
+  });
 
   // Refund escrow if any
   await refundEscrow(id);
@@ -251,6 +309,10 @@ app.post('/:id/start', authMiddleware, async (c) => {
   eventBus.emit(task.requesterId, {
     type: 'task.started',
     data: { taskId: id, agentId: agent.agent_id },
+  });
+  eventBus.broadcast({
+    type: 'task.updated',
+    data: { taskId: id, status: TASK_STATUS.IN_PROGRESS, assigneeId: agent.agent_id },
   });
 
   return c.json(updated);
@@ -282,6 +344,10 @@ app.post('/:id/submit', authMiddleware, async (c) => {
   eventBus.emit(task.requesterId, {
     type: 'task.submitted',
     data: { taskId: id, agentId: agent.agent_id, artifacts: parsed.data.artifacts },
+  });
+  eventBus.broadcast({
+    type: 'task.updated',
+    data: { taskId: id, status: TASK_STATUS.REVIEW, assigneeId: agent.agent_id },
   });
 
   return c.json(updated);
@@ -318,6 +384,10 @@ app.post('/:id/approve', authMiddleware, async (c) => {
       data: { taskId: id, releaseTxHash, fee: fee.toString() },
     });
   }
+  eventBus.broadcast({
+    type: 'task.updated',
+    data: { taskId: id, status: TASK_STATUS.COMPLETED, assigneeId: task.assigneeId },
+  });
 
   return c.json({ ...updated, releaseTxHash });
 });
@@ -349,6 +419,10 @@ app.post('/:id/reject', authMiddleware, async (c) => {
       data: { taskId: id, reason },
     });
   }
+  eventBus.broadcast({
+    type: 'task.updated',
+    data: { taskId: id, status: TASK_STATUS.IN_PROGRESS, assigneeId: task.assigneeId },
+  });
 
   return c.json(updated);
 });
@@ -418,6 +492,10 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
       data: { taskId: id, disputeId: dispute.id, reason: parsed.data.reason },
     });
   }
+  eventBus.broadcast({
+    type: 'task.updated',
+    data: { taskId: id, status: TASK_STATUS.DISPUTED, assigneeId: task.assigneeId, requesterId: task.requesterId },
+  });
 
   return c.json(dispute, 201);
 });
