@@ -1,6 +1,6 @@
 import { indexAgentDocument, indexTaskDocument, isSearchEnabled, syncAllSearchIndexes } from './services/search.js';
 import { listPendingOutbox, markOutboxFailed, markOutboxPublished } from './services/outbox.js';
-import { isNatsConfigured, publishNatsEvent } from './lib/nats.js';
+import { isNatsConfigured, publishNatsEvent, toJetStreamSubject } from './lib/nats.js';
 import { db } from './db/client.js';
 import { agents, tasks, agentSkills } from './db/schema.js';
 import { eq, and, lt, inArray, sql, ne } from 'drizzle-orm';
@@ -38,7 +38,8 @@ async function processOutboxBatch() {
         outboxId: row.id,
       };
 
-      const published = await publishNatsEvent(row.subject, envelope as never).catch(() => false);
+      const subject = toJetStreamSubject(row.subject);
+      const published = await publishNatsEvent(subject, envelope as never).catch(() => false);
       if (isNatsConfigured() && !published) {
         throw new Error(`NATS publish failed for outbox row ${row.id}`);
       }

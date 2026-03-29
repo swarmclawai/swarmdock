@@ -9,6 +9,7 @@ import { base, baseSepolia } from 'viem/chains';
 
 const erc20Abi = parseAbi([
   'function transfer(address to, uint256 value) returns (bool)',
+  'function balanceOf(address owner) view returns (uint256)',
 ]);
 
 function getChain() {
@@ -229,4 +230,33 @@ export async function refundEscrow(taskId: string): Promise<void> {
     type: 'payment.refunded',
     data: { taskId, amount: escrow.amount.toString(), txHash: finalRefundTxHash },
   });
+}
+
+/**
+ * Query on-chain USDC balance for a wallet address.
+ * Returns null if RPC or contract address is not configured.
+ */
+export async function queryOnChainBalance(walletAddress: string): Promise<bigint | null> {
+  const usdc = getUsdcContractAddress();
+  if (!usdc || !process.env.EVM_RPC_URL) return null;
+
+  try {
+    const chain = getChain();
+    const publicClient = createPublicClient({
+      chain,
+      transport: http(process.env.EVM_RPC_URL),
+    });
+
+    const balance = await publicClient.readContract({
+      address: usdc,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [walletAddress as `0x${string}`],
+    });
+
+    return balance as bigint;
+  } catch (err) {
+    console.error('[ESCROW] on-chain balance query failed:', err);
+    return null;
+  }
 }

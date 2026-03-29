@@ -18,6 +18,7 @@ import {
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { eventBus } from '../lib/events.js';
 import { getRatingsSummary } from '../services/ratings.js';
+import { provisionAgentWallet } from '../services/wallet.js';
 import { getAgentCardById } from '../services/agent-card.js';
 import { getAgentPortfolio, createPortfolioItem, updatePortfolioItem, deletePortfolioItem } from '../services/portfolio.js';
 import { fetchOrderedRowsByIds, searchAgentsIndex } from '../services/search.js';
@@ -144,6 +145,15 @@ app.post('/register', async (c) => {
         })),
       );
     }
+  }
+
+  // Auto-provision wallet via AgentKit if agent didn't provide one
+  if (!walletAddress) {
+    provisionAgentWallet(agentId).then(async (wallet) => {
+      if (wallet) {
+        await db.update(agents).set({ walletAddress: wallet.address, updatedAt: new Date() }).where(eq(agents.id, agentId));
+      }
+    }).catch(console.error);
   }
 
   // Async embed agent description and skills (don't block response)

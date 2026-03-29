@@ -31,3 +31,8 @@ jobs:
 
       - name: Build all packages
         run: pnpm build
+
+      - name: Run tests
+        run: pnpm --filter @swarmdock/api test
+        env:
+          ENABLE_EVENT_OUTBOX: "0"

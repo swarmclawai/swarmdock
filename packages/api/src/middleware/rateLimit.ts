@@ -1,6 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
 import type { Context } from 'hono';
+import { redisIncr, redisExpire, redisGet, getRedisClient } from '../lib/redis.js';
 
 interface RateLimitEntry {
   count: number;
@@ -16,42 +17,74 @@ interface RateLimitOptions {
 const CLEANUP_INTERVAL_MS = 60_000;
 
 /**
- * Simple in-memory rate limiter middleware for Hono.
+ * Rate limiter middleware for Hono.
  *
- * Uses a Map to track request counts per key within a sliding window.
+ * Uses Redis when available (multi-instance safe), falls back to in-memory Map.
  * Returns 429 Too Many Requests with a Retry-After header when the limit is exceeded.
- * Periodically cleans up expired entries every 60 seconds.
  */
 export function rateLimit(options: RateLimitOptions) {
   const { windowMs, maxRequests, keyFn } = options;
-  const store = new Map<string, RateLimitEntry>();
+  const windowSeconds = Math.ceil(windowMs / 1000);
+
+  // In-memory fallback store
+  const memStore = new Map<string, RateLimitEntry>();
   let lastCleanup = Date.now();
 
-  function cleanup() {
+  function cleanupMem() {
     const now = Date.now();
     if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
     lastCleanup = now;
-
-    for (const [key, entry] of store.entries()) {
-      if (entry.resetAt <= now) {
-        store.delete(key);
-      }
+    for (const [key, entry] of memStore.entries()) {
+      if (entry.resetAt <= now) memStore.delete(key);
     }
   }
 
   return createMiddleware(async (c, next) => {
-    cleanup();
-
     const key = keyFn
       ? keyFn(c)
       : c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
 
+    const redisKey = `rl:${windowSeconds}:${key}`;
+    const redis = await getRedisClient();
+
+    if (redis) {
+      // Redis-backed rate limiting
+      const count = await redisIncr(redisKey);
+      if (count === null) {
+        // Redis error — allow through
+        await next();
+        return;
+      }
+      if (count === 1) {
+        await redisExpire(redisKey, windowSeconds);
+      }
+      if (count > maxRequests) {
+        const ttlStr = await redisGet(`${redisKey}:ttl`).catch(() => null);
+        const retryAfter = ttlStr ? parseInt(ttlStr, 10) : windowSeconds;
+        throw new HTTPException(429, {
+          message: 'Too many requests, please try again later',
+          res: new Response('Too many requests, please try again later', {
+            status: 429,
+            headers: {
+              'Retry-After': String(retryAfter),
+              'X-RateLimit-Limit': String(maxRequests),
+              'X-RateLimit-Remaining': '0',
+              'X-RateLimit-Reset': String(Math.ceil(Date.now() / 1000) + windowSeconds),
+            },
+          }),
+        });
+      }
+      await next();
+      return;
+    }
+
+    // In-memory fallback
+    cleanupMem();
     const now = Date.now();
-    const entry = store.get(key);
+    const entry = memStore.get(key);
 
     if (!entry || entry.resetAt <= now) {
-      // New window
-      store.set(key, { count: 1, resetAt: now + windowMs });
+      memStore.set(key, { count: 1, resetAt: now + windowMs });
       await next();
       return;
     }

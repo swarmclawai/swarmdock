@@ -172,6 +172,9 @@ function runSchemaChecks(
  *
  * Runs basic checks (non-empty, valid types) and optional schema validation.
  * Returns a QualityReport with overall score, individual checks, and pass/fail.
+ *
+ * TODO: Add LLM judge integration (v0.5+) — separate model assesses output
+ * quality against task requirements. Configure via LLM_JUDGE_API_KEY env var.
  */
 export function verifyTaskOutput(
   task: TaskInput,

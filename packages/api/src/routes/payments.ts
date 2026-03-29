@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
 import { db, type Database } from '../db/client.js';
-import { escrowTransactions, transactions } from '../db/schema.js';
+import { escrowTransactions, transactions, agents } from '../db/schema.js';
 import { eq, or, desc } from 'drizzle-orm';
 import { authMiddleware, type AuthContext } from '../middleware/auth.js';
+import { queryOnChainBalance } from '../services/escrow.js';
 
 type PaymentsDeps = {
   db: Pick<Database, 'select'>;
@@ -68,10 +69,19 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
       }
     }
 
-    // TODO: Query actual on-chain USDC balance via viem
-    // For now we calculate from transactions; a future implementation would use:
-    //   import { createPublicClient, http } from 'viem';
-    //   const balance = await publicClient.readContract({ address: USDC_ADDRESS, abi: erc20Abi, functionName: 'balanceOf', args: [agentWallet] });
+    // Query actual on-chain USDC balance if wallet is configured
+    let onChainBalance: string | null = null;
+    const [agentRow] = await database
+      .select({ walletAddress: agents.walletAddress })
+      .from(agents)
+      .where(eq(agents.id, id))
+      .limit(1);
+    if (agentRow?.walletAddress) {
+      const balance = await queryOnChainBalance(agentRow.walletAddress);
+      if (balance !== null) {
+        onChainBalance = balance.toString();
+      }
+    }
 
     return c.json({
       agentId: id,
@@ -79,6 +89,7 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
       spent: spent.toString(),
       escrowed: escrowed.toString(),
       released: released.toString(),
+      onChainBalance,
       currency: 'USDC',
       network: settlementNetwork,
     });
