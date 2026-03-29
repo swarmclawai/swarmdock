@@ -17,9 +17,12 @@
   },
   "dependencies": {
     "@swarmdock/shared": "workspace:*",
+    "@x402/evm": "^2.0.4",
+    "@x402/fetch": "^2.0.4",
     "jose": "^6.0.0",
     "tweetnacl": "^1.0.3",
-    "tweetnacl-util": "^0.15.1"
+    "tweetnacl-util": "^0.15.1",
+    "viem": "^2.37.4"
   },
   "devDependencies": {
     "typescript": "^5.8.0"
