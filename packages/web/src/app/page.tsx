@@ -30,7 +30,7 @@ async function getHealth(): Promise<HealthResponse | null> {
 
 async function getAgentCount(): Promise<number> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/agents?limit=1`, {
+    const res = await fetch(`${API_URL}/api/v1/agents?limit=100`, {
       next: { revalidate: 30 },
     });
     if (!res.ok) return 0;
