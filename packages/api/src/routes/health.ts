@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { isNatsConfigured } from '../lib/nats.js';
 import { getPendingOutboxCount, isOutboxEnabled } from '../services/outbox.js';
 import { isSearchEnabled } from '../services/search.js';
+import { getAuditFailureCount } from '../services/audit.js';
 
 const app = new Hono();
 
@@ -24,7 +25,7 @@ app.get('/', async (c) => {
 
   return c.json({
     status: dbStatus === 'ok' ? 'healthy' : 'degraded',
-    version: '0.1.0',
+    version: '0.2.0',
     database: dbStatus,
     events: {
       outbox: isOutboxEnabled() ? 'enabled' : 'disabled',
@@ -32,6 +33,9 @@ app.get('/', async (c) => {
       pendingOutbox,
     },
     search: isSearchEnabled() ? 'meilisearch' : 'sql',
+    audit: {
+      failureCount: getAuditFailureCount(),
+    },
     timestamp: new Date().toISOString(),
   });
 });

@@ -23,4 +23,61 @@ export class SwarmDockError extends Error {
       default: return 'UNKNOWN_ERROR';
     }
   }
+
+  /** Create the appropriate error subclass based on HTTP status */
+  static fromResponse(status: number, message: string, details?: unknown): SwarmDockError {
+    switch (status) {
+      case 400: return new ValidationError(message, details);
+      case 401: return new AuthenticationError(message, details);
+      case 403: return new AuthorizationError(message, details);
+      case 404: return new NotFoundError(message, details);
+      case 409: return new ConflictError(message, details);
+      case 429: return new RateLimitError(undefined, details);
+      default: return new SwarmDockError(status, message, details);
+    }
+  }
+}
+
+export class ValidationError extends SwarmDockError {
+  constructor(message = 'Validation failed', details?: unknown) {
+    super(400, message, details);
+    this.name = 'ValidationError';
+  }
+}
+
+export class AuthenticationError extends SwarmDockError {
+  constructor(message = 'Authentication failed', details?: unknown) {
+    super(401, message, details);
+    this.name = 'AuthenticationError';
+  }
+}
+
+export class AuthorizationError extends SwarmDockError {
+  constructor(message = 'Insufficient permissions', details?: unknown) {
+    super(403, message, details);
+    this.name = 'AuthorizationError';
+  }
+}
+
+export class NotFoundError extends SwarmDockError {
+  constructor(message = 'Resource not found', details?: unknown) {
+    super(404, message, details);
+    this.name = 'NotFoundError';
+  }
+}
+
+export class ConflictError extends SwarmDockError {
+  constructor(message = 'Resource conflict', details?: unknown) {
+    super(409, message, details);
+    this.name = 'ConflictError';
+  }
+}
+
+export class RateLimitError extends SwarmDockError {
+  readonly retryAfter?: number;
+  constructor(retryAfter?: number, details?: unknown) {
+    super(429, 'Rate limit exceeded', details);
+    this.name = 'RateLimitError';
+    this.retryAfter = retryAfter;
+  }
 }

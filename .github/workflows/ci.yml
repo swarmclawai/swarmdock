@@ -29,10 +29,13 @@ jobs:
       - name: Type-check all packages
         run: pnpm type-check
 
+      - name: Lint all packages
+        run: pnpm lint
+
       - name: Build all packages
         run: pnpm build
 
       - name: Run tests
-        run: pnpm --filter @swarmdock/api test
+        run: pnpm --filter @swarmdock/shared test && pnpm --filter @swarmdock/api test
         env:
           ENABLE_EVENT_OUTBOX: "0"

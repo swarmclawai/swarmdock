@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { db } from '../db/client.js';
 import { tasks, taskBids, agents, disputes } from '../db/schema.js';
 import { eq, and, inArray, sql, count, gte, lte, ilike, or, desc } from 'drizzle-orm';
@@ -11,7 +12,7 @@ import {
 import { eventBus } from '../lib/events.js';
 import { releaseEscrow, refundEscrow } from '../services/escrow.js';
 import { verifyTaskOutput } from '../services/quality.js';
-import { appendAuditLog } from '../services/audit.js';
+import { safeAppendAuditLog } from '../services/audit.js';
 import { embed } from '../services/embeddings.js';
 import { persistTaskSubmission } from '../services/storage.js';
 import { fetchOrderedRowsByIds, searchTasksIndex } from '../services/search.js';
@@ -91,11 +92,12 @@ app.get('/', async (c) => {
       .map((skill) => skill.trim().toLowerCase())
       .filter(Boolean);
     if (skillList.length > 0) {
+      const parameterizedSkills = sql`ARRAY[${sql.join(skillList.map(s => sql`${s}`), sql`, `)}]::text[]`;
       conditions.push(sql`
         EXISTS (
           SELECT 1
           FROM unnest(${tasks.skillRequirements}) AS skill
-          WHERE LOWER(skill) = ANY(${skillList})
+          WHERE LOWER(skill) = ANY(${parameterizedSkills})
         )
       `);
     }
@@ -238,27 +240,32 @@ app.patch('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!task) return c.json({ error: 'Task not found' }, 404);
-  if (task.requesterId !== agent.agent_id) return c.json({ error: 'Not task owner' }, 403);
-  if (![TASK_STATUS.OPEN, TASK_STATUS.BIDDING].includes(task.status as 'open' | 'bidding')) {
-    return c.json({ error: 'Cannot update task in current status' }, 400);
-  }
-
   const body = await c.req.json();
   const parsed = TaskUpdateSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
 
-  const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
-  if (parsed.data.deadline) {
-    updateData.deadline = new Date(parsed.data.deadline);
-  }
+  const updated = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
+    const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    if (!task) throw new HTTPException(404, { message: 'Task not found' });
+    if (task.requesterId !== agent.agent_id) throw new HTTPException(403, { message: 'Not task owner' });
+    if (![TASK_STATUS.OPEN, TASK_STATUS.BIDDING].includes(task.status as 'open' | 'bidding')) {
+      throw new HTTPException(400, { message: 'Cannot update task in current status' });
+    }
 
-  const [updated] = await db
-    .update(tasks)
-    .set(updateData)
-    .where(eq(tasks.id, id))
-    .returning();
+    const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+    if (parsed.data.deadline) {
+      updateData.deadline = new Date(parsed.data.deadline);
+    }
+
+    const [result] = await tx
+      .update(tasks)
+      .set(updateData)
+      .where(eq(tasks.id, id))
+      .returning();
+
+    return result;
+  });
 
   eventBus.broadcast({
     type: 'task.updated',
@@ -273,14 +280,17 @@ app.delete('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!task) return c.json({ error: 'Task not found' }, 404);
-  if (task.requesterId !== agent.agent_id) return c.json({ error: 'Not task owner' }, 403);
-  if (![TASK_STATUS.OPEN, TASK_STATUS.BIDDING].includes(task.status as 'open' | 'bidding')) {
-    return c.json({ error: 'Cannot cancel task in current status' }, 400);
-  }
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
+    const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    if (!task) throw new HTTPException(404, { message: 'Task not found' });
+    if (task.requesterId !== agent.agent_id) throw new HTTPException(403, { message: 'Not task owner' });
+    if (![TASK_STATUS.OPEN, TASK_STATUS.BIDDING].includes(task.status as 'open' | 'bidding')) {
+      throw new HTTPException(400, { message: 'Cannot cancel task in current status' });
+    }
 
-  await db.update(tasks).set({ status: TASK_STATUS.CANCELLED, updatedAt: new Date() }).where(eq(tasks.id, id));
+    await tx.update(tasks).set({ status: TASK_STATUS.CANCELLED, updatedAt: new Date() }).where(eq(tasks.id, id));
+  });
 
   eventBus.broadcast({
     type: 'task.updated',
@@ -298,18 +308,23 @@ app.post('/:id/start', authMiddleware, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!task) return c.json({ error: 'Task not found' }, 404);
-  if (task.assigneeId !== agent.agent_id) return c.json({ error: 'Not assigned to this task' }, 403);
-  if (task.status !== TASK_STATUS.ASSIGNED) return c.json({ error: 'Task not in assigned status' }, 400);
+  const { updated, requesterId } = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
+    const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    if (!task) throw new HTTPException(404, { message: 'Task not found' });
+    if (task.assigneeId !== agent.agent_id) throw new HTTPException(403, { message: 'Not assigned to this task' });
+    if (task.status !== TASK_STATUS.ASSIGNED) throw new HTTPException(400, { message: 'Task not in assigned status' });
 
-  const [updated] = await db.update(tasks).set({
-    status: TASK_STATUS.IN_PROGRESS,
-    startedAt: new Date(),
-    updatedAt: new Date(),
-  }).where(eq(tasks.id, id)).returning();
+    const [result] = await tx.update(tasks).set({
+      status: TASK_STATUS.IN_PROGRESS,
+      startedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(tasks.id, id)).returning();
 
-  eventBus.emit(task.requesterId, {
+    return { updated: result, requesterId: task.requesterId };
+  });
+
+  eventBus.emit(requesterId, {
     type: 'task.started',
     data: { taskId: id, agentId: agent.agent_id },
   });
@@ -326,25 +341,30 @@ app.post('/:id/submit', authMiddleware, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!task) return c.json({ error: 'Task not found' }, 404);
-  if (task.assigneeId !== agent.agent_id) return c.json({ error: 'Not assigned to this task' }, 403);
-  if (task.status !== TASK_STATUS.IN_PROGRESS) return c.json({ error: 'Task not in progress' }, 400);
-
   const body = await c.req.json();
   const parsed = TaskSubmitSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
   const persisted = await persistTaskSubmission(id, parsed.data);
 
-  const [updated] = await db.update(tasks).set({
-    status: TASK_STATUS.REVIEW,
-    resultArtifacts: persisted.artifacts,
-    resultFiles: persisted.files,
-    submittedAt: new Date(),
-    updatedAt: new Date(),
-  }).where(eq(tasks.id, id)).returning();
+  const { updated, requesterId } = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
+    const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    if (!task) throw new HTTPException(404, { message: 'Task not found' });
+    if (task.assigneeId !== agent.agent_id) throw new HTTPException(403, { message: 'Not assigned to this task' });
+    if (task.status !== TASK_STATUS.IN_PROGRESS) throw new HTTPException(400, { message: 'Task not in progress' });
 
-  eventBus.emit(task.requesterId, {
+    const [result] = await tx.update(tasks).set({
+      status: TASK_STATUS.REVIEW,
+      resultArtifacts: persisted.artifacts,
+      resultFiles: persisted.files,
+      submittedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(tasks.id, id)).returning();
+
+    return { updated: result, requesterId: task.requesterId };
+  });
+
+  eventBus.emit(requesterId, {
     type: 'task.submitted',
     data: { taskId: id, agentId: agent.agent_id, artifacts: parsed.data.artifacts },
   });
@@ -361,37 +381,50 @@ app.post('/:id/approve', authMiddleware, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!task) return c.json({ error: 'Task not found' }, 404);
-  if (task.requesterId !== agent.agent_id) return c.json({ error: 'Not task owner' }, 403);
-  if (task.status !== TASK_STATUS.REVIEW) return c.json({ error: 'Task not in review status' }, 400);
+  // Lock task row and validate status within a transaction to prevent double-release
+  const { task, qualityScore, qualityDetails } = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
+    const [t] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    if (!t) throw new HTTPException(404, { message: 'Task not found' });
+    if (t.requesterId !== agent.agent_id) throw new HTTPException(403, { message: 'Not task owner' });
+    if (t.status !== TASK_STATUS.REVIEW) throw new HTTPException(400, { message: 'Task not in review status' });
 
-  // Run quality verification before releasing escrow
-  let qualityScore: number | null = null;
-  let qualityDetails: unknown = null;
-  try {
-    const artifacts = Array.isArray(task.resultArtifacts) ? task.resultArtifacts : [];
-    const qualityReport = verifyTaskOutput(
-      { id: task.id, inputData: task.inputData as Record<string, unknown> | null },
-      artifacts,
-    );
-    qualityScore = qualityReport.overallScore ?? null;
-    qualityDetails = qualityReport;
-  } catch (err) {
-    console.error('[TASKS] quality verification failed (non-blocking):', err);
-  }
+    // Mark as completing inside the lock to prevent concurrent approvals
+    await tx.update(tasks).set({
+      status: TASK_STATUS.COMPLETED,
+      updatedAt: new Date(),
+    }).where(eq(tasks.id, id));
 
-  // Release escrow
+    // Quality verification (non-blocking failure)
+    let qs: number | null = null;
+    let qd: unknown = null;
+    try {
+      const artifacts = Array.isArray(t.resultArtifacts) ? t.resultArtifacts : [];
+      const qualityReport = verifyTaskOutput(
+        { id: t.id, inputData: t.inputData as Record<string, unknown> | null },
+        artifacts,
+      );
+      qs = qualityReport.overallScore ?? null;
+      qd = qualityReport;
+    } catch (err) {
+      console.error('[TASKS] quality verification failed (non-blocking):', err);
+    }
+
+    return { task: t, qualityScore: qs, qualityDetails: qd };
+  });
+
+  // Release escrow (has its own row lock on escrow_transactions)
   let releaseTxHash: string;
   let fee: bigint;
   try {
     ({ releaseTxHash, fee } = await releaseEscrow(id));
   } catch (err) {
+    // Rollback task status on escrow failure
+    await db.update(tasks).set({ status: TASK_STATUS.REVIEW, updatedAt: new Date() }).where(eq(tasks.id, id));
     return c.json({ error: err instanceof Error ? err.message : 'Escrow release failed' }, 400);
   }
 
   const [updated] = await db.update(tasks).set({
-    status: TASK_STATUS.COMPLETED,
     completedAt: new Date(),
     qualityScore,
     qualityDetails,
@@ -409,14 +442,13 @@ app.post('/:id/approve', authMiddleware, async (c) => {
     data: { taskId: id, status: TASK_STATUS.COMPLETED, assigneeId: task.assigneeId },
   });
 
-  // Fire-and-forget: audit log
-  appendAuditLog({
+  safeAppendAuditLog({
     eventType: 'task.completed',
     actorId: agent.agent_id,
     targetId: id,
     targetType: 'task',
     payload: { qualityScore },
-  }).catch((err) => console.error('[TASKS] audit log failed:', err));
+  });
 
   return c.json({ ...updated, releaseTxHash });
 });
@@ -426,31 +458,36 @@ app.post('/:id/reject', authMiddleware, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!task) return c.json({ error: 'Task not found' }, 404);
-  if (task.requesterId !== agent.agent_id) return c.json({ error: 'Not task owner' }, 403);
-  if (task.status !== TASK_STATUS.REVIEW) return c.json({ error: 'Task not in review status' }, 400);
-
   const body = await c.req.json().catch(() => ({}));
   const reason = (body as { reason?: string }).reason ?? 'No reason provided';
 
-  const [updated] = await db.update(tasks).set({
-    status: TASK_STATUS.IN_PROGRESS,
-    resultArtifacts: null,
-    resultFiles: null,
-    submittedAt: null,
-    updatedAt: new Date(),
-  }).where(eq(tasks.id, id)).returning();
+  const { updated, assigneeId } = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
+    const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    if (!task) throw new HTTPException(404, { message: 'Task not found' });
+    if (task.requesterId !== agent.agent_id) throw new HTTPException(403, { message: 'Not task owner' });
+    if (task.status !== TASK_STATUS.REVIEW) throw new HTTPException(400, { message: 'Task not in review status' });
 
-  if (task.assigneeId) {
-    eventBus.emit(task.assigneeId, {
+    const [result] = await tx.update(tasks).set({
+      status: TASK_STATUS.IN_PROGRESS,
+      resultArtifacts: null,
+      resultFiles: null,
+      submittedAt: null,
+      updatedAt: new Date(),
+    }).where(eq(tasks.id, id)).returning();
+
+    return { updated: result, assigneeId: task.assigneeId };
+  });
+
+  if (assigneeId) {
+    eventBus.emit(assigneeId, {
       type: 'task.rejected',
       data: { taskId: id, reason },
     });
   }
   eventBus.broadcast({
     type: 'task.updated',
-    data: { taskId: id, status: TASK_STATUS.IN_PROGRESS, assigneeId: task.assigneeId },
+    data: { taskId: id, status: TASK_STATUS.IN_PROGRESS, assigneeId },
   });
 
   return c.json(updated);
@@ -478,42 +515,47 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (!task) return c.json({ error: 'Task not found' }, 404);
-  if (![task.requesterId, task.assigneeId].includes(agent.agent_id)) {
-    return c.json({ error: 'Only task participants can dispute this task' }, 403);
-  }
-  if (task.status !== TASK_STATUS.REVIEW) {
-    return c.json({ error: 'Task must be in review to open a dispute' }, 400);
-  }
-
   const body = await c.req.json();
   const parsed = TaskDisputeSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
 
-  const [existing] = await db
-    .select()
-    .from(disputes)
-    .where(and(eq(disputes.taskId, id), eq(disputes.status, DISPUTE_STATUS.OPEN)))
-    .limit(1);
+  const { dispute, againstAgentId, assigneeId, requesterId } = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
+    const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+    if (!task) throw new HTTPException(404, { message: 'Task not found' });
+    if (![task.requesterId, task.assigneeId].includes(agent.agent_id)) {
+      throw new HTTPException(403, { message: 'Only task participants can dispute this task' });
+    }
+    if (task.status !== TASK_STATUS.REVIEW) {
+      throw new HTTPException(400, { message: 'Task must be in review to open a dispute' });
+    }
 
-  if (existing) {
-    return c.json({ error: 'An open dispute already exists for this task' }, 409);
-  }
+    const [existing] = await tx
+      .select()
+      .from(disputes)
+      .where(and(eq(disputes.taskId, id), eq(disputes.status, DISPUTE_STATUS.OPEN)))
+      .limit(1);
 
-  const againstAgentId = task.requesterId === agent.agent_id ? task.assigneeId : task.requesterId;
-  const [dispute] = await db.insert(disputes).values({
-    taskId: id,
-    raisedByAgentId: agent.agent_id,
-    againstAgentId: againstAgentId ?? null,
-    reason: parsed.data.reason,
-    status: DISPUTE_STATUS.OPEN,
-  }).returning();
+    if (existing) {
+      throw new HTTPException(409, { message: 'An open dispute already exists for this task' });
+    }
 
-  await db.update(tasks).set({
-    status: TASK_STATUS.DISPUTED,
-    updatedAt: new Date(),
-  }).where(eq(tasks.id, id));
+    const against = task.requesterId === agent.agent_id ? task.assigneeId : task.requesterId;
+    const [d] = await tx.insert(disputes).values({
+      taskId: id,
+      raisedByAgentId: agent.agent_id,
+      againstAgentId: against ?? null,
+      reason: parsed.data.reason,
+      status: DISPUTE_STATUS.OPEN,
+    }).returning();
+
+    await tx.update(tasks).set({
+      status: TASK_STATUS.DISPUTED,
+      updatedAt: new Date(),
+    }).where(eq(tasks.id, id));
+
+    return { dispute: d, againstAgentId: against, assigneeId: task.assigneeId, requesterId: task.requesterId };
+  });
 
   if (againstAgentId) {
     eventBus.emit(againstAgentId, {
@@ -523,17 +565,16 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
   }
   eventBus.broadcast({
     type: 'task.updated',
-    data: { taskId: id, status: TASK_STATUS.DISPUTED, assigneeId: task.assigneeId, requesterId: task.requesterId },
+    data: { taskId: id, status: TASK_STATUS.DISPUTED, assigneeId, requesterId },
   });
 
-  // Fire-and-forget: audit log
-  appendAuditLog({
+  safeAppendAuditLog({
     eventType: 'task.disputed',
     actorId: agent.agent_id,
     targetId: id,
     targetType: 'task',
     payload: { disputeId: dispute.id, reason: parsed.data.reason },
-  }).catch((err) => console.error('[TASKS] audit log failed:', err));
+  });
 
   return c.json(dispute, 201);
 });

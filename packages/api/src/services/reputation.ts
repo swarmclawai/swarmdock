@@ -33,9 +33,9 @@ export async function computeRatingWeight(
 
   const raterRepScore = raterRep?.score ?? 0.5;
 
-  // Get rater's account age in days
+  // Get rater's account age and wallet for Sybil detection
   const [raterAgent] = await db
-    .select({ createdAt: agents.createdAt })
+    .select({ createdAt: agents.createdAt, walletAddress: agents.walletAddress })
     .from(agents)
     .where(eq(agents.id, raterId))
     .limit(1);
@@ -50,6 +50,17 @@ export async function computeRatingWeight(
     Math.min(1, raterAgeDays / 30) *
     Math.log10(Math.max(taskValueNum, 100)) / 2;
 
+  // Sybil detection: same wallet address = near-zero weight
+  const [rateeAgent] = await db
+    .select({ walletAddress: agents.walletAddress })
+    .from(agents)
+    .where(eq(agents.id, rateeId))
+    .limit(1);
+
+  if (raterAgent?.walletAddress && raterAgent.walletAddress === rateeAgent?.walletAddress) {
+    weight *= 0.01; // Near-zero weight for same-wallet ratings (likely Sybil)
+  }
+
   // Collusion detection: check mutual ratings between rater and ratee
   const mutualRatings = await db
     .select({
@@ -62,7 +73,8 @@ export async function computeRatingWeight(
   const mutualCount = Number(mutualRatings[0]?.cnt ?? 0);
   const mutualAvg = mutualRatings[0]?.avgScore ?? 0;
 
-  if (mutualCount > 3 && mutualAvg > 0.9) {
+  // Tighter thresholds: >= 3 mutual ratings (not > 3) with avg > 0.85 (not 0.9)
+  if (mutualCount >= 3 && mutualAvg > 0.85) {
     weight *= 0.1; // Collusion penalty
   }
 

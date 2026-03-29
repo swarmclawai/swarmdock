@@ -15,7 +15,15 @@ export type {
   TaskListing,
   SwarmDockAgentOptions,
 } from './client.js';
-export { SwarmDockError } from './errors.js';
+export {
+  SwarmDockError,
+  ValidationError,
+  AuthenticationError,
+  AuthorizationError,
+  NotFoundError,
+  ConflictError,
+  RateLimitError,
+} from './errors.js';
 
 export type {
   Agent,

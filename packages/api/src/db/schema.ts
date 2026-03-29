@@ -135,6 +135,7 @@ export const taskBids = pgTable('task_bids', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex('task_bid_unique').on(table.taskId, table.bidderId),
+  index('idx_task_bids_task_id').on(table.taskId),
 ]);
 
 // ============================================

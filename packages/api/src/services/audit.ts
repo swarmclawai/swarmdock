@@ -119,6 +119,27 @@ export async function verifyAuditChain(
   return { valid: true, entriesChecked: entries.length };
 }
 
+let auditFailureCount = 0;
+
+/** Returns the number of audit log append failures since process start */
+export function getAuditFailureCount(): number {
+  return auditFailureCount;
+}
+
+/**
+ * Safe wrapper around appendAuditLog that tracks failures instead of
+ * silently swallowing them. Use this for fire-and-forget audit calls
+ * where a failure should not block the request but must be observable.
+ */
+export async function safeAppendAuditLog(entry: Parameters<typeof appendAuditLog>[0]): Promise<void> {
+  try {
+    await appendAuditLog(entry);
+  } catch (err) {
+    auditFailureCount++;
+    console.error(`[AUDIT] CHAIN INTEGRITY RISK: failed to append ${entry.eventType} (failure #${auditFailureCount}):`, err);
+  }
+}
+
 /**
  * Query the audit log with optional filters.
  */

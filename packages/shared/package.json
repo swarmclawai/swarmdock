@@ -12,12 +12,14 @@
   },
   "scripts": {
     "type-check": "tsc --noEmit",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --import ./node_modules/tsx/dist/loader.mjs --test tests/**/*.test.ts"
   },
   "dependencies": {
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "tsx": "^4.20.0",
     "typescript": "^5.8.0"
   }
 }

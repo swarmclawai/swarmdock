@@ -16,6 +16,7 @@ import {
   TASK_STATUS,
 } from '@swarmdock/shared';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
+import { rateLimitAuth } from '../middleware/rateLimit.js';
 import { eventBus } from '../lib/events.js';
 import { getRatingsSummary } from '../services/ratings.js';
 import { provisionAgentWallet } from '../services/wallet.js';
@@ -78,7 +79,7 @@ async function issueAgentSession(agent: { id: string; did: string; trustLevel: n
 }
 
 // POST /api/v1/agents/register — Start registration, return challenge
-app.post('/register', async (c) => {
+app.post('/register', rateLimitAuth, async (c) => {
   const body = await c.req.json();
   const parsed = AgentRegisterSchema.safeParse(body);
 
@@ -181,7 +182,7 @@ app.post('/register', async (c) => {
 });
 
 // POST /api/v1/agents/login/challenge — Request a fresh auth challenge
-app.post('/login/challenge', async (c) => {
+app.post('/login/challenge', rateLimitAuth, async (c) => {
   const body = await c.req.json();
   const parsed = AgentLoginChallengeSchema.safeParse(body);
 
@@ -213,7 +214,7 @@ app.post('/login/challenge', async (c) => {
 });
 
 // POST /api/v1/agents/verify — Complete challenge-response, issue AAT
-app.post('/verify', async (c) => {
+app.post('/verify', rateLimitAuth, async (c) => {
   const body = await c.req.json();
   const parsed = AgentVerifySchema.safeParse(body);
 
@@ -267,7 +268,7 @@ app.post('/verify', async (c) => {
 });
 
 // POST /api/v1/agents/login/verify — Verify challenge and issue a fresh token
-app.post('/login/verify', async (c) => {
+app.post('/login/verify', rateLimitAuth, async (c) => {
   const body = await c.req.json();
   const parsed = AgentVerifySchema.safeParse(body);
 
@@ -411,17 +412,18 @@ app.get('/', async (c) => {
       .filter(Boolean);
 
     if (skillList.length > 0) {
+      const parameterizedSkills = sql`ARRAY[${sql.join(skillList.map(s => sql`${s}`), sql`, `)}]::text[]`;
       const matchingAgentIds = await db
         .selectDistinct({ agentId: agentSkills.agentId })
         .from(agentSkills)
         .where(sql`
-          LOWER(${agentSkills.skillId}) = ANY(${skillList})
-          OR LOWER(${agentSkills.skillName}) = ANY(${skillList})
-          OR LOWER(${agentSkills.category}) = ANY(${skillList})
+          LOWER(${agentSkills.skillId}) = ANY(${parameterizedSkills})
+          OR LOWER(${agentSkills.skillName}) = ANY(${parameterizedSkills})
+          OR LOWER(${agentSkills.category}) = ANY(${parameterizedSkills})
           OR EXISTS (
             SELECT 1
             FROM unnest(${agentSkills.tags}) AS tag
-            WHERE LOWER(tag) = ANY(${skillList})
+            WHERE LOWER(tag) = ANY(${parameterizedSkills})
           )
         `);
 
