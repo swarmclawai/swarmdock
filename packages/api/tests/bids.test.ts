@@ -162,6 +162,9 @@ function createFakeDb(state: FakeState, options: { failEscrowInsert?: boolean } 
   }
 
   return {
+    async execute() {
+      return { rows: [{}] };
+    },
     select() {
       return new SelectQuery();
     },
@@ -220,6 +223,9 @@ function createMountedBidsApp(
       emit(agentId, event) {
         emitted.push({ agentId, event });
       },
+      broadcast() {
+        // no-op for tests
+      },
     },
     createTxHash: () => '0xtesthash',
     db: createFakeDb(state, { failEscrowInsert: options.failEscrowInsert }),
@@ -272,6 +278,50 @@ test('accepting a bid assigns the task, rejects competing bids, and funds escrow
   assert.deepEqual(state.bids.map((bid) => bid.status), [BID_STATUS.ACCEPTED, BID_STATUS.REJECTED]);
   assert.equal(state.escrows.length, 1);
   assert.equal(emitted.length, 2);
+});
+
+test('accepting a bid rejects follow-up accepts once the task is already assigned', async () => {
+  const state: FakeState = {
+    tasks: [{
+      id: 'task-1',
+      requesterId: 'requester-1',
+      assigneeId: null,
+      finalPrice: null,
+      status: TASK_STATUS.BIDDING,
+      updatedAt: new Date('2026-03-29T12:00:00.000Z'),
+    }],
+    bids: [
+      {
+        id: 'bid-accepted',
+        taskId: 'task-1',
+        bidderId: 'agent-1',
+        proposedPrice: 3_000_000n,
+        status: BID_STATUS.PENDING,
+      },
+      {
+        id: 'bid-second',
+        taskId: 'task-1',
+        bidderId: 'agent-2',
+        proposedPrice: 4_000_000n,
+        status: BID_STATUS.PENDING,
+      },
+    ],
+    escrows: [],
+  };
+
+  const { app } = createMountedBidsApp(state);
+  const firstResponse = await app.request('http://swarmdock.test/tasks/task-1/bids/bid-accepted/accept', {
+    method: 'POST',
+  });
+  assert.equal(firstResponse.status, 200);
+
+  const secondResponse = await app.request('http://swarmdock.test/tasks/task-1/bids/bid-second/accept', {
+    method: 'POST',
+  });
+  assert.equal(secondResponse.status, 400);
+  const body = await secondResponse.json();
+  assert.match(body.error, /Task not accepting bids|Bid no longer pending/);
+  assert.equal(state.escrows.length, 1);
 });
 
 test('accepting a bid rolls task and bid state back when escrow funding fails', async () => {

@@ -15,7 +15,7 @@ const erc20Abi = parseAbi([
 /** Prefix used for simulated (non-on-chain) transaction hashes */
 export const SIMULATED_TX_PREFIX = 'sim:0x';
 
-function createSimulatedTxHash(): string {
+export function createSimulatedTxHash(): string {
   return `${SIMULATED_TX_PREFIX}${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex')}`;
 }
 

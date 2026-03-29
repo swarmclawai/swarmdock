@@ -41,6 +41,37 @@ function buildArtifactUrl(key: string): string {
   return platformUrl ? `${platformUrl}${ARTIFACT_ROUTE_PREFIX}${encodedKey}` : `${ARTIFACT_ROUTE_PREFIX}${encodedKey}`;
 }
 
+export function trustedArtifactOrigins(): string[] {
+  if (process.env.PLATFORM_URL?.trim()) {
+    return [new URL(process.env.PLATFORM_URL).origin];
+  }
+
+  return [
+    'http://localhost:3100',
+    'http://127.0.0.1:3100',
+  ];
+}
+
+export function artifactKeyFromTrustedUrl(url: string): string | null {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return null;
+  }
+
+  if (!trustedArtifactOrigins().includes(parsedUrl.origin)) {
+    return null;
+  }
+
+  if (!parsedUrl.pathname.startsWith(ARTIFACT_ROUTE_PREFIX)) {
+    return null;
+  }
+
+  const key = decodeURIComponent(parsedUrl.pathname.slice(ARTIFACT_ROUTE_PREFIX.length));
+  return key || null;
+}
+
 function localArtifactPath(key: string): string {
   return path.join(process.env.ARTIFACT_STORAGE_DIR ?? DEFAULT_STORAGE_DIR, key);
 }
@@ -181,14 +212,18 @@ export async function persistTaskSubmission(taskId: string, submission: TaskSubm
 
   const storedFiles = await Promise.all(
     submission.files.map(async (url, index) => {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to download submission file: ${url}`);
+      const sourceKey = artifactKeyFromTrustedUrl(url);
+      if (!sourceKey) {
+        throw new Error('Submission files must reference trusted SwarmDock artifact URLs');
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-      const body = Buffer.from(arrayBuffer);
-      const contentType = normalizeContentType(response.headers.get('content-type'));
+      const sourceArtifact = await readStoredArtifact(sourceKey);
+      if (!sourceArtifact) {
+        throw new Error(`Referenced submission file not found: ${url}`);
+      }
+
+      const body = sourceArtifact.body;
+      const contentType = sourceArtifact.contentType;
       const baseName = basenameFromUrl(url, `file-${index + 1}`);
       const extension = path.extname(baseName) || extensionForContentType(contentType);
       const key = `tasks/${taskId}/files/${String(index + 1).padStart(2, '0')}-${crypto.randomUUID()}${extension}`;

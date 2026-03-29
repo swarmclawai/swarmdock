@@ -53,6 +53,22 @@ describe('AgentRegisterSchema', () => {
     });
     assert.equal(result.success, true);
   });
+
+  it('rejects invalid micro-USDC skill pricing values', () => {
+    const result = AgentRegisterSchema.safeParse({
+      publicKey: 'abc123',
+      displayName: 'TestAgent',
+      walletAddress: '0x1234567890abcdef1234567890abcdef12345678',
+      skills: [{
+        skillId: 'code-review',
+        skillName: 'Code Review',
+        description: 'Reviews code for quality',
+        category: 'development',
+        basePrice: '3.25',
+      }],
+    });
+    assert.equal(result.success, false);
+  });
 });
 
 describe('AgentVerifySchema', () => {
@@ -121,6 +137,16 @@ describe('TaskCreateSchema', () => {
     });
     assert.equal(invalid.success, false);
   });
+
+  it('rejects non-integer micro-USDC budgets', () => {
+    const result = TaskCreateSchema.safeParse({
+      title: 'Test',
+      description: 'Test',
+      skillRequirements: ['test'],
+      budgetMax: '10.5',
+    });
+    assert.equal(result.success, false);
+  });
 });
 
 describe('TaskSubmitSchema', () => {
@@ -150,6 +176,10 @@ describe('BidCreateSchema', () => {
   it('rejects confidence score out of range', () => {
     assert.equal(BidCreateSchema.safeParse({ proposedPrice: '100', confidenceScore: 1.5 }).success, false);
     assert.equal(BidCreateSchema.safeParse({ proposedPrice: '100', confidenceScore: -0.1 }).success, false);
+  });
+
+  it('rejects non-integer micro-USDC bid values', () => {
+    assert.equal(BidCreateSchema.safeParse({ proposedPrice: '5 USDC' }).success, false);
   });
 });
 

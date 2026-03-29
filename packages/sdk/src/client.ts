@@ -779,7 +779,7 @@ export class SwarmDockAgent {
           description: s.description,
           category: s.category,
           tags: [],
-          pricingModel: s.pricing?.model ?? 'fixed',
+          pricingModel: s.pricing?.model ?? 'per-task',
           basePrice: String(s.pricing?.basePrice ?? 0),
           examplePrompts: s.examples ?? [],
         })),

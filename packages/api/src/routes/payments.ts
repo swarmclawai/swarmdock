@@ -4,6 +4,7 @@ import { escrowTransactions, transactions, agents } from '../db/schema.js';
 import { eq, or, desc } from 'drizzle-orm';
 import { authMiddleware, type AuthContext } from '../middleware/auth.js';
 import { queryOnChainBalance } from '../services/escrow.js';
+import { ESCROW_STATUS } from '@swarmdock/shared';
 
 type PaymentsDeps = {
   db: Pick<Database, 'select'>;
@@ -12,6 +13,45 @@ type PaymentsDeps = {
 
 export function canAccessAgentPayments(requestedAgentId: string, viewerAgentId: string): boolean {
   return requestedAgentId === viewerAgentId;
+}
+
+export function summarizeAgentBalance(
+  agentId: string,
+  escrowTxs: Array<{
+    payerId: string;
+    payeeId: string | null;
+    amount: bigint;
+    platformFee: bigint | null;
+    status: string;
+  }>,
+) {
+  let earned = 0n;
+  let spent = 0n;
+  let escrowed = 0n;
+  let released = 0n;
+
+  for (const tx of escrowTxs) {
+    if (tx.payeeId === agentId && tx.status === ESCROW_STATUS.RELEASED) {
+      const payout = tx.amount - (tx.platformFee ?? 0n);
+      earned += payout;
+      released += payout;
+    }
+
+    if (tx.payerId === agentId && (tx.status === ESCROW_STATUS.FUNDED || tx.status === ESCROW_STATUS.RELEASED)) {
+      spent += tx.amount;
+    }
+
+    if (tx.payerId === agentId && (tx.status === ESCROW_STATUS.PENDING || tx.status === ESCROW_STATUS.FUNDED)) {
+      escrowed += tx.amount;
+    }
+  }
+
+  return {
+    earned: earned.toString(),
+    spent: spent.toString(),
+    escrowed: escrowed.toString(),
+    released: released.toString(),
+  };
 }
 
 export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
@@ -35,39 +75,7 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
       .from(escrowTransactions)
       .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)));
 
-    let earned = 0n;
-    let spent = 0n;
-    let escrowed = 0n;
-    let released = 0n;
-    for (const tx of escrowTxs) {
-      if (tx.payeeId === id && tx.status === 'released') {
-        const payout = tx.amount - (tx.platformFee ?? 0n);
-        earned += payout;
-        released += payout;
-      }
-      if (tx.payerId === id && tx.status !== 'refunded') {
-        spent += tx.amount;
-      }
-      if (tx.payerId === id && (tx.status === 'pending' || tx.status === 'funded')) {
-        escrowed += tx.amount;
-      }
-    }
-
-    // Also query from transactions table for a more complete picture
-    const txRows = await database
-      .select()
-      .from(transactions)
-      .where(or(eq(transactions.fromAgentId, id), eq(transactions.toAgentId, id)));
-
-    for (const tx of txRows) {
-      if (tx.status !== 'confirmed') continue;
-      if (tx.toAgentId === id && tx.type === 'escrow_release') {
-        earned += tx.amount;
-      }
-      if (tx.fromAgentId === id && tx.type === 'escrow_deposit') {
-        spent += tx.amount;
-      }
-    }
+    const summary = summarizeAgentBalance(id, escrowTxs);
 
     // Query actual on-chain USDC balance if wallet is configured
     let onChainBalance: string | null = null;
@@ -85,10 +93,10 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
 
     return c.json({
       agentId: id,
-      earned: earned.toString(),
-      spent: spent.toString(),
-      escrowed: escrowed.toString(),
-      released: released.toString(),
+      earned: summary.earned,
+      spent: summary.spent,
+      escrowed: summary.escrowed,
+      released: summary.released,
       onChainBalance,
       currency: 'USDC',
       network: settlementNetwork,

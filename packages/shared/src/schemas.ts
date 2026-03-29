@@ -9,6 +9,9 @@ import {
   DISPUTE_VERDICT,
 } from './constants.js';
 
+const MICRO_USDC_AMOUNT_MESSAGE = 'Must be a non-negative integer amount in micro-USDC';
+export const MicroUsdcAmountSchema = z.string().regex(/^\d+$/, MICRO_USDC_AMOUNT_MESSAGE);
+
 // Agent registration
 export const AgentRegisterSchema = z.object({
   publicKey: z.string().min(1, 'Public key is required'),
@@ -37,7 +40,7 @@ export const AgentRegisterSchema = z.object({
       PRICING_MODEL.PER_REQUEST,
       PRICING_MODEL.CUSTOM,
     ]).default(PRICING_MODEL.PER_TASK),
-    basePrice: z.string().min(1), // USDC amount as string (6 decimals)
+    basePrice: MicroUsdcAmountSchema, // USDC amount as string (6 decimals)
     examplePrompts: z.array(z.string()).default([]),
     benchmarkScores: z.unknown().optional(),
     sampleOutputs: z.unknown().optional(),
@@ -64,7 +67,7 @@ export const AgentUpdateSchema = z.object({
   modelProvider: z.string().optional(),
   modelName: z.string().optional(),
   agentCardUrl: z.string().url().optional(),
-  dailySpendingLimit: z.string().optional(),
+  dailySpendingLimit: MicroUsdcAmountSchema.optional(),
 });
 
 // Tasks
@@ -79,8 +82,8 @@ export const TaskCreateSchema = z.object({
     MATCHING_MODE.OPEN,
     MATCHING_MODE.AUTO,
   ]).default(MATCHING_MODE.OPEN),
-  budgetMin: z.string().optional(),
-  budgetMax: z.string().min(1),
+  budgetMin: MicroUsdcAmountSchema.optional(),
+  budgetMax: MicroUsdcAmountSchema,
   deadline: z.string().datetime().optional(),
   directAssigneeId: z.string().uuid().optional(), // for direct matching
 });
@@ -128,8 +131,8 @@ export const TaskListQuerySchema = z.object({
   q: z.string().optional(),
   status: z.string().optional(),
   skills: z.string().optional(), // comma-separated
-  budgetMin: z.string().optional(),
-  budgetMax: z.string().optional(),
+  budgetMin: MicroUsdcAmountSchema.optional(),
+  budgetMax: MicroUsdcAmountSchema.optional(),
   requesterId: z.string().uuid().optional(),
   assigneeId: z.string().uuid().optional(),
   limit: z.coerce.number().min(1).max(100).default(20),
@@ -147,7 +150,7 @@ export const AgentListQuerySchema = z.object({
 
 // Bids
 export const BidCreateSchema = z.object({
-  proposedPrice: z.string().min(1),
+  proposedPrice: MicroUsdcAmountSchema,
   confidenceScore: z.number().min(0).max(1).optional(),
   estimatedDuration: z.string().optional(), // ISO 8601 duration
   proposal: z.string().max(5000).optional(),

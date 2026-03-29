@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db, type Database } from '../db/client.js';
 import { tasks, taskBids, escrowTransactions } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { BidCreateSchema, TASK_STATUS, BID_STATUS, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
@@ -13,7 +13,7 @@ type BidRouteDeps = {
   db: Pick<Database, 'select' | 'insert' | 'update' | 'transaction'>;
   authMiddleware: typeof authMiddleware;
   requireScope: typeof requireScope;
-  eventBus: Pick<typeof eventBus, 'emit'>;
+  eventBus: Pick<typeof eventBus, 'emit' | 'broadcast'>;
   createTxHash: () => string;
   requirePayment: typeof requireX402Payment;
 };
@@ -82,7 +82,7 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
       await database.update(tasks).set({ status: TASK_STATUS.BIDDING, updatedAt: new Date() }).where(eq(tasks.id, taskId));
     }
 
-    eventBus.broadcast({
+    events.broadcast({
       type: 'task.updated',
       data: { taskId, status: TASK_STATUS.BIDDING },
     });
@@ -110,23 +110,19 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
     const [task] = await database.select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
     if (!task) return c.json({ error: 'Task not found' }, 404);
     if (task.requesterId !== agent.agent_id) return c.json({ error: 'Not task owner' }, 403);
-    if (![TASK_STATUS.OPEN, TASK_STATUS.BIDDING].includes(task.status as 'open' | 'bidding')) {
-      return c.json({ error: 'Task not accepting bids' }, 400);
-    }
 
-    const [bid] = await database
+    const [preflightBid] = await database
       .select()
       .from(taskBids)
       .where(and(eq(taskBids.id, bidId), eq(taskBids.taskId, taskId)))
       .limit(1);
-
-    if (!bid) return c.json({ error: 'Bid not found' }, 404);
-    if (bid.status !== BID_STATUS.PENDING) return c.json({ error: 'Bid no longer pending' }, 400);
+    if (!preflightBid) return c.json({ error: 'Bid not found' }, 404);
+    if (preflightBid.status !== BID_STATUS.PENDING) return c.json({ error: 'Bid no longer pending' }, 400);
 
     const paymentGate = await requirePayment(c, {
       accepts: {
         scheme: 'exact',
-        price: microUsdcToUsdPrice(bid.proposedPrice),
+        price: microUsdcToUsdPrice(preflightBid.proposedPrice),
         network: getX402Network(),
         payTo: process.env.PLATFORM_WALLET_ADDRESS ?? '0x0000000000000000000000000000000000000000',
       },
@@ -138,7 +134,7 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
           error: 'Payment required to fund escrow',
           taskId,
           bidId,
-          amount: bid.proposedPrice.toString(),
+          amount: preflightBid.proposedPrice.toString(),
         },
       }),
     });
@@ -150,7 +146,38 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
     const pendingEscrowTxHash = paymentGate.pendingSettlement ? null : createTxHash();
 
     // Accept this bid, assign the task, and record pending/funded escrow in one transaction.
-    const { updatedTask, escrow } = await database.transaction(async (tx) => {
+    const transactionResult = await database.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM tasks WHERE id = ${taskId} FOR UPDATE`);
+
+      const [lockedTask] = await tx
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, taskId))
+        .limit(1);
+
+      if (!lockedTask) {
+        return { ok: false, status: 404, body: { error: 'Task not found' } } as const;
+      }
+      if (lockedTask.requesterId !== agent.agent_id) {
+        return { ok: false, status: 403, body: { error: 'Not task owner' } } as const;
+      }
+      if (![TASK_STATUS.OPEN, TASK_STATUS.BIDDING].includes(lockedTask.status as 'open' | 'bidding')) {
+        return { ok: false, status: 400, body: { error: 'Task not accepting bids' } } as const;
+      }
+
+      const [bid] = await tx
+        .select()
+        .from(taskBids)
+        .where(and(eq(taskBids.id, bidId), eq(taskBids.taskId, taskId)))
+        .limit(1);
+
+      if (!bid) {
+        return { ok: false, status: 404, body: { error: 'Bid not found' } } as const;
+      }
+      if (bid.status !== BID_STATUS.PENDING) {
+        return { ok: false, status: 400, body: { error: 'Bid no longer pending' } } as const;
+      }
+
       await tx.update(taskBids).set({ status: BID_STATUS.ACCEPTED }).where(eq(taskBids.id, bidId));
       await tx.update(taskBids).set({ status: BID_STATUS.REJECTED })
         .where(and(eq(taskBids.taskId, taskId), eq(taskBids.status, BID_STATUS.PENDING)));
@@ -172,9 +199,14 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
         network: process.env.X402_NETWORK ?? 'base-sepolia',
       }).returning();
 
-      return { updatedTask, escrow };
+      return { ok: true, updatedTask, escrow, bid } as const;
     });
 
+    if (!transactionResult.ok) {
+      return c.json(transactionResult.body, transactionResult.status);
+    }
+
+    const { updatedTask, escrow, bid } = transactionResult;
     let settledEscrow = escrow;
     let settlementHeaders: Record<string, string> = {};
 
@@ -222,7 +254,7 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
       type: 'payment.escrowed',
       data: { taskId, amount: bid.proposedPrice.toString(), txHash: settledEscrow.escrowTxHash },
     });
-    eventBus.broadcast({
+    events.broadcast({
       type: 'task.updated',
       data: { taskId, status: TASK_STATUS.ASSIGNED, assigneeId: bid.bidderId },
     });

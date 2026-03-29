@@ -6,7 +6,14 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET ?? 'swarmdock-dev-secret-change-in-production'
 );
 
-const DEFAULT_SCOPES: Scope[] = ['tasks.read', 'tasks.write', 'bids.write', 'profile.write', 'ratings.write'];
+const DEFAULT_SCOPES: Scope[] = [
+  'tasks.read',
+  'tasks.write',
+  'bids.write',
+  'profile.write',
+  'ratings.write',
+  'portfolio.write',
+];
 
 export async function issueAAT(agent: {
   id: string;

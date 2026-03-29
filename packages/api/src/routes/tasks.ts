@@ -16,6 +16,7 @@ import { safeAppendAuditLog } from '../services/audit.js';
 import { embed } from '../services/embeddings.js';
 import { persistTaskSubmission } from '../services/storage.js';
 import { fetchOrderedRowsByIds, searchTasksIndex } from '../services/search.js';
+import { createTaskWithOptionalFunding } from '../services/task-creation.js';
 
 const app = new Hono<AuthContext>();
 
@@ -148,22 +149,20 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
   }
 
   const agent = c.get('agent');
-  const { title, description, skillRequirements, inputData, inputFiles, matchingMode, budgetMin, budgetMax, deadline, directAssigneeId } = parsed.data;
+  const creation = await createTaskWithOptionalFunding(c, agent.agent_id, parsed.data, { db });
+  if (creation.response) {
+    return creation.response;
+  }
 
-  const [task] = await db.insert(tasks).values({
-    requesterId: agent.agent_id,
-    assigneeId: directAssigneeId ?? null,
-    title,
-    description,
-    skillRequirements,
-    inputData: inputData ?? null,
-    inputFiles: inputFiles.length > 0 ? inputFiles : null,
-    matchingMode,
-    budgetMin: budgetMin ? BigInt(budgetMin) : null,
-    budgetMax: BigInt(budgetMax),
-    deadline: deadline ? new Date(deadline) : null,
-    status: directAssigneeId ? TASK_STATUS.ASSIGNED : TASK_STATUS.OPEN,
-  }).returning();
+  const task = creation.task as {
+    id: string;
+    title: string;
+    skillRequirements: string[];
+    budgetMax: bigint;
+    finalPrice: bigint | null;
+    matchingMode: string;
+  };
+  const directAssigneeId = parsed.data.directAssigneeId ?? null;
 
   // Broadcast to all connected agents
   eventBus.broadcast({
@@ -171,18 +170,39 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
     data: {
       taskId: task.id,
       title: task.title,
-      skillRequirements,
-      budgetMax: budgetMax,
-      matchingMode,
+      skillRequirements: parsed.data.skillRequirements,
+      budgetMax: parsed.data.budgetMax,
+      matchingMode: parsed.data.matchingMode,
     },
   });
 
+  if (creation.escrow) {
+    eventBus.emit(agent.agent_id, {
+      type: 'payment.escrowed',
+      data: {
+        taskId: task.id,
+        amount: task.finalPrice?.toString() ?? task.budgetMax.toString(),
+        txHash: (creation.escrow as { escrowTxHash: string | null }).escrowTxHash,
+      },
+    });
+  }
+
+  if (directAssigneeId) {
+    eventBus.emit(directAssigneeId, {
+      type: 'task.assigned',
+      data: {
+        taskId: task.id,
+        price: task.finalPrice?.toString() ?? task.budgetMax.toString(),
+      },
+    });
+  }
+
   // Async embed (don't block response)
-  embed(description).then(async (vec) => {
+  embed(parsed.data.description).then(async (vec) => {
     await db.update(tasks).set({ descriptionEmbedding: vec }).where(eq(tasks.id, task.id));
   }).catch(console.error);
 
-  return c.json(task, 201);
+  return c.json(task, 201, creation.settlementHeaders);
 });
 
 // GET /api/v1/tasks/:id — Task detail
@@ -344,7 +364,29 @@ app.post('/:id/submit', authMiddleware, async (c) => {
   const body = await c.req.json();
   const parsed = TaskSubmitSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
-  const persisted = await persistTaskSubmission(id, parsed.data);
+
+  const [currentTask] = await db.select({
+    assigneeId: tasks.assigneeId,
+    status: tasks.status,
+  }).from(tasks).where(eq(tasks.id, id)).limit(1);
+
+  if (!currentTask) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+  if (currentTask.assigneeId !== agent.agent_id) {
+    return c.json({ error: 'Not assigned to this task' }, 403);
+  }
+  if (currentTask.status !== TASK_STATUS.IN_PROGRESS) {
+    return c.json({ error: 'Task not in progress' }, 400);
+  }
+
+  let persisted;
+  try {
+    persisted = await persistTaskSubmission(id, parsed.data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to persist task submission';
+    return c.json({ error: message }, 400);
+  }
 
   const { updated, requesterId } = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);

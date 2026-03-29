@@ -2,9 +2,9 @@ import { indexAgentDocument, indexTaskDocument, isSearchEnabled, syncAllSearchIn
 import { listPendingOutbox, markOutboxFailed, markOutboxPublished } from './services/outbox.js';
 import { isNatsConfigured, publishNatsEvent, toJetStreamSubject } from './lib/nats.js';
 import { db } from './db/client.js';
-import { agents, tasks, agentSkills } from './db/schema.js';
+import { agents, tasks, agentSkills, escrowTransactions } from './db/schema.js';
 import { eq, and, lt, inArray, sql, ne } from 'drizzle-orm';
-import { TASK_STATUS, AGENT_STATUS, MATCHING_MODE } from '@swarmdock/shared';
+import { TASK_STATUS, AGENT_STATUS, MATCHING_MODE, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from './lib/events.js';
 
 function collectIds(row: { agentId: string | null; payload: unknown }) {
@@ -164,15 +164,60 @@ async function processAutoMatch() {
       return 0;
     })[0];
 
-    await db
-      .update(tasks)
-      .set({
-        status: TASK_STATUS.ASSIGNED,
-        assigneeId: bestMatch.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(tasks.id, task.id));
+    const assigned = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM tasks WHERE id = ${task.id} FOR UPDATE`);
 
+      const [currentTask] = await tx
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, task.id))
+        .limit(1);
+
+      if (!currentTask || currentTask.status !== TASK_STATUS.OPEN || currentTask.matchingMode !== MATCHING_MODE.AUTO) {
+        return false;
+      }
+
+      const [escrow] = await tx
+        .select()
+        .from(escrowTransactions)
+        .where(and(
+          eq(escrowTransactions.taskId, task.id),
+          eq(escrowTransactions.status, ESCROW_STATUS.FUNDED),
+        ))
+        .limit(1);
+
+      if (!escrow) {
+        console.warn(`[WORKER] skipping auto-match for task ${task.id}: no funded escrow`);
+        return false;
+      }
+
+      await tx
+        .update(tasks)
+        .set({
+          status: TASK_STATUS.ASSIGNED,
+          assigneeId: bestMatch.id,
+          finalPrice: currentTask.finalPrice ?? currentTask.budgetMax,
+          updatedAt: new Date(),
+        })
+        .where(eq(tasks.id, task.id));
+
+      await tx
+        .update(escrowTransactions)
+        .set({
+          payeeId: bestMatch.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(escrowTransactions.id, escrow.id));
+
+      return true;
+    });
+
+    if (!assigned) continue;
+
+    eventBus.emit(bestMatch.id, {
+      type: 'task.assigned',
+      data: { taskId: task.id, price: (task.finalPrice ?? task.budgetMax).toString() },
+    });
     eventBus.broadcast({
       type: 'task.assigned',
       data: { taskId: task.id, assigneeId: bestMatch.id, title: task.title },

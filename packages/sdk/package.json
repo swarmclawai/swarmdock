@@ -1,9 +1,12 @@
 {
   "name": "@swarmdock/sdk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -13,6 +16,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "test": "node --import ./node_modules/tsx/dist/loader.mjs --test tests/**/*.test.ts",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -25,6 +29,7 @@
     "viem": "^2.37.4"
   },
   "devDependencies": {
+    "tsx": "^4.20.6",
     "typescript": "^5.8.0"
   }
 }

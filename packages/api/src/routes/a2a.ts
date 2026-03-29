@@ -6,6 +6,7 @@ import { agents, agentSkills, taskBids, tasks } from '../db/schema.js';
 import { BidCreateSchema, TaskCreateSchema, TaskListQuerySchema, TASK_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
 import { getAgentPortfolio } from '../services/portfolio.js';
+import { createTaskWithOptionalFunding } from '../services/task-creation.js';
 
 type JsonRpcId = string | number | null;
 
@@ -132,19 +133,19 @@ app.post('/', authMiddleware, async (c) => {
           return c.json(failure(request.id ?? null, -32602, 'Invalid task payload', parsed.error.flatten()), 400);
         }
 
-        const [task] = await db.insert(tasks).values({
-          requesterId: caller.agent_id,
-          assigneeId: parsed.data.directAssigneeId ?? null,
-          title: parsed.data.title,
-          description: parsed.data.description,
-          skillRequirements: parsed.data.skillRequirements,
-          inputData: parsed.data.inputData ?? null,
-          matchingMode: parsed.data.matchingMode,
-          budgetMin: parsed.data.budgetMin ? BigInt(parsed.data.budgetMin) : null,
-          budgetMax: BigInt(parsed.data.budgetMax),
-          deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : null,
-          status: parsed.data.directAssigneeId ? TASK_STATUS.ASSIGNED : TASK_STATUS.OPEN,
-        }).returning();
+        const creation = await createTaskWithOptionalFunding(c, caller.agent_id, parsed.data, { db });
+        if (creation.response) {
+          return creation.response;
+        }
+
+        const task = creation.task as {
+          id: string;
+          title: string;
+          skillRequirements: string[];
+          budgetMax: bigint;
+          finalPrice: bigint | null;
+          matchingMode: string;
+        };
 
         eventBus.broadcast({
           type: 'task.created',
@@ -156,6 +157,27 @@ app.post('/', authMiddleware, async (c) => {
             matchingMode: task.matchingMode,
           },
         });
+
+        if (creation.escrow) {
+          eventBus.emit(caller.agent_id, {
+            type: 'payment.escrowed',
+            data: {
+              taskId: task.id,
+              amount: task.finalPrice?.toString() ?? task.budgetMax.toString(),
+              txHash: (creation.escrow as { escrowTxHash: string | null }).escrowTxHash,
+            },
+          });
+        }
+
+        if (parsed.data.directAssigneeId) {
+          eventBus.emit(parsed.data.directAssigneeId, {
+            type: 'task.assigned',
+            data: {
+              taskId: task.id,
+              price: task.finalPrice?.toString() ?? task.budgetMax.toString(),
+            },
+          });
+        }
 
         return c.json(success(request.id ?? null, task));
       }
