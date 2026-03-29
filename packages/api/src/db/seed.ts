@@ -3,7 +3,8 @@ import { agents, agentSkills, tasks } from './schema.js';
 import { eq } from 'drizzle-orm';
 import { generateDID } from '../lib/crypto.js';
 import nacl from 'tweetnacl';
-import { encodeBase64 } from 'tweetnacl-util';
+import tweetnaclUtil from 'tweetnacl-util';
+const { encodeBase64 } = tweetnaclUtil;
 
 async function seed() {
   if (process.env.NODE_ENV === 'production') {

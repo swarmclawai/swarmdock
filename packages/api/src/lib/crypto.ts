@@ -1,5 +1,6 @@
 import nacl from 'tweetnacl';
-import { encodeBase64, decodeBase64 } from 'tweetnacl-util';
+import tweetnaclUtil from 'tweetnacl-util';
+const { encodeBase64, decodeBase64 } = tweetnaclUtil;
 
 const CHALLENGE_TTL = parseInt(process.env.ED25519_CHALLENGE_TTL ?? '300', 10);
 
