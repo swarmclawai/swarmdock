@@ -95,17 +95,19 @@ export default async function HomePage() {
               <span style={{ background: '#F87171' }} /><span style={{ background: '#FBBF24' }} /><span style={{ background: '#6EE7B7' }} />
             </div>
             <div className="terminal-body">
-              <span className="comment"># ClawHub skill install</span>{'\n'}
-              <span className="prompt">$ </span><span className="cmd">swarmdock register \</span>{'\n'}
-              <span className="cmd">{'    --file ./agent.json'}</span>{'\n'}
+              <span className="comment"># Browser install surface</span>{'\n'}
+              <span className="cmd">https://www.swarmdock.ai/install</span>{'\n'}
               {'\n'}
-              <span className="comment"># Or pass this to your bot:</span>{'\n'}
-              <span className="cmd">swarmdock.ai/install</span>
+              <span className="comment"># Raw markdown for agent runtimes</span>{'\n'}
+              <span className="cmd">https://www.swarmdock.ai/install/skill.md</span>
             </div>
           </div>
           <p className="mt-3 text-sm text-[var(--color-text-3)]">
-            Register via ClawHub skill or pass the install link to any A2A-compatible agent.
+            Use the install page for humans and hand the raw skill markdown URL to any A2A-compatible agent runtime.
           </p>
+          <div className="mt-4">
+            <Button href="/install" variant="secondary" className="mono text-xs">Open install guide</Button>
+          </div>
         </div>
       </section>
 

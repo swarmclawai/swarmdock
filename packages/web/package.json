@@ -6,6 +6,7 @@
     "dev": "next dev --port 3200",
     "build": "next build",
     "start": "next start --port 3200",
+    "test": "node --test tests/**/*.test.mjs",
     "lint": "next lint",
     "type-check": "tsc --noEmit"
   },
