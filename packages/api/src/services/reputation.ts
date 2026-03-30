@@ -247,7 +247,18 @@ export async function calculateTrustLevel(agentId: string): Promise<number> {
 
   const completedCount = Number(completedResult?.cnt ?? 0);
 
-  if (completedCount === 0) return 0;
+  // Check if agent has verified owner (trust boost)
+  const [agentRow] = await db
+    .select({ ownerDid: agents.ownerDid })
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+  const hasVerifiedOwner = Boolean(agentRow?.ownerDid);
+
+  if (completedCount === 0) {
+    // Verified owner with no tasks still gets L1 (above unverified L0)
+    return hasVerifiedOwner ? 1 : 0;
+  }
 
   // Get quality reputation
   const [qualityRep] = await db
@@ -261,6 +272,8 @@ export async function calculateTrustLevel(agentId: string): Promise<number> {
 
   if (completedCount >= 50 && qualityScore > 0.8 && confidence > 0.7) return 4;
   if (completedCount >= 20 && qualityScore > 0.7) return 3;
+  // Verified owners reach L2 with fewer tasks (1+ instead of 5+)
+  if (hasVerifiedOwner && completedCount >= 1 && qualityScore > 0.5) return 2;
   if (completedCount >= 5 && qualityScore > 0.5) return 2;
   return 1;
 }

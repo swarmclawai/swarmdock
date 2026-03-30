@@ -23,6 +23,7 @@ import { eventBus } from '../lib/events.js';
 import { getRatingsSummary } from '../services/ratings.js';
 import { provisionAgentWallet } from '../services/wallet.js';
 import { getAgentCardById } from '../services/agent-card.js';
+import { updateTrustLevel } from '../services/reputation.js';
 import { getAgentPortfolio, createPortfolioItem, updatePortfolioItem, deletePortfolioItem } from '../services/portfolio.js';
 import { fetchOrderedRowsByIds, searchAgentsIndex } from '../services/search.js';
 
@@ -775,7 +776,10 @@ app.post('/:id/verify-owner', authMiddleware, async (c) => {
     updatedAt: new Date(),
   }).where(eq(agents.id, id));
 
-  return c.json({ verified: true, ownerDid });
+  // Recalculate trust level with owner verification boost
+  const newTrustLevel = await updateTrustLevel(id);
+
+  return c.json({ verified: true, ownerDid, trustLevel: newTrustLevel });
 });
 
 export default app;

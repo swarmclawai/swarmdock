@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
-import { agents, tasks, escrowTransactions, transactions, agentRatings, disputes } from '../db/schema.js';
+import { agents, tasks, escrowTransactions, transactions, agentRatings, disputes, anomalyEvents, agentReputation } from '../db/schema.js';
 import { eq, sql, count, desc, and } from 'drizzle-orm';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
@@ -16,6 +16,7 @@ import {
 } from '@swarmdock/shared';
 import { releaseEscrow, refundEscrow } from '../services/escrow.js';
 import { selectTribunalJudges } from '../services/tribunal.js';
+import { unsuspendAgent } from '../services/anomaly.js';
 import { eventBus } from '../lib/events.js';
 
 const adminAuth = createMiddleware(async (c, next) => {
@@ -260,6 +261,90 @@ app.post('/disputes/:id/resolve', adminAuth, async (c) => {
     dispute: updatedDispute,
     ...resolutionData,
   });
+});
+
+// GET /api/v1/admin/anomalies — List anomaly events
+app.get('/anomalies', adminAuth, async (c) => {
+  const type = c.req.query('type');
+  const severity = c.req.query('severity');
+  const agentId = c.req.query('agentId');
+  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '50', 10) || 50, 200));
+  const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
+
+  const conditions = [];
+  if (type) conditions.push(eq(anomalyEvents.type, type));
+  if (severity) conditions.push(eq(anomalyEvents.severity, severity));
+  if (agentId) conditions.push(eq(anomalyEvents.agentId, agentId));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const rows = await db
+    .select()
+    .from(anomalyEvents)
+    .where(whereClause)
+    .orderBy(desc(anomalyEvents.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  const [{ total }] = await db.select({ total: count() }).from(anomalyEvents).where(whereClause);
+
+  return c.json({ anomalies: rows, limit, offset, total });
+});
+
+// GET /api/v1/admin/agents/:id/risk — Agent risk profile
+app.get('/agents/:id/risk', adminAuth, async (c) => {
+  const id = c.req.param('id');
+
+  const [agent] = await db
+    .select({ id: agents.id, displayName: agents.displayName, status: agents.status, trustLevel: agents.trustLevel })
+    .from(agents)
+    .where(eq(agents.id, id))
+    .limit(1);
+
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  const anomalies = await db
+    .select()
+    .from(anomalyEvents)
+    .where(eq(anomalyEvents.agentId, id))
+    .orderBy(desc(anomalyEvents.createdAt))
+    .limit(20);
+
+  const reputation = await db
+    .select()
+    .from(agentReputation)
+    .where(eq(agentReputation.agentId, id));
+
+  const highCount = anomalies.filter((a) => a.severity === 'high').length;
+  const mediumCount = anomalies.filter((a) => a.severity === 'medium').length;
+
+  return c.json({
+    agent: { id: agent.id, displayName: agent.displayName, status: agent.status, trustLevel: agent.trustLevel },
+    anomalySummary: { total: anomalies.length, high: highCount, medium: mediumCount },
+    recentAnomalies: anomalies,
+    reputation,
+  });
+});
+
+// POST /api/v1/admin/agents/:id/unsuspend — Lift suspension
+app.post('/agents/:id/unsuspend', adminAuth, async (c) => {
+  const id = c.req.param('id');
+
+  const [agent] = await db
+    .select({ status: agents.status })
+    .from(agents)
+    .where(eq(agents.id, id))
+    .limit(1);
+
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  if (agent.status !== AGENT_STATUS.SUSPENDED) {
+    return c.json({ error: 'Agent is not suspended' }, 400);
+  }
+
+  const body = await c.req.json().catch(() => ({})) as { note?: string };
+  await unsuspendAgent(id, body.note ?? 'Admin unsuspend');
+
+  return c.json({ unsuspended: true, agentId: id });
 });
 
 export default app;

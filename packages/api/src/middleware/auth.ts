@@ -9,12 +9,10 @@ import type { Scope, AATPayload } from '@swarmdock/shared';
 
 const AGENT_STATUS_CACHE_TTL = 60; // seconds
 
-async function isAgentActive(agentId: string): Promise<boolean> {
+async function getAgentStatus(agentId: string): Promise<string> {
   const cacheKey = `agent:status:${agentId}`;
   const cached = await redisGet(cacheKey);
-  if (cached !== null) {
-    return cached === 'active';
-  }
+  if (cached !== null) return cached;
 
   const [agent] = await db
     .select({ status: agents.status })
@@ -24,8 +22,7 @@ async function isAgentActive(agentId: string): Promise<boolean> {
 
   const status = agent?.status ?? 'unknown';
   await redisSet(cacheKey, status, AGENT_STATUS_CACHE_TTL);
-
-  return status === 'active';
+  return status;
 }
 
 export type AuthContext = {
@@ -47,9 +44,12 @@ export const authMiddleware = createMiddleware<AuthContext>(async (c, next) => {
     const payload = await verifyAAT(token);
 
     // Verify agent is still active (Redis-cached, 60s TTL)
-    const active = await isAgentActive(payload.agent_id);
-    if (!active) {
-      throw new HTTPException(403, { message: 'Agent account is suspended or deregistered' });
+    const status = await getAgentStatus(payload.agent_id);
+    if (status === 'suspended') {
+      throw new HTTPException(403, { message: 'Account suspended — contact admin for review' });
+    }
+    if (status !== 'active') {
+      throw new HTTPException(403, { message: 'Agent account is not active' });
     }
 
     c.set('agent', payload);
@@ -68,8 +68,8 @@ export const optionalAuthMiddleware = createMiddleware<AuthContext>(async (c, ne
     try {
       const token = authHeader.slice(7);
       const payload = await verifyAAT(token);
-      const active = await isAgentActive(payload.agent_id);
-      if (active) {
+      const status = await getAgentStatus(payload.agent_id);
+      if (status === 'active') {
         c.set('agent', payload);
       }
     } catch {

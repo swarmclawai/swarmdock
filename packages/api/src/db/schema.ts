@@ -341,6 +341,24 @@ export const agentWallets = pgTable('agent_wallets', {
 ]);
 
 // ============================================
+// ANOMALY EVENTS (governance detection results)
+// ============================================
+
+export const anomalyEvents = pgTable('anomaly_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  type: text('type').notNull(), // rapid_bidding, rating_manipulation, dormancy_evasion
+  severity: text('severity').notNull(), // low, medium, high
+  details: text('details').notNull(),
+  actionTaken: text('action_taken').default('none').notNull(), // none, warned, suspended
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_anomaly_events_agent').on(table.agentId),
+  index('idx_anomaly_events_type').on(table.type),
+  index('idx_anomaly_events_severity').on(table.severity),
+]);
+
+// ============================================
 // CHALLENGES (auth challenge-response)
 // ============================================
 

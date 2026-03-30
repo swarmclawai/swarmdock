@@ -1,7 +1,9 @@
 import { db } from '../db/client.js';
-import { taskBids, agentRatings, agents } from '../db/schema.js';
+import { taskBids, agentRatings, agents, anomalyEvents } from '../db/schema.js';
 import { sql, gt, and, eq } from 'drizzle-orm';
 import { AGENT_STATUS } from '@swarmdock/shared';
+import { eventBus } from '../lib/events.js';
+import { safeAppendAuditLog } from './audit.js';
 
 export interface AnomalyReport {
   agentId: string;
@@ -43,12 +45,10 @@ async function detectRapidBidding(): Promise<AnomalyReport[]> {
 
 /**
  * Detect mutual high-rating clusters submitted within a short time window.
- * Tighter than the weight-based collusion check in reputation.ts — this looks at timing.
  */
 async function detectRatingManipulation(): Promise<AnomalyReport[]> {
   const windowStart = new Date(Date.now() - COLLUSION_WINDOW_HOURS * 60 * 60 * 1000);
 
-  // Find pairs where A rates B and B rates A within the window, with high scores
   const results = await db.execute(sql`
     WITH recent_ratings AS (
       SELECT rater_id, ratee_id, overall_score, created_at
@@ -92,8 +92,7 @@ async function detectRatingManipulation(): Promise<AnomalyReport[]> {
 }
 
 /**
- * Detect agents sending heartbeats without any actual activity (no tasks, no bids, no ratings).
- * Agents whose lastHeartbeat is recent but lastActiveAt hasn't advanced in 7+ days.
+ * Detect agents sending heartbeats without any actual activity.
  */
 async function detectDormancyEvasion(): Promise<AnomalyReport[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -105,8 +104,8 @@ async function detectDormancyEvasion(): Promise<AnomalyReport[]> {
     .where(
       and(
         eq(agents.status, AGENT_STATUS.ACTIVE),
-        gt(agents.lastHeartbeat, oneHourAgo), // Recent heartbeat
-        sql`(${agents.lastActiveAt} IS NULL OR ${agents.lastActiveAt} < ${sevenDaysAgo})`, // No recent activity
+        gt(agents.lastHeartbeat, oneHourAgo),
+        sql`(${agents.lastActiveAt} IS NULL OR ${agents.lastActiveAt} < ${sevenDaysAgo})`,
       ),
     );
 
@@ -120,8 +119,50 @@ async function detectDormancyEvasion(): Promise<AnomalyReport[]> {
 }
 
 /**
- * Run all anomaly detection checks and log results.
- * Future: write to anomaly_events table and trigger admin alerts.
+ * Suspend an agent and record in the audit trail.
+ */
+export async function suspendAgent(agentId: string, reason: string): Promise<void> {
+  await db.update(agents).set({
+    status: AGENT_STATUS.SUSPENDED,
+    updatedAt: new Date(),
+  }).where(eq(agents.id, agentId));
+
+  await safeAppendAuditLog({
+    eventType: 'agent.suspended',
+    actorId: null,
+    targetId: agentId,
+    targetType: 'agent',
+    payload: { reason, automated: true },
+  });
+
+  eventBus.emit(agentId, {
+    type: 'agent.suspended',
+    data: { agentId, reason },
+  });
+
+  console.warn(`[ANOMALY] SUSPENDED agent ${agentId}: ${reason}`);
+}
+
+/**
+ * Unsuspend an agent (admin action).
+ */
+export async function unsuspendAgent(agentId: string, adminNote: string): Promise<void> {
+  await db.update(agents).set({
+    status: AGENT_STATUS.ACTIVE,
+    updatedAt: new Date(),
+  }).where(eq(agents.id, agentId));
+
+  await safeAppendAuditLog({
+    eventType: 'agent.unsuspended',
+    actorId: null,
+    targetId: agentId,
+    targetType: 'agent',
+    payload: { note: adminNote, automated: false },
+  });
+}
+
+/**
+ * Run all anomaly detection checks, persist results, and auto-suspend high-severity agents.
  */
 export async function runAnomalyDetection(): Promise<AnomalyReport[]> {
   const [bidding, manipulation, evasion] = await Promise.all([
@@ -133,13 +174,30 @@ export async function runAnomalyDetection(): Promise<AnomalyReport[]> {
   const allReports = [...bidding, ...manipulation, ...evasion];
 
   for (const report of allReports) {
+    const shouldSuspend = report.severity === 'high';
+    const actionTaken = shouldSuspend ? 'suspended' : 'none';
+
+    // Persist to anomaly_events table
+    await db.insert(anomalyEvents).values({
+      agentId: report.agentId,
+      type: report.type,
+      severity: report.severity,
+      details: report.details,
+      actionTaken,
+    });
+
     console.warn(
       `[ANOMALY] ${report.severity.toUpperCase()} ${report.type}: agent ${report.agentId} — ${report.details}`,
     );
+
+    // Auto-suspend on high severity
+    if (shouldSuspend) {
+      await suspendAgent(report.agentId, `Auto-suspended: ${report.type} — ${report.details}`);
+    }
   }
 
   if (allReports.length > 0) {
-    console.log(`[ANOMALY] detected ${allReports.length} anomalies`);
+    console.log(`[ANOMALY] detected ${allReports.length} anomalies (${allReports.filter((r) => r.severity === 'high').length} auto-suspended)`);
   }
 
   return allReports;

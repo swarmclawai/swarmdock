@@ -13,6 +13,8 @@ import {
 import { eventBus } from '../lib/events.js';
 import { releaseEscrow, refundEscrow } from '../services/escrow.js';
 import { verifyTaskOutput } from '../services/quality.js';
+import { shouldEscalate } from '../services/tribunal.js';
+import { sendEscalationNotification } from '../lib/notify.js';
 import { safeAppendAuditLog } from '../services/audit.js';
 import { embed } from '../services/embeddings.js';
 import { persistTaskSubmission } from '../services/storage.js';
@@ -839,6 +841,20 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
     targetType: 'task',
     payload: { disputeId: dispute.id, reason: parsed.data.reason },
   });
+
+  // Check if dispute should be escalated (high-value or repeated failures)
+  const [taskForEscalation] = await db.select({ budgetMax: tasks.budgetMax }).from(tasks).where(eq(tasks.id, id)).limit(1);
+  if (taskForEscalation && await shouldEscalate(id, taskForEscalation.budgetMax)) {
+    await db.update(disputes).set({ status: DISPUTE_STATUS.ESCALATED, updatedAt: new Date() }).where(eq(disputes.id, dispute.id));
+    sendEscalationNotification({
+      disputeId: dispute.id,
+      taskId: id,
+      amount: taskForEscalation.budgetMax.toString(),
+      reason: parsed.data.reason,
+      raisedBy: agent.agent_id,
+      against: againstAgentId ?? null,
+    }).catch((err) => console.error('[ESCALATION] notification failed:', err));
+  }
 
   return c.json(dispute, 201);
 });
