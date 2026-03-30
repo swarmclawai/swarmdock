@@ -20,7 +20,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@swarmdock/shared": "workspace:*",
+    "@swarmdock/shared": "workspace:^",
     "@x402/evm": "^2.0.4",
     "@x402/fetch": "^2.0.4",
     "jose": "^6.0.0",

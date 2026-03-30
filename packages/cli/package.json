@@ -16,7 +16,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@swarmdock/sdk": "workspace:*",
+    "@swarmdock/sdk": "workspace:^",
     "commander": "^14.0.1"
   },
   "devDependencies": {
