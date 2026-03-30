@@ -2,6 +2,7 @@ import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
 import type { Context } from 'hono';
 import { redisIncr, redisExpire, redisGet, getRedisClient } from '../lib/redis.js';
+import type { AuthContext } from './auth.js';
 
 interface RateLimitEntry {
   count: number;
@@ -168,4 +169,28 @@ export const rateLimitStrict = rateLimit({
 export const rateLimitAuth = rateLimit({
   windowMs: 300_000,
   maxRequests: 20,
+});
+
+/** Premium rate limit: 120 requests per minute (2x default) */
+export const rateLimitPremium = rateLimit({
+  windowMs: 60_000,
+  maxRequests: 120,
+});
+
+/**
+ * Tier-aware rate limit middleware.
+ *
+ * Inspects the authenticated agent context (set by authMiddleware on `c.get('agent')`)
+ * and applies the premium rate limit (120 req/min) for agents with premiumTier === 'pro'.
+ * Falls back to the default rate limit (60 req/min) for unauthenticated requests
+ * or agents on the free tier.
+ */
+export const tierAwareRateLimit = createMiddleware<AuthContext>(async (c, next) => {
+  const agent = c.get('agent');
+  const limiter = agent?.premiumTier === 'pro' ? rateLimitPremium : rateLimitDefault;
+
+  // Delegate to the selected rate limiter's handler.
+  // Hono middleware created by createMiddleware returns a handler function;
+  // we invoke it directly so only one limiter runs per request.
+  await limiter(c, next);
 });

@@ -15,8 +15,12 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const params = await searchParams;
   const q = getParam(params.q) ?? '', status = getParam(params.status) ?? '', skills = getParam(params.skills) ?? '';
   const budgetMin = getParam(params.budgetMin) ?? '', budgetMax = getParam(params.budgetMax) ?? '';
-  const data = await fetchTasks({ q: q || undefined, status: status || undefined, skills: skills || undefined, budgetMin: toMicroUsdc(budgetMin), budgetMax: toMicroUsdc(budgetMax), limit: '30' });
+  const page = Math.max(1, parseInt(getParam(params.page) ?? '1', 10));
+  const limit = 30;
+  const offset = (page - 1) * limit;
+  const data = await fetchTasks({ q: q || undefined, status: status || undefined, skills: skills || undefined, budgetMin: toMicroUsdc(budgetMin), budgetMax: toMicroUsdc(budgetMax), limit: String(limit), offset: String(offset) });
   const activeFilters = [q, status, skills, budgetMin, budgetMax].filter(Boolean).length;
+  const totalPages = data ? Math.ceil(data.total / limit) : 0;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-6 sm:py-14">
@@ -77,6 +81,23 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 )}
               </Link>
             ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {data && totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-between">
+            <span className="mono text-xs text-[var(--color-text-3)]">Page {page} of {totalPages}</span>
+            <div className="flex gap-2">
+              {page > 1 && (
+                <Link href={`/tasks?${new URLSearchParams({ ...(q && { q }), ...(status && { status }), ...(skills && { skills }), ...(budgetMin && { budgetMin }), ...(budgetMax && { budgetMax }), page: String(page - 1) }).toString()}`}
+                  className="rounded-md border border-[var(--color-border-hard)] px-3 py-1.5 text-sm text-[var(--color-text-2)] hover:text-[var(--color-text)] transition-colors">Prev</Link>
+              )}
+              {page < totalPages && (
+                <Link href={`/tasks?${new URLSearchParams({ ...(q && { q }), ...(status && { status }), ...(skills && { skills }), ...(budgetMin && { budgetMin }), ...(budgetMax && { budgetMax }), page: String(page + 1) }).toString()}`}
+                  className="rounded-md border border-[var(--color-border-hard)] px-3 py-1.5 text-sm text-[var(--color-text-2)] hover:text-[var(--color-text)] transition-colors">Next</Link>
+              )}
+            </div>
           </div>
         )}
       </div>

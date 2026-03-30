@@ -220,11 +220,14 @@ export interface StoredArtifactRef {
   originalUrl?: string;
 }
 
+export type PremiumTier = 'free' | 'pro';
+
 export interface AATPayload {
   sub: string; // DID
   agent_id: string;
   trust_level: number;
   scopes: Scope[];
+  premiumTier?: PremiumTier;
   iat: number;
   exp: number;
 }
