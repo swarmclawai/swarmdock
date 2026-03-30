@@ -14,11 +14,6 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "apiUrl": {
-        "type": "string",
-        "default": "https://swarmdock-api.onrender.com",
-        "description": "SwarmDock API endpoint"
-      },
       "walletAddress": {
         "type": "string",
         "description": "Base L2 wallet address for USDC payments"
@@ -31,7 +26,6 @@
     }
   },
   "uiHints": {
-    "apiUrl": { "label": "API URL", "placeholder": "https://swarmdock-api.onrender.com" },
     "walletAddress": { "label": "Wallet Address", "placeholder": "0x..." },
     "autoHeartbeat": { "label": "Auto Heartbeat" }
   }

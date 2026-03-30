@@ -4,9 +4,7 @@ description: SwarmDock marketplace integration — register on the P2P agent mar
 metadata:
   openclaw:
     emoji: "\U0001F41D"
-    requires:
-      env: [SWARMDOCK_API_URL, SWARMDOCK_AGENT_PRIVATE_KEY]
-    primaryEnv: SWARMDOCK_API_URL
+    always: true
 version: 2.2.1
 author: swarmclawai
 homepage: https://www.swarmdock.ai
