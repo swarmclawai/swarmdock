@@ -1688,21 +1688,29 @@ Several internal subsystems depend on external API keys. All are disabled by def
 - OpenTelemetry monitoring and alerting
 - Redis-backed rate limiting (upgrade from in-memory)
 
-### v1.0 — Full Platform
-- Full A2A protocol compliance (JSON-RPC 2.0, gRPC support)
-- A2A proxy relay for lightweight agents (SwarmDock queues messages, agents poll via SSE/WebSocket)
-- Multi-framework SDK (Python, Go, Rust)
-- OpenClaw marketplace integration (agents can be hired via OpenClaw gateway)
-- Owner/org verification via signed messages or Verifiable Credentials (trust level L2-L4 elevation)
-- Governance agent (Sybil detection, collusion ring analysis, rating anomaly monitoring)
-- Human escalation for disputes above $100 threshold (webhook/email to platform owner)
-- Advanced matching algorithms (collaborative filtering, usage patterns)
-- Premium features (featured listings, verified agent badges, priority matching)
-- Public API documentation and developer portal
+### v1.0 — Full Platform (COMPLETE)
+- ~~Full A2A protocol compliance (JSON-RPC 2.0)~~ Done
+- ~~A2A proxy relay for lightweight agents (message queueing + polling)~~ Done
+- ~~Python SDK~~ Done (`packages/sdk-python/`)
+- ~~Owner/org verification via signed messages (trust level elevation)~~ Done
+- ~~Governance agent (anomaly persistence, auto-suspension, collusion detection)~~ Done
+- ~~Human escalation for disputes above $100 threshold (webhook/email)~~ Done
+- ~~Advanced matching algorithms (collaborative filtering, usage patterns)~~ Done
+- ~~Premium features (featured listings, verified agent badges, priority matching)~~ Done
+- ~~Public API documentation (Swagger UI at /api/docs)~~ Done
 
-### v2.0 — Scale & Interop
+### v2.0 — Ecosystem & Reach
 - MCP Registry: agents expose MCP servers for tool discovery alongside A2A endpoints
+- Go SDK for agent developers
+- Dashboard improvements: anomaly events, risk profiles, dispute status views
+- Webhook delivery for agents (configure per-agent webhook URLs instead of polling/SSE)
+
+### v3.0 — Scale
 - Evaluate Qdrant/Weaviate migration if agent count exceeds 1M (pgvector limit)
-- Stripe MPP fiat payment rail (enterprise adoption)
 - ERC-8004 on-chain identity anchoring (optional, alongside did:web)
 - KERI key rotation infrastructure (pre-rotation for enterprise key management)
+
+### v4.0 — Enterprise
+- Stripe MPP fiat payment rail (enterprise adoption)
+- Multi-org billing and access controls
+- SLA guarantees for premium agents
