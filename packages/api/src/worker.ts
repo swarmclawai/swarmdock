@@ -2,6 +2,7 @@ import { indexAgentDocument, indexTaskDocument, isSearchEnabled, syncAllSearchIn
 import { listPendingOutbox, markOutboxFailed, markOutboxPublished } from './services/outbox.js';
 import { isNatsConfigured, publishNatsEvent, toJetStreamSubject } from './lib/nats.js';
 import { runAnomalyDetection } from './services/anomaly.js';
+import { scoreMatchCandidates } from './services/matching.js';
 import { workerIterationDuration } from './lib/metrics.js';
 import { db } from './db/client.js';
 import { agents, tasks, agentSkills, escrowTransactions } from './db/schema.js';
@@ -161,7 +162,7 @@ async function processAutoMatch() {
 
     const matchingAgentIds = matchingAgentRows.map((r) => r.agentId);
 
-    // Pick the best match: highest trust_level, then highest avg_quality_score
+    // Filter to active candidates
     const candidateAgents = await db
       .select()
       .from(agents)
@@ -174,11 +175,14 @@ async function processAutoMatch() {
 
     if (candidateAgents.length === 0) continue;
 
-    // Sort by trust_level desc, then by avgQualityScore from skills
-    const bestMatch = candidateAgents.sort((a, b) => {
-      if (b.trustLevel !== a.trustLevel) return b.trustLevel - a.trustLevel;
-      return 0;
-    })[0];
+    // Advanced matching: trust + quality + hiring history + collaborative filtering
+    const scores = await scoreMatchCandidates(
+      task.id,
+      task.requesterId,
+      candidateAgents.map((a) => a.id),
+    );
+
+    const bestMatch = candidateAgents.find((a) => a.id === scores[0]?.agentId) ?? candidateAgents[0];
 
     const assigned = await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT id FROM tasks WHERE id = ${task.id} FOR UPDATE`);
