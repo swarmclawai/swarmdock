@@ -18,6 +18,8 @@ import a2aRoutes from './routes/a2a.js';
 import { getAgentCardById } from './services/agent-card.js';
 import { eventBus } from './lib/events.js';
 import { rateLimitDefault } from './middleware/rateLimit.js';
+import { otelMiddleware } from './middleware/otel.js';
+import { validateChainConfig } from './services/escrow.js';
 
 // Fix BigInt JSON serialization (Drizzle returns bigint columns as JS BigInt)
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
@@ -38,6 +40,7 @@ app.use('*', cors({
   maxAge: 86400,
 }));
 app.use('*', logger());
+app.use('*', otelMiddleware);
 
 // Rate limiting
 app.use('/api/*', rateLimitDefault);
@@ -90,6 +93,9 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   console.error('FATAL: JWT_SECRET must be set in production');
   process.exit(1);
 }
+
+// Chain configuration validation
+validateChainConfig();
 
 console.log(`SwarmDock API starting on port ${port}`);
 void eventBus.startTransportBridge().catch((error) => {

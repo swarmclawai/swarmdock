@@ -4,7 +4,10 @@ import { escrowTransactions, transactions, agents } from '../db/schema.js';
 import { eq, or, desc } from 'drizzle-orm';
 import { authMiddleware, type AuthContext } from '../middleware/auth.js';
 import { queryOnChainBalance } from '../services/escrow.js';
+import { redisGet, redisSet } from '../lib/redis.js';
 import { ESCROW_STATUS } from '@swarmdock/shared';
+
+const BALANCE_CACHE_TTL = 30; // seconds
 
 type PaymentsDeps = {
   db: Pick<Database, 'select'>;
@@ -79,15 +82,26 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
 
     // Query actual on-chain USDC balance if wallet is configured
     let onChainBalance: string | null = null;
+    const refresh = c.req.query('refresh') === 'true';
     const [agentRow] = await database
       .select({ walletAddress: agents.walletAddress })
       .from(agents)
       .where(eq(agents.id, id))
       .limit(1);
     if (agentRow?.walletAddress) {
-      const balance = await queryOnChainBalance(agentRow.walletAddress);
-      if (balance !== null) {
-        onChainBalance = balance.toString();
+      const cacheKey = `onchain:balance:${agentRow.walletAddress}`;
+      if (!refresh) {
+        const cached = await redisGet(cacheKey);
+        if (cached !== null) {
+          onChainBalance = cached;
+        }
+      }
+      if (onChainBalance === null) {
+        const balance = await queryOnChainBalance(agentRow.walletAddress);
+        if (balance !== null) {
+          onChainBalance = balance.toString();
+          await redisSet(cacheKey, onChainBalance, BALANCE_CACHE_TTL);
+        }
       }
     }
 

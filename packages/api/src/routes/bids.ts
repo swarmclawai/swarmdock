@@ -6,6 +6,7 @@ import { authMiddleware, requireScope, type AuthContext } from '../middleware/au
 import { BidCreateSchema, TASK_STATUS, BID_STATUS, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
 import { getX402Network, microUsdcToUsdPrice, requireX402Payment } from '../services/x402.js';
+import { createSimulatedTxHash } from '../services/escrow.js';
 
 type BidContext = AuthContext & { Variables: AuthContext['Variables'] };
 
@@ -17,10 +18,6 @@ type BidRouteDeps = {
   createTxHash: () => string;
   requirePayment: typeof requireX402Payment;
 };
-
-function createSimulatedTxHash(): string {
-  return `0x${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex')}`;
-}
 
 export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
   const database = overrides.db ?? db;

@@ -91,6 +91,17 @@ export async function redisExpire(key: string, seconds: number): Promise<boolean
   }
 }
 
+export async function redisTtl(key: string): Promise<number> {
+  const c = await getRedisClient();
+  if (!c) return -1;
+  try {
+    return await (c as unknown as { ttl(key: string): Promise<number> }).ttl(key);
+  } catch (err) {
+    console.error('[REDIS] TTL error:', err);
+    return -1;
+  }
+}
+
 export function isRedisEnabled(): boolean {
   return client !== null;
 }

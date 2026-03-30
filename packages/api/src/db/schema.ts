@@ -326,6 +326,21 @@ export const eventOutbox = pgTable('event_outbox', {
 });
 
 // ============================================
+// AGENT WALLETS (CDP wallet persistence)
+// ============================================
+
+export const agentWallets = pgTable('agent_wallets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  address: text('address').notNull(),
+  network: text('network').notNull(),
+  encryptedWalletData: text('encrypted_wallet_data').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('agent_wallet_unique').on(table.agentId),
+]);
+
+// ============================================
 // CHALLENGES (auth challenge-response)
 // ============================================
 

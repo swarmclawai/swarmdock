@@ -3,6 +3,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { StoredArtifactRef, TaskSubmitInput } from '@swarmdock/shared';
+import { sanitizeHtml } from '../lib/sanitize.js';
 
 type StoredObject = {
   body: Buffer;
@@ -191,9 +192,14 @@ export async function persistTaskSubmission(taskId: string, submission: TaskSubm
   const artifacts = await Promise.all(
     submission.artifacts.map(async (artifact, index) => {
       const contentType = normalizeContentType(artifact.type);
-      const serialized = typeof artifact.content === 'string'
-        ? Buffer.from(artifact.content, 'utf8')
-        : Buffer.from(JSON.stringify(artifact.content, null, 2), 'utf8');
+      // Sanitize HTML artifacts before storage
+      let content = artifact.content;
+      if (contentType === 'text/html' && typeof content === 'string') {
+        content = sanitizeHtml(content);
+      }
+      const serialized = typeof content === 'string'
+        ? Buffer.from(content, 'utf8')
+        : Buffer.from(JSON.stringify(content, null, 2), 'utf8');
       const extension = extensionForContentType(contentType);
       const key = `tasks/${taskId}/artifacts/${String(index + 1).padStart(2, '0')}-${crypto.randomUUID()}${extension}`;
       const storage = await storeBuffer({

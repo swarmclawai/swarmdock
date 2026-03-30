@@ -2,6 +2,7 @@ import { indexAgentDocument, indexTaskDocument, isSearchEnabled, syncAllSearchIn
 import { listPendingOutbox, markOutboxFailed, markOutboxPublished } from './services/outbox.js';
 import { isNatsConfigured, publishNatsEvent, toJetStreamSubject } from './lib/nats.js';
 import { runAnomalyDetection } from './services/anomaly.js';
+import { workerIterationDuration } from './lib/metrics.js';
 import { db } from './db/client.js';
 import { agents, tasks, agentSkills, escrowTransactions } from './db/schema.js';
 import { eq, and, lt, inArray, sql, ne } from 'drizzle-orm';
@@ -10,6 +11,16 @@ import { eventBus } from './lib/events.js';
 
 function isWorkerEnabled(envVar: string, defaultValue = '1'): boolean {
   return (process.env[envVar] ?? defaultValue) === '1';
+}
+
+/** Run a worker function and record its duration to the OTel histogram. */
+async function timedWorker(name: string, fn: () => Promise<unknown>): Promise<void> {
+  const start = performance.now();
+  try {
+    await fn();
+  } finally {
+    workerIterationDuration.record(performance.now() - start, { worker: name });
+  }
 }
 
 function collectIds(row: { agentId: string | null; payload: unknown }) {
@@ -255,16 +266,16 @@ async function start() {
 
   // Outbox processor
   if (isWorkerEnabled('ENABLE_EVENT_OUTBOX')) {
-    await processOutboxBatch();
+    await timedWorker('outbox', processOutboxBatch);
     setInterval(() => {
-      void processOutboxBatch();
+      void timedWorker('outbox', processOutboxBatch);
     }, Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 2000));
   }
 
   // Task expiry loop — every 60s
   if (isWorkerEnabled('ENABLE_WORKER_TASK_EXPIRY')) {
     setInterval(() => {
-      void processTaskExpiry().catch((err) => {
+      void timedWorker('task_expiry', processTaskExpiry).catch((err) => {
         console.error('[WORKER] task expiry loop error:', err);
       });
     }, 60_000);
@@ -273,7 +284,7 @@ async function start() {
   // Agent dormancy loop — every 5 minutes
   if (isWorkerEnabled('ENABLE_WORKER_DORMANCY')) {
     setInterval(() => {
-      void processAgentDormancy().catch((err) => {
+      void timedWorker('dormancy', processAgentDormancy).catch((err) => {
         console.error('[WORKER] agent dormancy loop error:', err);
       });
     }, 5 * 60_000);
@@ -282,7 +293,7 @@ async function start() {
   // Auto-match loop — every 10s
   if (isWorkerEnabled('ENABLE_WORKER_AUTO_MATCH')) {
     setInterval(() => {
-      void processAutoMatch().catch((err) => {
+      void timedWorker('auto_match', processAutoMatch).catch((err) => {
         console.error('[WORKER] auto-match loop error:', err);
       });
     }, 10_000);
@@ -291,7 +302,7 @@ async function start() {
   // Anomaly detection loop — every 5 minutes (opt-in)
   if (isWorkerEnabled('ENABLE_WORKER_ANOMALY_DETECTION', '0')) {
     setInterval(() => {
-      void runAnomalyDetection().catch((err) => {
+      void timedWorker('anomaly_detection', runAnomalyDetection).catch((err) => {
         console.error('[WORKER] anomaly detection error:', err);
       });
     }, 5 * 60_000);

@@ -3,6 +3,7 @@ import { escrowTransactions, tasks, agents, transactions } from '../db/schema.js
 import { eq, sql } from 'drizzle-orm';
 import { PLATFORM_FEE_PERCENT, ESCROW_STATUS, TRANSACTION_TYPE, TRANSACTION_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
+import { escrowFundedCounter, escrowReleasedCounter, escrowRefundedCounter } from '../lib/metrics.js';
 import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia } from 'viem/chains';
@@ -15,8 +16,11 @@ const erc20Abi = parseAbi([
 /** Prefix used for simulated (non-on-chain) transaction hashes. Dev-only — when REQUIRE_ON_CHAIN=1, simulated hashes are never generated. */
 export const SIMULATED_TX_PREFIX = 'sim:0x';
 
-/** Generate a simulated tx hash for development when on-chain transfers are not configured. Never used when REQUIRE_ON_CHAIN=1. */
+/** Generate a simulated tx hash for development when on-chain transfers are not configured. Throws in production. */
 export function createSimulatedTxHash(): string {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Simulated transaction hashes are not allowed in production');
+  }
   return `${SIMULATED_TX_PREFIX}${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex')}`;
 }
 
@@ -49,8 +53,17 @@ function getChain() {
   return (process.env.X402_NETWORK ?? 'base-sepolia') === 'base' ? base : baseSepolia;
 }
 
-function getUsdcContractAddress() {
-  return process.env.USDC_CONTRACT_ADDRESS as `0x${string}` | undefined;
+/** Canonical USDC contract addresses per chain */
+const USDC_ADDRESSES: Record<number, `0x${string}`> = {
+  [base.id]: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  [baseSepolia.id]: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+};
+
+function getUsdcContractAddress(): `0x${string}` | undefined {
+  if (process.env.USDC_CONTRACT_ADDRESS) {
+    return process.env.USDC_CONTRACT_ADDRESS as `0x${string}`;
+  }
+  return USDC_ADDRESSES[getChain().id];
 }
 
 async function transferUsdc(to: string, amount: bigint): Promise<string | null> {
@@ -126,6 +139,7 @@ export async function fundEscrow(params: {
     data: { taskId: params.taskId, amount: params.amount.toString(), txHash: finalTxHash },
   });
 
+  escrowFundedCounter.add(1, { network: process.env.X402_NETWORK ?? 'base-sepolia' });
   return { id: result.id, txHash: finalTxHash };
 }
 
@@ -220,6 +234,7 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
     });
   }
 
+  escrowReleasedCounter.add(1, { network: process.env.X402_NETWORK ?? 'base-sepolia' });
   return { releaseTxHash: result.releaseTxHash, fee: result.fee };
 }
 
@@ -272,10 +287,35 @@ export async function refundEscrow(taskId: string): Promise<void> {
 
   // Emit events after successful transaction commit
   if (result) {
+    escrowRefundedCounter.add(1, { network: process.env.X402_NETWORK ?? 'base-sepolia' });
     eventBus.emit(result.payerId, {
       type: 'payment.refunded',
       data: { taskId, amount: result.amount.toString(), txHash: result.txHash },
     });
+  }
+}
+
+/**
+ * Validate chain configuration at startup.
+ * When targeting Base mainnet, require all on-chain infrastructure to be configured.
+ */
+export function validateChainConfig(): void {
+  const chain = getChain();
+  const network = process.env.X402_NETWORK ?? 'base-sepolia';
+
+  if (chain.id === base.id) {
+    const missing: string[] = [];
+    if (process.env.REQUIRE_ON_CHAIN !== '1') missing.push('REQUIRE_ON_CHAIN=1');
+    if (!process.env.EVM_RPC_URL) missing.push('EVM_RPC_URL');
+    if (!process.env.PLATFORM_WALLET_PRIVATE_KEY) missing.push('PLATFORM_WALLET_PRIVATE_KEY');
+
+    if (missing.length > 0) {
+      console.error(`FATAL: X402_NETWORK=${network} requires: ${missing.join(', ')}`);
+      process.exit(1);
+    }
+    console.log(`[CHAIN] Base mainnet configured, USDC: ${getUsdcContractAddress()}`);
+  } else {
+    console.log(`[CHAIN] Base Sepolia testnet, USDC: ${getUsdcContractAddress() ?? 'not set'}`);
   }
 }
 

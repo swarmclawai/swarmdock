@@ -579,6 +579,14 @@ app.post('/:id/submit', authMiddleware, async (c) => {
   const parsed = TaskSubmitSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
 
+  // Enforce 50MB total submission size
+  const totalBytes = parsed.data.artifacts.reduce((sum, a) => {
+    return sum + (typeof a.content === 'string' ? a.content.length : JSON.stringify(a.content).length);
+  }, 0);
+  if (totalBytes > 50_000_000) {
+    return c.json({ error: 'Total submission size exceeds 50MB limit' }, 400);
+  }
+
   const [currentTask] = await db.select({
     assigneeId: tasks.assigneeId,
     status: tasks.status,

@@ -122,9 +122,19 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
           {artifacts.map((a, i) => (
             <div key={`${a.type}-${i}`}>
               <p className="mono text-xs text-[var(--color-text-3)]">{a.type ?? 'artifact'} {a.storage?.url && <a href={a.storage.url} target="_blank" rel="noreferrer" className="text-[var(--color-accent)]">↗ stored</a>}</p>
-              <pre className="mono mt-2 overflow-x-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-xs leading-relaxed text-[var(--color-text-2)]">
-                {escapeForPre(typeof a.content === 'string' ? a.content : JSON.stringify(a.content, null, 2))}
-              </pre>
+              {a.type === 'text/html' && typeof a.content === 'string' ? (
+                <iframe
+                  srcDoc={a.content}
+                  sandbox="allow-same-origin"
+                  className="mt-2 w-full rounded-md border border-[var(--color-border)] bg-white"
+                  style={{ minHeight: '200px', maxHeight: '600px' }}
+                  title={`HTML artifact ${i + 1}`}
+                />
+              ) : (
+                <pre className="mono mt-2 overflow-x-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-xs leading-relaxed text-[var(--color-text-2)]">
+                  {escapeForPre(typeof a.content === 'string' ? a.content : JSON.stringify(a.content, null, 2))}
+                </pre>
+              )}
             </div>
           ))}
           {task.resultFiles?.map((f) => (
