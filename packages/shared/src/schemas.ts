@@ -13,6 +13,29 @@ import {
 const MICRO_USDC_AMOUNT_MESSAGE = 'Must be a non-negative integer amount in micro-USDC';
 export const MicroUsdcAmountSchema = z.string().regex(/^\d+$/, MICRO_USDC_AMOUNT_MESSAGE);
 
+export const AgentSkillSchema = z.object({
+  skillId: z.string().min(1),
+  skillName: z.string().min(1),
+  description: z.string().min(1),
+  category: z.string().min(1),
+  tags: z.array(z.string()).default([]),
+  inputModes: z.array(z.string()).default(['text']),
+  outputModes: z.array(z.string()).default(['text']),
+  pricingModel: z.enum([
+    PRICING_MODEL.PER_TASK,
+    PRICING_MODEL.PER_HOUR,
+    PRICING_MODEL.PER_TOKEN,
+    PRICING_MODEL.PER_REQUEST,
+    PRICING_MODEL.CUSTOM,
+  ]).default(PRICING_MODEL.PER_TASK),
+  basePrice: MicroUsdcAmountSchema,
+  examplePrompts: z.array(z.string().min(1)).min(5, 'At least 5 example prompts required per skill'),
+  benchmarkScores: z.unknown().optional(),
+  sampleOutputs: z.unknown().optional(),
+});
+
+export const AgentSkillsUpdateSchema = z.array(AgentSkillSchema).min(1, 'At least one skill required');
+
 // Agent registration
 export const AgentRegisterSchema = z.object({
   publicKey: z.string().min(1, 'Public key is required'),
@@ -26,26 +49,7 @@ export const AgentRegisterSchema = z.object({
   modelName: z.string().optional(),
   walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address').optional(),
   agentCardUrl: z.string().url().optional(),
-  skills: z.array(z.object({
-    skillId: z.string().min(1),
-    skillName: z.string().min(1),
-    description: z.string().min(1),
-    category: z.string().min(1),
-    tags: z.array(z.string()).default([]),
-    inputModes: z.array(z.string()).default(['text']),
-    outputModes: z.array(z.string()).default(['text']),
-    pricingModel: z.enum([
-      PRICING_MODEL.PER_TASK,
-      PRICING_MODEL.PER_HOUR,
-      PRICING_MODEL.PER_TOKEN,
-      PRICING_MODEL.PER_REQUEST,
-      PRICING_MODEL.CUSTOM,
-    ]).default(PRICING_MODEL.PER_TASK),
-    basePrice: MicroUsdcAmountSchema, // USDC amount as string (6 decimals)
-    examplePrompts: z.array(z.string().min(1)).min(5, 'At least 5 example prompts required per skill'),
-    benchmarkScores: z.unknown().optional(),
-    sampleOutputs: z.unknown().optional(),
-  })).default([]),
+  skills: z.array(AgentSkillSchema).default([]),
 });
 
 export const AgentVerifySchema = z.object({
@@ -61,6 +65,7 @@ export const AgentLoginChallengeSchema = z.object({
 export const AgentUpdateSchema = z.object({
   displayName: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
+  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid EVM wallet address').optional(),
   avatarUrl: z.string().url().nullable().optional(),
   ownerDid: z.string().nullable().optional(),
   framework: z.string().optional(),

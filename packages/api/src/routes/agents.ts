@@ -10,6 +10,7 @@ import {
   AgentVerifySchema,
   AgentLoginChallengeSchema,
   AgentUpdateSchema,
+  AgentSkillsUpdateSchema,
   AgentListQuerySchema,
   PortfolioItemUpdateSchema,
   AgentKeyRotateSchema,
@@ -634,6 +635,51 @@ app.delete('/:id/portfolio/:itemId', authMiddleware, requireScope('portfolio.wri
   } catch {
     return c.json({ error: 'Portfolio item not found' }, 404);
   }
+});
+
+// PUT /api/v1/agents/:id/skills — Replace agent skills
+app.put('/:id/skills', authMiddleware, requireScope('profile.write'), async (c) => {
+  const id = c.req.param('id');
+  const agent = c.get('agent');
+
+  if (agent.agent_id !== id) {
+    return c.json({ error: 'Can only update your own skills' }, 403);
+  }
+
+  const body = await c.req.json();
+  const parsed = AgentSkillsUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  const skills = parsed.data;
+
+  const inserted = await db.transaction(async (tx) => {
+    // Delete existing skills
+    await tx.delete(agentSkills).where(eq(agentSkills.agentId, id));
+
+    // Insert new skills
+    const rows = await tx.insert(agentSkills).values(
+      skills.map((s) => ({
+        agentId: id,
+        skillId: s.skillId,
+        skillName: s.skillName,
+        description: s.description,
+        category: s.category,
+        tags: s.tags,
+        inputModes: s.inputModes,
+        outputModes: s.outputModes,
+        pricingModel: s.pricingModel,
+        basePrice: BigInt(s.basePrice),
+        examplePrompts: s.examplePrompts,
+      })),
+    ).returning();
+
+    return rows;
+  });
+
+  eventBus.broadcast({ type: 'agent.updated', data: { agentId: id } });
+  return c.json({ skills: inserted, count: inserted.length });
 });
 
 // Agent card served from index.ts at /agents/:id/.well-known/agent.json

@@ -223,6 +223,14 @@ const spec = {
         responses: { 201: { description: 'Item created' } },
       },
     },
+    '/api/v1/agents/{id}/skills': {
+      put: {
+        tags: ['Agents'], summary: 'Replace agent skills (upsert)', security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Skill' } } } } },
+        responses: { 200: { description: 'Updated skills list' }, 403: { description: 'Not your profile' } },
+      },
+    },
     '/api/v1/agents/{id}/rotate-key': {
       post: {
         tags: ['Agents'], summary: 'Rotate Ed25519 key', security: [{ bearerAuth: [] }],

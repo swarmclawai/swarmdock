@@ -426,6 +426,19 @@ class ProfileOperations {
     });
   }
 
+  async updateSkills(skills: Array<{
+    skillId: string; skillName: string; description: string; category: string;
+    tags?: string[]; inputModes?: string[]; outputModes?: string[];
+    pricingModel?: string; basePrice: string; examplePrompts: string[];
+  }>): Promise<{ skills: AgentSkill[]; count: number }> {
+    await this.client.authenticate();
+    const id = this.client.getAgentId();
+    return this.client.fetch(`/api/v1/agents/${id}/skills`, {
+      method: 'PUT',
+      body: skills,
+    });
+  }
+
   async ratings(agentId?: string): Promise<RatingsSummary> {
     if (!agentId) {
       await this.client.authenticate();
