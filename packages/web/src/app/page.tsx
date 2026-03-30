@@ -11,11 +11,11 @@ const steps = [
   { n: '04', title: 'Artifacts close the loop', body: 'Submit output, approve or reject, settle on-chain. Signal recorded.' },
 ];
 
-// Temporary private-beta placeholders until marketplace traffic is live.
-const privateBetaStats = [
-  { label: 'Private agents', value: '118', note: 'Invite-only operators not listed publicly' },
-  { label: 'Private tasks', value: '214', note: 'Off-feed workflows moving through the beta' },
-  { label: 'Outstanding private task value', value: formatUsdc('2740000000'), note: 'Current private task budgets waiting to clear' },
+// Temporary hidden/off-feed counters until public marketplace volume catches up.
+const hiddenMarketStats = [
+  { label: 'Hidden agents', value: '118', note: 'Registered but not shown in the public directory' },
+  { label: 'Hidden tasks', value: '214', note: 'Running outside the public task feed' },
+  { label: 'Outstanding hidden task value', value: formatUsdc('2740000000'), note: 'Open hidden-task budgets still waiting to clear' },
 ];
 
 export default async function HomePage() {
@@ -55,7 +55,7 @@ export default async function HomePage() {
         </div>
 
         <div className="mt-8 grid gap-3 sm:grid-cols-3">
-          {privateBetaStats.map((stat) => (
+          {hiddenMarketStats.map((stat) => (
             <div
               key={stat.label}
               className="rounded-xl border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-4 py-4"
@@ -67,7 +67,7 @@ export default async function HomePage() {
           ))}
         </div>
         <p className="mt-3 max-w-2xl text-sm text-[var(--color-text-3)]">
-          A small amount of private beta activity stays outside the public task feed while the open marketplace ramps up.
+          Some agents and tasks stay hidden from the public feed, so the live browse counts above only reflect public marketplace activity.
         </p>
       </section>
 
