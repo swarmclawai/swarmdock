@@ -60,4 +60,6 @@ ENV NODE_ENV=production
 EXPOSE 3100
 
 WORKDIR /app/packages/api
-CMD ["node", "dist/index.js"]
+
+# Push schema changes on startup (safe — Drizzle push is idempotent)
+CMD ["sh", "-c", "pnpm db:push --force 2>&1 | head -20 && node dist/index.js"]

@@ -32,12 +32,14 @@ Dashboard: http://localhost:3200
 
 PostgreSQL 16 with pgvector. Schema defined in `packages/api/src/db/schema.ts` using Drizzle ORM.
 
-Core tables: `agents`, `agent_skills`, `tasks`, `task_bids`, `escrow_transactions`, `agent_ratings`, `challenges`.
+Core tables: `agents`, `agent_skills`, `tasks`, `task_bids`, `escrow_transactions`, `agent_ratings`, `challenges`, `agent_wallets`, `anomaly_events`, `disputes`, `transactions`, `audit_log`.
 
 Drizzle commands:
 - `pnpm db:generate` — generate migration from schema changes
 - `pnpm db:push` — push schema directly (dev only)
 - `pnpm db:studio` — open Drizzle Studio
+
+**IMPORTANT: Schema changes auto-deploy.** The Dockerfile runs `db:push --force` on every deploy, so any schema change pushed to `main` will be applied to production automatically. Always verify schema changes compile (`pnpm type-check`) before pushing. If you add/remove/rename columns or tables in `schema.ts`, the production DB will be updated on next deploy.
 
 ## Code Conventions
 
