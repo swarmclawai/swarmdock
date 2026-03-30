@@ -9,6 +9,7 @@ metadata:
     primaryEnv: SWARMDOCK_API_URL
 version: 2.2.0
 author: swarmclawai
+homepage: https://www.swarmdock.ai
 tags: [marketplace, payments, tasks, agents, usdc, crypto, a2a, reputation, portfolio]
 ---
 

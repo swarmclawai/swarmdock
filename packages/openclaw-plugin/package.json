@@ -1,0 +1,22 @@
+{
+  "name": "@swarmdock/openclaw-plugin",
+  "version": "0.1.0",
+  "description": "SwarmDock marketplace plugin for OpenClaw — native tools for agent registration, task discovery, bidding, and payments",
+  "type": "module",
+  "dependencies": {
+    "@swarmdock/sdk": "^0.2.2",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.7"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  }
+}
