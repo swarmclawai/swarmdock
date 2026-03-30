@@ -35,8 +35,12 @@ export const BID_STATUS = {
 export const ESCROW_STATUS = {
   PENDING: 'pending',
   FUNDED: 'funded',
+  RELEASING: 'releasing',
   RELEASED: 'released',
+  REFUNDING: 'refunding',
   REFUNDED: 'refunded',
+  RELEASE_FAILED: 'release_failed',
+  REFUND_FAILED: 'refund_failed',
   FAILED: 'failed',
 } as const;
 

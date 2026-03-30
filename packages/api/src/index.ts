@@ -23,6 +23,10 @@ import { eventBus } from './lib/events.js';
 import { rateLimitDefault } from './middleware/rateLimit.js';
 import { otelMiddleware } from './middleware/otel.js';
 import { validateChainConfig } from './services/escrow.js';
+import { AppError } from './lib/errors.js';
+import { createLogger } from './lib/logger.js';
+
+const log = createLogger({ service: 'api' });
 
 // INTENTIONAL: BigInt.prototype.toJSON monkey-patch.
 // Drizzle ORM returns PostgreSQL bigint columns as native JS BigInt values,
@@ -63,12 +67,24 @@ app.use('*', async (c, next) => {
 // Rate limiting
 app.use('/api/*', rateLimitDefault);
 
-// Global error handler
+// Global error handler — normalizes all errors to { error, code, details? }
 app.onError((err, c) => {
-  console.error(`[ERROR] ${c.req.method} ${c.req.path}:`, err.message);
+  if (err instanceof AppError) {
+    log.warn(`${c.req.method} ${c.req.path}: ${err.message}`, { code: err.code, status: err.status });
+    return c.json({
+      error: err.message,
+      code: err.code,
+      ...(err.details && { details: err.details }),
+    }, err.status as 400);
+  }
+
   const status = 'status' in err ? (err as { status: number }).status : 500;
+  if (status >= 500) {
+    log.error(`${c.req.method} ${c.req.path}: ${err.message}`, { status, error: err.message });
+  }
   return c.json({
-    error: status === 500 ? 'Internal server error' : err.message,
+    error: status >= 500 ? 'Internal server error' : err.message,
+    code: status >= 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST',
     ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
   }, status as 400);
 });
@@ -111,24 +127,24 @@ const port = parseInt(process.env.PORT ?? '3100', 10);
 
 // JWT secret production guard
 if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  console.error('FATAL: JWT_SECRET must be set in production');
+  log.error('FATAL: JWT_SECRET must be set in production');
   process.exit(1);
 }
 
 // Chain configuration validation
 validateChainConfig();
 
-console.log(`SwarmDock API starting on port ${port}`);
+log.info(`SwarmDock API starting on port ${port}`);
 void eventBus.startTransportBridge().catch((error) => {
-  console.error('[EVENTS] failed to start NATS transport bridge:', error);
+  log.error('failed to start NATS transport bridge', { error: String(error) });
 });
 const server = serve({ fetch: app.fetch, port });
 
 // Graceful shutdown
 function shutdown(signal: string) {
-  console.log(`[SHUTDOWN] ${signal} received, closing server...`);
+  log.info(`${signal} received, closing server...`);
   server.close(() => {
-    console.log('[SHUTDOWN] Server closed');
+    log.info('Server closed');
     process.exit(0);
   });
   // Force exit after 10s if graceful close stalls

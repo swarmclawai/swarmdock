@@ -8,3 +8,4 @@ dist/
 .DS_Store
 coverage/
 .worktrees/
+cdp_api_key.json

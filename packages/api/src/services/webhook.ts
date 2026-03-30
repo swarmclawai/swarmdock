@@ -7,8 +7,13 @@ import { createHmac } from 'node:crypto';
 import { db } from '../db/client.js';
 import { agents } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { redisGet, redisSet } from '../lib/redis.js';
+import { createLogger } from '../lib/logger.js';
 
+const logger = createLogger({ service: 'webhook' });
 const RETRY_DELAYS = [1000, 5000, 30000]; // ms
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+const CIRCUIT_COOLDOWN_SECONDS = 300; // 5 minutes
 
 interface WebhookPayload {
   event: string;
@@ -40,7 +45,7 @@ async function attemptDelivery(url: string, payload: string, secret: string | nu
       if (response.ok) return true;
       if (response.status >= 400 && response.status < 500) {
         // Client error — don't retry
-        console.warn(`[WEBHOOK] ${url} returned ${response.status}, not retrying`);
+        logger.warn('client error, not retrying', { url, status: response.status });
         return false;
       }
     } catch {
@@ -52,13 +57,36 @@ async function attemptDelivery(url: string, payload: string, secret: string | nu
     }
   }
 
-  console.error(`[WEBHOOK] delivery failed after ${RETRY_DELAYS.length + 1} attempts: ${url}`);
+  logger.error('delivery failed after retries', { url, attempts: RETRY_DELAYS.length + 1 });
   return false;
+}
+
+/** Check if the circuit breaker is open for an agent's webhook. */
+async function isCircuitOpen(agentId: string): Promise<boolean> {
+  const failures = await redisGet(`swarmdock:webhook:failures:${agentId}`);
+  return failures !== null && parseInt(failures, 10) >= CIRCUIT_FAILURE_THRESHOLD;
+}
+
+/** Record a webhook delivery failure. Opens circuit after threshold. */
+async function recordFailure(agentId: string): Promise<void> {
+  const key = `swarmdock:webhook:failures:${agentId}`;
+  const failures = await redisGet(key);
+  const count = failures ? parseInt(failures, 10) + 1 : 1;
+  await redisSet(key, String(count), CIRCUIT_COOLDOWN_SECONDS);
+  if (count === CIRCUIT_FAILURE_THRESHOLD) {
+    logger.warn('circuit breaker OPEN', { agentId, failures: count, cooldownSeconds: CIRCUIT_COOLDOWN_SECONDS });
+  }
+}
+
+/** Reset the circuit breaker after a successful delivery. */
+async function resetCircuit(agentId: string): Promise<void> {
+  await redisSet(`swarmdock:webhook:failures:${agentId}`, '0', 1);
 }
 
 /**
  * Deliver an event to an agent's webhook if configured.
  * Called from eventBus.emit() — runs async, never blocks the caller.
+ * Respects circuit breaker: skips delivery after repeated failures.
  */
 export async function deliverWebhook(
   agentId: string,
@@ -75,6 +103,9 @@ export async function deliverWebhook(
   // Check event filter — deliver all if webhookEvents is null/empty
   if (agent.webhookEvents?.length && !agent.webhookEvents.includes(event.type)) return;
 
+  // Circuit breaker — skip delivery if agent webhook is repeatedly failing
+  if (await isCircuitOpen(agentId)) return;
+
   const payload: WebhookPayload = {
     event: event.type,
     data: event.data,
@@ -83,5 +114,11 @@ export async function deliverWebhook(
   };
 
   const body = JSON.stringify(payload);
-  await attemptDelivery(agent.webhookUrl, body, agent.webhookSecret);
+  const success = await attemptDelivery(agent.webhookUrl, body, agent.webhookSecret);
+
+  if (success) {
+    await resetCircuit(agentId);
+  } else {
+    await recordFailure(agentId);
+  }
 }

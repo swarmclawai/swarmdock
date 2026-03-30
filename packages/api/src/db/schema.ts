@@ -184,6 +184,8 @@ export const escrowTransactions = pgTable('escrow_transactions', {
   escrowTxHash: text('escrow_tx_hash'),
   releaseTxHash: text('release_tx_hash'),
   network: text('network').default('base-sepolia').notNull(),
+  retryCount: integer('retry_count').default(0).notNull(),
+  lastError: text('last_error'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -212,6 +214,7 @@ export const agentRatings = pgTable('agent_ratings', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex('rating_unique').on(table.taskId, table.raterId),
+  index('idx_ratings_ratee').on(table.rateeId),
 ]);
 
 // ============================================
@@ -249,7 +252,9 @@ export const portfolioItems = pgTable('portfolio_items', {
   isPinned: boolean('is_pinned').default(false).notNull(),
   displayOrder: integer('display_order').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_portfolio_agent').on(table.agentId),
+]);
 
 // ============================================
 // AUDIT LOG (immutable, hash-chained)
@@ -317,7 +322,10 @@ export const disputes = pgTable('disputes', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_disputes_status').on(table.status),
+  index('idx_disputes_task_id').on(table.taskId),
+]);
 
 // ============================================
 // EVENT OUTBOX (reliable event delivery)

@@ -2,6 +2,7 @@ import { indexAgentDocument, indexTaskDocument, isSearchEnabled, syncAllSearchIn
 import { listPendingOutbox, markOutboxFailed, markOutboxPublished } from './services/outbox.js';
 import { isNatsConfigured, publishNatsEvent, toJetStreamSubject } from './lib/nats.js';
 import { runAnomalyDetection } from './services/anomaly.js';
+import { releaseEscrow, refundEscrow } from './services/escrow.js';
 import { scoreMatchCandidates } from './services/matching.js';
 import { workerIterationDuration } from './lib/metrics.js';
 import { db } from './db/client.js';
@@ -9,19 +10,36 @@ import { agents, tasks, agentSkills, escrowTransactions, challenges } from './db
 import { eq, and, lt, inArray, sql, ne, or } from 'drizzle-orm';
 import { TASK_STATUS, AGENT_STATUS, MATCHING_MODE, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from './lib/events.js';
+import { redisAcquireLock, redisReleaseLock } from './lib/redis.js';
+import { createLogger } from './lib/logger.js';
+
+const logger = createLogger({ service: 'worker' });
+
+let shuttingDown = false;
+const activeIntervals: ReturnType<typeof setInterval>[] = [];
 
 function isWorkerEnabled(envVar: string, defaultValue = '1'): boolean {
   return (process.env[envVar] ?? defaultValue) === '1';
 }
 
-/** Run a worker function and record its duration to the OTel histogram. */
-async function timedWorker(name: string, fn: () => Promise<unknown>): Promise<void> {
+/** Run a worker function with advisory lock and OTel histogram. */
+async function timedWorker(name: string, fn: () => Promise<unknown>, lockTtl = 30): Promise<void> {
+  if (shuttingDown) return;
+  const lockKey = `swarmdock:worker:${name}`;
+  const token = await redisAcquireLock(lockKey, lockTtl);
+  if (!token) return; // Another instance holds the lock
   const start = performance.now();
   try {
     await fn();
   } finally {
     workerIterationDuration.record(performance.now() - start, { worker: name });
+    await redisReleaseLock(lockKey, token);
   }
+}
+
+function trackInterval(interval: ReturnType<typeof setInterval>): ReturnType<typeof setInterval> {
+  activeIntervals.push(interval);
+  return interval;
 }
 
 function collectIds(row: { agentId: string | null; payload: unknown }) {
@@ -73,7 +91,7 @@ async function processOutboxBatch() {
       await markOutboxPublished(row.id);
     } catch (error) {
       await markOutboxFailed(row.id, error);
-      console.error('[WORKER] failed to process outbox row', row.id, error);
+      logger.error('failed to process outbox row', { outboxId: row.id, error: String(error) });
     }
   }
 }
@@ -101,7 +119,7 @@ async function processTaskExpiry() {
       data: { taskId: task.id, title: task.title, requesterId: task.requesterId },
     });
 
-    console.log(`[WORKER] expired task ${task.id}`);
+    logger.info('expired task', { taskId: task.id });
   }
 }
 
@@ -128,7 +146,7 @@ async function processAgentDormancy() {
       data: { agentId: agent.id, displayName: agent.displayName },
     });
 
-    console.log(`[WORKER] marked agent ${agent.id} as dormant`);
+    logger.info('marked agent dormant', { agentId: agent.id });
   }
 }
 
@@ -207,7 +225,7 @@ async function processAutoMatch() {
         .limit(1);
 
       if (!escrow) {
-        console.warn(`[WORKER] skipping auto-match for task ${task.id}: no funded escrow`);
+        logger.warn('skipping auto-match: no funded escrow', { taskId: task.id });
         return false;
       }
 
@@ -243,7 +261,7 @@ async function processAutoMatch() {
       data: { taskId: task.id, assigneeId: bestMatch.id, title: task.title },
     });
 
-    console.log(`[WORKER] auto-matched task ${task.id} to agent ${bestMatch.id}`);
+    logger.info('auto-matched task', { taskId: task.id, agentId: bestMatch.id });
   }
 }
 
@@ -253,7 +271,7 @@ async function cleanupReadMessages() {
   );
   const deleted = (result as { rowCount?: number }).rowCount ?? 0;
   if (deleted > 0) {
-    console.log(`[WORKER] cleaned up ${deleted} acknowledged messages older than 7 days`);
+    logger.info('cleaned up acknowledged messages', { deleted });
   }
 }
 
@@ -263,12 +281,61 @@ async function cleanupStaleChallenges() {
     .where(or(lt(challenges.expiresAt, new Date()), eq(challenges.used, true)));
   const deleted = (result as { rowCount?: number }).rowCount ?? 0;
   if (deleted > 0) {
-    console.log(`[WORKER] cleaned up ${deleted} stale/used challenges`);
+    logger.info('cleaned up stale/used challenges', { deleted });
+  }
+}
+
+const MAX_ESCROW_RETRIES = 5;
+
+async function processStuckEscrows() {
+  // Find escrows stuck in RELEASING or REFUNDING status (failed Phase 2)
+  const stuckEscrows = await db
+    .select()
+    .from(escrowTransactions)
+    .where(
+      and(
+        inArray(escrowTransactions.status, [ESCROW_STATUS.RELEASING, ESCROW_STATUS.REFUNDING]),
+        lt(escrowTransactions.updatedAt, new Date(Date.now() - 5 * 60_000)), // older than 5 minutes
+        lt(escrowTransactions.retryCount, MAX_ESCROW_RETRIES),
+      ),
+    );
+
+  for (const escrow of stuckEscrows) {
+    try {
+      if (escrow.status === ESCROW_STATUS.RELEASING) {
+        await releaseEscrow(escrow.taskId);
+        logger.info('retried escrow release successfully', { taskId: escrow.taskId, retryCount: escrow.retryCount });
+      } else {
+        await refundEscrow(escrow.taskId);
+        logger.info('retried escrow refund successfully', { taskId: escrow.taskId, retryCount: escrow.retryCount });
+      }
+    } catch (error) {
+      logger.error('escrow retry failed', { taskId: escrow.taskId, status: escrow.status, retryCount: escrow.retryCount, error: String(error) });
+
+      // If max retries exceeded, mark as permanently failed
+      if (escrow.retryCount + 1 >= MAX_ESCROW_RETRIES) {
+        const failedStatus = escrow.status === ESCROW_STATUS.RELEASING
+          ? ESCROW_STATUS.RELEASE_FAILED
+          : ESCROW_STATUS.REFUND_FAILED;
+
+        await db
+          .update(escrowTransactions)
+          .set({ status: failedStatus, updatedAt: new Date() })
+          .where(eq(escrowTransactions.id, escrow.id));
+
+        eventBus.broadcast({
+          type: 'payment.stuck',
+          data: { taskId: escrow.taskId, escrowId: escrow.id, status: failedStatus, retries: escrow.retryCount + 1 },
+        });
+
+        logger.error('escrow permanently failed, requires admin intervention', { taskId: escrow.taskId, escrowId: escrow.id, status: failedStatus });
+      }
+    }
   }
 }
 
 async function start() {
-  console.log('[WORKER] starting');
+  logger.info('starting');
 
   // Log feature flag status
   const flags = {
@@ -279,72 +346,96 @@ async function start() {
     'Anomaly detection': isWorkerEnabled('ENABLE_WORKER_ANOMALY_DETECTION', '0'),
   };
   for (const [name, enabled] of Object.entries(flags)) {
-    console.log(`[WORKER] ${name}: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    logger.info(`${name}: ${enabled ? 'ENABLED' : 'DISABLED'}`);
   }
 
   if (isSearchEnabled()) {
     await syncAllSearchIndexes().catch((error) => {
-      console.error('[WORKER] initial search sync failed:', error);
+      logger.error('initial search sync failed', { error: String(error) });
     });
   }
 
   // Outbox processor
   if (isWorkerEnabled('ENABLE_EVENT_OUTBOX')) {
     await timedWorker('outbox', processOutboxBatch);
-    setInterval(() => {
+    trackInterval(setInterval(() => {
       void timedWorker('outbox', processOutboxBatch);
-    }, Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 2000));
+    }, Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 2000)));
 
     // Challenge cleanup — every 10 minutes (lightweight, shares outbox gate)
-    setInterval(() => {
+    trackInterval(setInterval(() => {
       void timedWorker('challenge_cleanup', cleanupStaleChallenges).catch((err) => {
-        console.error('[WORKER] challenge cleanup error:', err);
+        logger.error('challenge cleanup error', { error: String(err) });
       });
-    }, 10 * 60_000);
+    }, 10 * 60_000));
   }
 
   // Task expiry loop — every 60s
   if (isWorkerEnabled('ENABLE_WORKER_TASK_EXPIRY')) {
-    setInterval(() => {
+    trackInterval(setInterval(() => {
       void timedWorker('task_expiry', processTaskExpiry).catch((err) => {
-        console.error('[WORKER] task expiry loop error:', err);
+        logger.error('task expiry loop error', { error: String(err) });
       });
-    }, 60_000);
+    }, 60_000));
   }
 
   // Agent dormancy loop — every 5 minutes
   if (isWorkerEnabled('ENABLE_WORKER_DORMANCY')) {
-    setInterval(() => {
+    trackInterval(setInterval(() => {
       void timedWorker('dormancy', processAgentDormancy).catch((err) => {
-        console.error('[WORKER] agent dormancy loop error:', err);
+        logger.error('agent dormancy loop error', { error: String(err) });
       });
-    }, 5 * 60_000);
+    }, 5 * 60_000));
   }
 
   // Auto-match loop — every 10s
   if (isWorkerEnabled('ENABLE_WORKER_AUTO_MATCH')) {
-    setInterval(() => {
+    trackInterval(setInterval(() => {
       void timedWorker('auto_match', processAutoMatch).catch((err) => {
-        console.error('[WORKER] auto-match loop error:', err);
+        logger.error('auto-match loop error', { error: String(err) });
       });
-    }, 10_000);
+    }, 10_000));
   }
 
   // Anomaly detection loop — every 5 minutes (opt-in)
   if (isWorkerEnabled('ENABLE_WORKER_ANOMALY_DETECTION', '0')) {
-    setInterval(() => {
+    trackInterval(setInterval(() => {
       void timedWorker('anomaly_detection', runAnomalyDetection).catch((err) => {
-        console.error('[WORKER] anomaly detection error:', err);
+        logger.error('anomaly detection error', { error: String(err) });
       });
-    }, 5 * 60_000);
+    }, 5 * 60_000));
   }
 
-  // Message cleanup loop — every hour, remove acknowledged messages older than 7 days
-  setInterval(() => {
-    void timedWorker('message_cleanup', cleanupReadMessages).catch((err) => {
-      console.error('[WORKER] message cleanup error:', err);
+  // Escrow retry loop — every 2 minutes, retry stuck releasing/refunding escrows
+  trackInterval(setInterval(() => {
+    void timedWorker('escrow_retry', processStuckEscrows, 120).catch((err) => {
+      logger.error('escrow retry loop error', { error: String(err) });
     });
-  }, 60 * 60_000);
+  }, 2 * 60_000));
+
+  // Message cleanup loop — every hour, remove acknowledged messages older than 7 days
+  trackInterval(setInterval(() => {
+    void timedWorker('message_cleanup', cleanupReadMessages).catch((err) => {
+      logger.error('message cleanup error', { error: String(err) });
+    });
+  }, 60 * 60_000));
 }
+
+function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`${signal} received, shutting down gracefully...`);
+  for (const interval of activeIntervals) {
+    clearInterval(interval);
+  }
+  // Allow in-flight iterations to complete, then exit
+  setTimeout(() => {
+    logger.info('shutdown complete');
+    process.exit(0);
+  }, 5000);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 void start();

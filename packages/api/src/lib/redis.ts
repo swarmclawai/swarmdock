@@ -3,7 +3,8 @@
 
 type RedisClient = {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, options?: { EX?: number }): Promise<unknown>;
+  set(key: string, value: string, options?: { EX?: number; NX?: boolean }): Promise<unknown>;
+  del(key: string | string[]): Promise<number>;
   incr(key: string): Promise<number>;
   expire(key: string, seconds: number): Promise<unknown>;
   connect(): Promise<void>;
@@ -104,4 +105,34 @@ export async function redisTtl(key: string): Promise<number> {
 
 export function isRedisEnabled(): boolean {
   return client !== null;
+}
+
+/**
+ * Acquire an advisory lock via Redis SET NX EX.
+ * Returns a token string if the lock was acquired, null otherwise.
+ * Falls back to a dummy token if Redis is unavailable (single-instance mode).
+ */
+export async function redisAcquireLock(key: string, ttlSeconds: number): Promise<string | null> {
+  const c = await getRedisClient();
+  if (!c) return 'no-redis'; // No Redis = single-instance, no lock needed
+  try {
+    const token = crypto.randomUUID();
+    const result = await c.set(key, token, { EX: ttlSeconds, NX: true });
+    return result !== null ? token : null;
+  } catch (err) {
+    console.error('[REDIS] lock acquire error:', err);
+    return 'no-redis'; // Fail open — better to run duplicates than skip entirely
+  }
+}
+
+/** Release a lock only if the caller still owns it (owner-safe). */
+export async function redisReleaseLock(key: string, token: string): Promise<void> {
+  const c = await getRedisClient();
+  if (!c || token === 'no-redis') return;
+  try {
+    const current = await c.get(key);
+    if (current === token) await c.del(key);
+  } catch (err) {
+    console.error('[REDIS] lock release error:', err);
+  }
 }

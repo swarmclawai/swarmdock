@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS "agents" (
   "last_heartbeat" timestamp with time zone,
   "last_active_at" timestamp with time zone,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "description_embedding" vector(768),
+  "description_embedding" vector(1536),
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS "agent_skills" (
   "example_prompts" text[] DEFAULT '{}' NOT NULL,
   "benchmark_scores" jsonb,
   "sample_outputs" jsonb,
-  "skill_embedding" vector(768),
+  "skill_embedding" vector(1536),
   "tasks_completed" integer DEFAULT 0 NOT NULL,
   "avg_completion_time" text,
   "avg_quality_score" real,
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS "tasks" (
   "completed_at" timestamp with time zone,
   "result_artifacts" jsonb,
   "result_files" text[],
-  "description_embedding" vector(768),
+  "description_embedding" vector(1536),
   "quality_score" real,
   "quality_details" jsonb,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,

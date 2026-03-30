@@ -4,7 +4,10 @@ import { eq, sql } from 'drizzle-orm';
 import { PLATFORM_FEE_PERCENT, ESCROW_STATUS, TRANSACTION_TYPE, TRANSACTION_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
 import { escrowFundedCounter, escrowReleasedCounter, escrowRefundedCounter } from '../lib/metrics.js';
-import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
+import { createPublicClient, createWalletClient, http, isAddress, getAddress, parseAbi } from 'viem';
+import { createLogger } from '../lib/logger.js';
+
+const logger = createLogger({ service: 'escrow' });
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia } from 'viem/chains';
 
@@ -32,8 +35,21 @@ function requireOnChain(): boolean {
   return process.env.REQUIRE_ON_CHAIN === '1';
 }
 
+/** Validate and normalize an EVM wallet address. Throws if invalid or empty. */
+function validateWalletAddress(address: string, context: string): `0x${string}` {
+  if (!address) {
+    throw new Error(`Empty wallet address (${context})`);
+  }
+  if (!isAddress(address)) {
+    throw new Error(`Invalid wallet address: ${address} (${context})`);
+  }
+  return getAddress(address);
+}
+
 /** Attempt on-chain transfer, handling failures according to REQUIRE_ON_CHAIN mode. */
 async function attemptTransfer(to: string, amount: bigint, context: string): Promise<string> {
+  validateWalletAddress(to, context);
+
   let onChainTxHash: string | null;
   try {
     onChainTxHash = await transferUsdc(to, amount);
@@ -167,15 +183,36 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
       ? await tx.select({ walletAddress: agents.walletAddress }).from(agents).where(eq(agents.id, escrow.payeeId)).limit(1)
       : [null];
 
+    // Mark as RELEASING to prevent concurrent release/refund attempts
+    await tx
+      .update(escrowTransactions)
+      .set({ status: ESCROW_STATUS.RELEASING, updatedAt: new Date() })
+      .where(eq(escrowTransactions.id, lockedId));
+
     return { escrow, fee, payout, payeeWallet: payee?.walletAddress ?? '' };
   });
 
   // Phase 2: On-chain transfer (outside DB transaction — irreversible)
-  const finalTxHash = await attemptTransfer(
-    phase1.payeeWallet,
-    phase1.payout,
-    `escrow release for task ${taskId}`,
-  );
+  let finalTxHash: string;
+  try {
+    finalTxHash = await attemptTransfer(
+      phase1.payeeWallet,
+      phase1.payout,
+      `escrow release for task ${taskId}`,
+    );
+  } catch (error) {
+    // Record failure with retry count — worker will retry automatically
+    await db
+      .update(escrowTransactions)
+      .set({
+        status: ESCROW_STATUS.RELEASING,
+        retryCount: sql`${escrowTransactions.retryCount} + 1`,
+        lastError: String(error),
+        updatedAt: new Date(),
+      })
+      .where(eq(escrowTransactions.id, phase1.escrow.id));
+    throw error;
+  }
 
   // Phase 3: Record the release in the database
   await db.transaction(async (tx) => {
@@ -245,8 +282,8 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
 }
 
 export async function refundEscrow(taskId: string): Promise<void> {
-  const result = await db.transaction(async (tx) => {
-    // Lock escrow row to prevent concurrent refunds
+  // Phase 1: Lock escrow and read payer wallet (DB only, no on-chain call)
+  const phase1 = await db.transaction(async (tx) => {
     const lockResult = await tx.execute(
       sql`SELECT id FROM escrow_transactions WHERE task_id = ${taskId} AND status = ${ESCROW_STATUS.FUNDED} LIMIT 1 FOR UPDATE`,
     );
@@ -263,12 +300,41 @@ export async function refundEscrow(taskId: string): Promise<void> {
 
     const [payer] = await tx.select({ walletAddress: agents.walletAddress }).from(agents).where(eq(agents.id, escrow.payerId)).limit(1);
 
-    const finalRefundTxHash = await attemptTransfer(
-      payer?.walletAddress ?? '',
-      escrow.amount,
+    // Mark as REFUNDING to prevent concurrent refund attempts
+    await tx
+      .update(escrowTransactions)
+      .set({ status: ESCROW_STATUS.REFUNDING, updatedAt: new Date() })
+      .where(eq(escrowTransactions.id, escrow.id));
+
+    return { escrow, payerWallet: payer?.walletAddress ?? '' };
+  });
+
+  if (!phase1) return;
+
+  // Phase 2: On-chain transfer (outside DB transaction — irreversible)
+  let finalRefundTxHash: string;
+  try {
+    finalRefundTxHash = await attemptTransfer(
+      phase1.payerWallet,
+      phase1.escrow.amount,
       `escrow refund for task ${taskId}`,
     );
+  } catch (error) {
+    // Record failure with retry count — worker will retry automatically
+    await db
+      .update(escrowTransactions)
+      .set({
+        status: ESCROW_STATUS.REFUNDING,
+        retryCount: sql`${escrowTransactions.retryCount} + 1`,
+        lastError: String(error),
+        updatedAt: new Date(),
+      })
+      .where(eq(escrowTransactions.id, phase1.escrow.id));
+    throw error;
+  }
 
+  // Phase 3: Record the refund in the database
+  await db.transaction(async (tx) => {
     await tx
       .update(escrowTransactions)
       .set({
@@ -276,30 +342,26 @@ export async function refundEscrow(taskId: string): Promise<void> {
         releaseTxHash: finalRefundTxHash,
         updatedAt: new Date(),
       })
-      .where(eq(escrowTransactions.id, escrow.id));
+      .where(eq(escrowTransactions.id, phase1.escrow.id));
 
     await tx.insert(transactions).values({
       taskId,
       type: TRANSACTION_TYPE.ESCROW_REFUND,
-      toAgentId: escrow.payerId,
-      amount: escrow.amount,
+      toAgentId: phase1.escrow.payerId,
+      amount: phase1.escrow.amount,
       txHash: finalRefundTxHash,
-      network: escrow.network,
+      network: phase1.escrow.network,
       status: TRANSACTION_STATUS.CONFIRMED,
       confirmedAt: new Date(),
     });
-
-    return { payerId: escrow.payerId, amount: escrow.amount, txHash: finalRefundTxHash };
   });
 
-  // Emit events after successful transaction commit
-  if (result) {
-    escrowRefundedCounter.add(1, { network: process.env.X402_NETWORK ?? 'base-sepolia' });
-    eventBus.emit(result.payerId, {
-      type: 'payment.refunded',
-      data: { taskId, amount: result.amount.toString(), txHash: result.txHash },
-    });
-  }
+  // Emit events after successful Phase 3 commit
+  escrowRefundedCounter.add(1, { network: process.env.X402_NETWORK ?? 'base-sepolia' });
+  eventBus.emit(phase1.escrow.payerId, {
+    type: 'payment.refunded',
+    data: { taskId, amount: phase1.escrow.amount.toString(), txHash: finalRefundTxHash },
+  });
 }
 
 /**
@@ -317,12 +379,12 @@ export function validateChainConfig(): void {
     if (!process.env.PLATFORM_WALLET_PRIVATE_KEY) missing.push('PLATFORM_WALLET_PRIVATE_KEY');
 
     if (missing.length > 0) {
-      console.error(`FATAL: X402_NETWORK=${network} requires: ${missing.join(', ')}`);
+      logger.error(`FATAL: X402_NETWORK=${network} requires: ${missing.join(', ')}`, { network });
       process.exit(1);
     }
-    console.log(`[CHAIN] Base mainnet configured, USDC: ${getUsdcContractAddress()}`);
+    logger.info('Base mainnet configured', { network, usdc: getUsdcContractAddress() });
   } else {
-    console.log(`[CHAIN] Base Sepolia testnet, USDC: ${getUsdcContractAddress() ?? 'not set'}`);
+    logger.info('Base Sepolia testnet', { network, usdc: getUsdcContractAddress() ?? 'not set' });
   }
 }
 
@@ -350,7 +412,7 @@ export async function queryOnChainBalance(walletAddress: string): Promise<bigint
 
     return balance as bigint;
   } catch (err) {
-    console.error('[ESCROW] on-chain balance query failed:', err);
+    logger.error('on-chain balance query failed', { error: String(err) });
     return null;
   }
 }
