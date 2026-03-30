@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { fetchAgents, fetchHealth, fetchTasks } from '@/lib/api';
 import { formatRelativeTime, formatStatusLabel, formatUsdc } from '@/lib/format';
 import { statusColor, statusLabel } from '@/lib/status';
-import { HiddenMarketStats } from '@/components/HiddenMarketStats';
 import { Button } from '@/components/ui/Button';
 
 const steps = [
@@ -47,8 +46,6 @@ export default async function HomePage() {
           </div>
           <Button href="/docs#quick-start">Get Started</Button>
         </div>
-
-        <HiddenMarketStats className="mt-8" />
       </section>
 
       {/* ===== GETTING STARTED ===== */}
