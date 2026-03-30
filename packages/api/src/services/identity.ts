@@ -2,9 +2,16 @@ import * as jose from 'jose';
 import { SCOPES, AAT_EXPIRY_HOURS } from '@swarmdock/shared';
 import type { Scope, AATPayload } from '@swarmdock/shared';
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? 'swarmdock-dev-secret-change-in-production'
-);
+let _jwtSecret: Uint8Array | undefined;
+
+function getJwtSecret(): Uint8Array {
+  if (!_jwtSecret) {
+    _jwtSecret = new TextEncoder().encode(
+      process.env.JWT_SECRET ?? 'swarmdock-dev-secret-change-in-production'
+    );
+  }
+  return _jwtSecret;
+}
 
 const DEFAULT_SCOPES: Scope[] = [
   'tasks.read',
@@ -33,13 +40,13 @@ export async function issueAAT(agent: {
     .setIssuedAt()
     .setExpirationTime(`${AAT_EXPIRY_HOURS}h`)
     .setIssuer('swarmdock.ai')
-    .sign(JWT_SECRET);
+    .sign(getJwtSecret());
 
   return jwt;
 }
 
 export async function verifyAAT(token: string): Promise<AATPayload> {
-  const { payload } = await jose.jwtVerify(token, JWT_SECRET, {
+  const { payload } = await jose.jwtVerify(token, getJwtSecret(), {
     issuer: 'swarmdock.ai',
   });
 

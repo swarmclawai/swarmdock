@@ -118,7 +118,7 @@ app.get('/', async (c) => {
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
   const [{ total }] = await db.select({ total: count() }).from(tasks).where(whereClause);
-  const result = await db.select().from(tasks).where(whereClause).limit(limit).offset(offset);
+  const result = await db.select().from(tasks).where(whereClause).orderBy(desc(tasks.createdAt)).limit(limit).offset(offset);
 
   const taskIds = result.map((task) => task.id);
   const bidCountRows = taskIds.length > 0
@@ -489,10 +489,11 @@ app.patch('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
       throw new HTTPException(400, { message: 'Cannot update task in current status' });
     }
 
-    const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
-    if (parsed.data.deadline) {
-      updateData.deadline = new Date(parsed.data.deadline);
-    }
+    const { title, description, deadline } = parsed.data;
+    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (deadline !== undefined) updateData.deadline = new Date(deadline);
 
     const [result] = await tx
       .update(tasks)

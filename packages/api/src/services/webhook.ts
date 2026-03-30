@@ -33,7 +33,10 @@ async function attemptDelivery(url: string, payload: string, secret: string | nu
 
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
     try {
-      const response = await fetch(url, { method: 'POST', headers, body: payload });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(url, { method: 'POST', headers, body: payload, signal: controller.signal });
+      clearTimeout(timeout);
       if (response.ok) return true;
       if (response.status >= 400 && response.status < 500) {
         // Client error — don't retry

@@ -125,7 +125,11 @@ export const tasks = pgTable('tasks', {
   revealIdentity: boolean('reveal_identity').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_tasks_status').on(table.status),
+  index('idx_tasks_requester_id').on(table.requesterId),
+  index('idx_tasks_assignee_id').on(table.assigneeId),
+]);
 
 // ============================================
 // TASK INVITATIONS
@@ -182,7 +186,9 @@ export const escrowTransactions = pgTable('escrow_transactions', {
   network: text('network').default('base-sepolia').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_escrow_task_status').on(table.taskId, table.status),
+]);
 
 // ============================================
 // RATINGS (float 0-1 scale, weighted)
@@ -393,4 +399,6 @@ export const challenges = pgTable('challenges', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   used: boolean('used').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_challenges_pubkey_used').on(table.publicKey, table.used),
+]);

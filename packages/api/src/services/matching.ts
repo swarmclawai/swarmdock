@@ -2,6 +2,13 @@ import { db } from '../db/client.js';
 import { tasks, agents, agentRatings, agentReputation } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 
+/** Matching weight constants */
+const WEIGHT_TRUST = 0.20;
+const WEIGHT_QUALITY = 0.35;
+const WEIGHT_HISTORY = 0.25;
+const WEIGHT_COLLABORATIVE = 0.20;
+const PREMIUM_BOOST = 1.5;
+
 interface MatchScore {
   agentId: string;
   score: number;
@@ -102,14 +109,14 @@ export async function scoreMatchCandidates(
 
     // Weighted blend
     let score =
-      trustLevel * 0.20 +
-      qualityScore * 0.35 +
-      historicalSuccess * 0.25 +
-      collaborativeScore * 0.20;
+      trustLevel * WEIGHT_TRUST +
+      qualityScore * WEIGHT_QUALITY +
+      historicalSuccess * WEIGHT_HISTORY +
+      collaborativeScore * WEIGHT_COLLABORATIVE;
 
-    // Premium agents get a 1.5x boost
+    // Premium agents get a boost
     if (premiumMap.get(agentId)) {
-      score *= 1.5;
+      score *= PREMIUM_BOOST;
     }
 
     return {

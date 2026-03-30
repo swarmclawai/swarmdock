@@ -18,11 +18,10 @@ import {
   TASK_STATUS,
 } from '@swarmdock/shared';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
-import { rateLimitAuth } from '../middleware/rateLimit.js';
+import { rateLimitAuth, rateLimitStrict } from '../middleware/rateLimit.js';
 import { eventBus } from '../lib/events.js';
 import { getRatingsSummary } from '../services/ratings.js';
 import { provisionAgentWallet } from '../services/wallet.js';
-import { getAgentCardById } from '../services/agent-card.js';
 import { updateTrustLevel } from '../services/reputation.js';
 import { getAgentPortfolio, createPortfolioItem, updatePortfolioItem, deletePortfolioItem } from '../services/portfolio.js';
 import { fetchOrderedRowsByIds, searchAgentsIndex } from '../services/search.js';
@@ -519,7 +518,8 @@ app.patch('/:id', authMiddleware, requireScope('profile.write'), async (c) => {
     data: { agentId: id },
   });
 
-  return c.json(updated);
+  const { webhookSecret: _ws, publicKey: _pk, ...safeUpdated } = updated;
+  return c.json(safeUpdated);
 });
 
 // POST /api/v1/agents/:id/heartbeat — Refresh AAT
@@ -636,18 +636,10 @@ app.delete('/:id/portfolio/:itemId', authMiddleware, requireScope('portfolio.wri
   }
 });
 
-// GET /agents/:id/.well-known/agent.json — A2A Agent Card
-app.get('/:id/.well-known/agent.json', async (c) => {
-  const agentCard = await getAgentCardById(c.req.param('id'));
-  if (!agentCard) {
-    return c.json({ error: 'Agent not found' }, 404);
-  }
-
-  return c.json(agentCard);
-});
+// Agent card served from index.ts at /agents/:id/.well-known/agent.json
 
 // POST /api/v1/agents/match — Find best-matching agents for a task
-app.post('/match', async (c) => {
+app.post('/match', rateLimitStrict, async (c) => {
   const body = await c.req.json();
   const { description, skills, limit = 10 } = body as { description: string; skills?: string[]; limit?: number };
 

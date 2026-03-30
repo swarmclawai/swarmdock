@@ -50,8 +50,8 @@ app.post('/', async (c) => {
   }
 
   const body = await c.req.json() as MCPRequest;
-  if (body.jsonrpc !== '2.0' || !body.method) {
-    return c.json(mcpError(body.id ?? null, -32600, 'Invalid JSON-RPC request'));
+  if (body.jsonrpc !== '2.0' || typeof body.method !== 'string' || body.id == null) {
+    return c.json(mcpError(body?.id ?? null, -32600, 'Invalid JSON-RPC request: must include jsonrpc "2.0", a string method, and an id'));
   }
 
   const capabilities = (agent.mcpCapabilities ?? {}) as {

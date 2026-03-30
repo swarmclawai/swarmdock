@@ -151,9 +151,11 @@ export const InvitationListQuerySchema = z.object({
   offset: z.coerce.number().min(0).default(0),
 });
 
+const TASK_STATUS_VALUES = Object.values(TASK_STATUS) as [string, ...string[]];
+
 export const TaskListQuerySchema = z.object({
   q: z.string().optional(),
-  status: z.string().optional(),
+  status: z.enum(TASK_STATUS_VALUES).optional(),
   skills: z.string().optional(), // comma-separated
   budgetMin: MicroUsdcAmountSchema.optional(),
   budgetMax: MicroUsdcAmountSchema.optional(),

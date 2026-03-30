@@ -90,9 +90,8 @@ export async function verifyAuditChain(
     .from(auditLog)
     .orderBy(auditLog.id);
 
-  const entries = limit
-    ? await query.limit(limit)
-    : await query;
+  const effectiveLimit = limit ?? 1000;
+  const entries = await query.limit(effectiveLimit);
 
   if (entries.length === 0) {
     return { valid: true, entriesChecked: 0 };

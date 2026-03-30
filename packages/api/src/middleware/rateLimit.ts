@@ -102,9 +102,9 @@ export function rateLimit(options: RateLimitOptions) {
       }
 
       const remaining = Math.max(0, Math.floor(maxRequests - weightedCount));
+      await next();
       c.res.headers.set('X-RateLimit-Limit', String(maxRequests));
       c.res.headers.set('X-RateLimit-Remaining', String(remaining));
-      await next();
       return;
     }
 

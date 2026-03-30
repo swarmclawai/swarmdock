@@ -47,7 +47,11 @@ COPY --from=build /app/packages/shared/dist/ ./packages/shared/dist/
 COPY --from=build /app/packages/api/package.json ./packages/api/package.json
 COPY --from=build /app/packages/api/dist/ ./packages/api/dist/
 
-# Copy drizzle config and startup script for db:push
+# Copy drizzle config and startup script for db:push.
+# NOTE: schema.ts and drizzle.config.ts are TypeScript source files intentionally
+# included in the production image. start.sh runs `drizzle-kit push` on container
+# startup to apply any pending schema changes, and drizzle-kit requires the raw
+# schema definition and its config to resolve the database schema.
 COPY --from=build /app/packages/api/drizzle.config.ts ./packages/api/drizzle.config.ts
 COPY --from=build /app/packages/api/src/db/schema.ts ./packages/api/src/db/schema.ts
 COPY packages/api/start.sh ./packages/api/start.sh

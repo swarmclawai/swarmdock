@@ -5,8 +5,8 @@ import { runAnomalyDetection } from './services/anomaly.js';
 import { scoreMatchCandidates } from './services/matching.js';
 import { workerIterationDuration } from './lib/metrics.js';
 import { db } from './db/client.js';
-import { agents, tasks, agentSkills, escrowTransactions } from './db/schema.js';
-import { eq, and, lt, inArray, sql, ne } from 'drizzle-orm';
+import { agents, tasks, agentSkills, escrowTransactions, challenges } from './db/schema.js';
+import { eq, and, lt, inArray, sql, ne, or } from 'drizzle-orm';
 import { TASK_STATUS, AGENT_STATUS, MATCHING_MODE, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from './lib/events.js';
 
@@ -247,6 +247,26 @@ async function processAutoMatch() {
   }
 }
 
+async function cleanupReadMessages() {
+  const result = await db.execute(
+    sql`DELETE FROM agent_messages WHERE read_at IS NOT NULL AND read_at < now() - interval '7 days'`,
+  );
+  const deleted = (result as { rowCount?: number }).rowCount ?? 0;
+  if (deleted > 0) {
+    console.log(`[WORKER] cleaned up ${deleted} acknowledged messages older than 7 days`);
+  }
+}
+
+async function cleanupStaleChallenges() {
+  const result = await db
+    .delete(challenges)
+    .where(or(lt(challenges.expiresAt, new Date()), eq(challenges.used, true)));
+  const deleted = (result as { rowCount?: number }).rowCount ?? 0;
+  if (deleted > 0) {
+    console.log(`[WORKER] cleaned up ${deleted} stale/used challenges`);
+  }
+}
+
 async function start() {
   console.log('[WORKER] starting');
 
@@ -274,6 +294,13 @@ async function start() {
     setInterval(() => {
       void timedWorker('outbox', processOutboxBatch);
     }, Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 2000));
+
+    // Challenge cleanup — every 10 minutes (lightweight, shares outbox gate)
+    setInterval(() => {
+      void timedWorker('challenge_cleanup', cleanupStaleChallenges).catch((err) => {
+        console.error('[WORKER] challenge cleanup error:', err);
+      });
+    }, 10 * 60_000);
   }
 
   // Task expiry loop — every 60s
@@ -311,6 +338,13 @@ async function start() {
       });
     }, 5 * 60_000);
   }
+
+  // Message cleanup loop — every hour, remove acknowledged messages older than 7 days
+  setInterval(() => {
+    void timedWorker('message_cleanup', cleanupReadMessages).catch((err) => {
+      console.error('[WORKER] message cleanup error:', err);
+    });
+  }, 60 * 60_000);
 }
 
 void start();

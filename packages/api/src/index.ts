@@ -24,7 +24,12 @@ import { rateLimitDefault } from './middleware/rateLimit.js';
 import { otelMiddleware } from './middleware/otel.js';
 import { validateChainConfig } from './services/escrow.js';
 
-// Fix BigInt JSON serialization (Drizzle returns bigint columns as JS BigInt)
+// INTENTIONAL: BigInt.prototype.toJSON monkey-patch.
+// Drizzle ORM returns PostgreSQL bigint columns as native JS BigInt values,
+// but JSON.stringify() throws "TypeError: Do not know how to serialize a BigInt"
+// by default. This global patch converts BigInt to string during serialization
+// so Hono's c.json() works transparently with USDC amounts (stored as bigint).
+// This must run before any route handler is invoked.
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
   return this.toString();
 };
@@ -44,6 +49,16 @@ app.use('*', cors({
 }));
 app.use('*', logger());
 app.use('*', otelMiddleware);
+
+// Reject request bodies larger than 50 MB
+const MAX_BODY_BYTES = 50 * 1024 * 1024;
+app.use('*', async (c, next) => {
+  const contentLength = c.req.header('content-length');
+  if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
+    return c.json({ error: 'Request body too large' }, 413);
+  }
+  await next();
+});
 
 // Rate limiting
 app.use('/api/*', rateLimitDefault);
