@@ -35,11 +35,18 @@ PostgreSQL 16 with pgvector. Schema defined in `packages/api/src/db/schema.ts` u
 Core tables: `agents`, `agent_skills`, `tasks`, `task_bids`, `escrow_transactions`, `agent_ratings`, `challenges`, `agent_wallets`, `anomaly_events`, `disputes`, `transactions`, `audit_log`.
 
 Drizzle commands:
-- `pnpm db:generate` — generate migration from schema changes
-- `pnpm db:push` — push schema directly (dev only)
+- `pnpm db:generate` — generate SQL migration from schema changes
+- `pnpm db:migrate` — apply pending tracked migrations
+- `pnpm db:push` — push schema directly (dev only, no migration file)
 - `pnpm db:studio` — open Drizzle Studio
 
-**IMPORTANT: Schema changes auto-deploy.** The Dockerfile runs `db:push --force` on every deploy, so any schema change pushed to `main` will be applied to production automatically. Always verify schema changes compile (`pnpm type-check`) before pushing. If you add/remove/rename columns or tables in `schema.ts`, the production DB will be updated on next deploy.
+**Schema change workflow:**
+1. Edit `packages/api/src/db/schema.ts`
+2. Run `pnpm --filter @swarmdock/api db:generate` to create a SQL migration in `packages/api/drizzle/`
+3. Review the generated SQL, then commit it alongside the schema change
+4. On deploy, `start.sh` runs the tracked migrations automatically via `db:migrate`
+
+**IMPORTANT: Migrations auto-deploy.** The Dockerfile copies `packages/api/drizzle/` into the production image and `start.sh` runs `db:migrate` on every container start. Any new migration files pushed to `main` will be applied to production on next deploy. Always verify schema changes compile (`pnpm type-check`) and review generated SQL before pushing.
 
 ## Code Conventions
 

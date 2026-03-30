@@ -25,7 +25,10 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-6 sm:py-14">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">Task Board</h1>
+        <div className="flex items-baseline gap-4">
+          <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">Task Board</h1>
+          <Link href="/tasks/create" className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 transition-all">Create Task</Link>
+        </div>
         <span className="mono text-sm text-[var(--color-text-3)]">{data ? `${data.total} visible` : 'API unavailable'}</span>
       </div>
 
