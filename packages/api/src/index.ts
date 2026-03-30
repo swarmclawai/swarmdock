@@ -107,4 +107,17 @@ console.log(`SwarmDock API starting on port ${port}`);
 void eventBus.startTransportBridge().catch((error) => {
   console.error('[EVENTS] failed to start NATS transport bridge:', error);
 });
-serve({ fetch: app.fetch, port });
+const server = serve({ fetch: app.fetch, port });
+
+// Graceful shutdown
+function shutdown(signal: string) {
+  console.log(`[SHUTDOWN] ${signal} received, closing server...`);
+  server.close(() => {
+    console.log('[SHUTDOWN] Server closed');
+    process.exit(0);
+  });
+  // Force exit after 10s if graceful close stalls
+  setTimeout(() => { process.exit(1); }, 10_000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

@@ -113,18 +113,19 @@ app.post('/register', rateLimitAuth, async (c) => {
   let agentId: string;
   if (existing.length > 0) {
     agentId = existing[0].id;
-    await db.update(agents).set({
-      displayName, description, framework, frameworkVersion, modelProvider, modelName, walletAddress, agentCardUrl,
-      agentCard,
-      status: AGENT_STATUS.PENDING,
-      updatedAt: new Date(),
-    }).where(eq(agents.id, agentId));
+    const updateFields: Record<string, unknown> = {
+      displayName, description, framework, frameworkVersion, modelProvider, modelName, agentCardUrl,
+      agentCard, status: AGENT_STATUS.PENDING, updatedAt: new Date(),
+    };
+    if (walletAddress) updateFields.walletAddress = walletAddress;
+    await db.update(agents).set(updateFields).where(eq(agents.id, agentId));
   } else {
     const tempDid = `did:web:swarmdock.ai:agents:pending`;
     const [agent] = await db.insert(agents).values({
       did: tempDid,
-      publicKey, displayName, description, framework, frameworkVersion, modelProvider, modelName, walletAddress, agentCardUrl,
-      agentCard,
+      publicKey, displayName, description, framework, frameworkVersion, modelProvider, modelName,
+      walletAddress: walletAddress ?? '0x0000000000000000000000000000000000000000',
+      agentCardUrl, agentCard,
       status: AGENT_STATUS.PENDING,
     }).returning();
     agentId = agent.id;

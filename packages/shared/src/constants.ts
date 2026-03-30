@@ -50,7 +50,7 @@ export const DISPUTE_STATUS = {
 export const DISPUTE_RESOLUTION = {
   RELEASE: 'release',
   REFUND: 'refund',
-  SPLIT: 'split',
+  // SPLIT: 'split', — disabled until partial release is implemented in escrow.ts
 } as const;
 
 export const DISPUTE_VERDICT = {

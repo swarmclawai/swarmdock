@@ -144,8 +144,8 @@ export async function fundEscrow(params: {
 }
 
 export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: string; fee: bigint }> {
-  const result = await db.transaction(async (tx) => {
-    // Lock escrow row to prevent concurrent releases
+  // Phase 1: Lock escrow and compute amounts (DB only, no on-chain call)
+  const phase1 = await db.transaction(async (tx) => {
     const lockResult = await tx.execute(
       sql`SELECT id FROM escrow_transactions WHERE task_id = ${taskId} AND status = ${ESCROW_STATUS.FUNDED} LIMIT 1 FOR UPDATE`,
     );
@@ -153,10 +153,11 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
       throw new Error(`No funded escrow found for task ${taskId}`);
     }
 
+    const lockedId = lockResult.rows[0].id as string;
     const [escrow] = await tx
       .select()
       .from(escrowTransactions)
-      .where(eq(escrowTransactions.taskId, taskId))
+      .where(eq(escrowTransactions.id, lockedId))
       .limit(1);
 
     const fee = (escrow.amount * BigInt(PLATFORM_FEE_PERCENT)) / 100n;
@@ -166,29 +167,35 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
       ? await tx.select({ walletAddress: agents.walletAddress }).from(agents).where(eq(agents.id, escrow.payeeId)).limit(1)
       : [null];
 
-    const finalTxHash = await attemptTransfer(
-      payee?.walletAddress ?? '',
-      payout,
-      `escrow release for task ${taskId}`,
-    );
+    return { escrow, fee, payout, payeeWallet: payee?.walletAddress ?? '' };
+  });
 
+  // Phase 2: On-chain transfer (outside DB transaction — irreversible)
+  const finalTxHash = await attemptTransfer(
+    phase1.payeeWallet,
+    phase1.payout,
+    `escrow release for task ${taskId}`,
+  );
+
+  // Phase 3: Record the release in the database
+  await db.transaction(async (tx) => {
     await tx
       .update(escrowTransactions)
       .set({
         status: ESCROW_STATUS.RELEASED,
-        platformFee: fee,
+        platformFee: phase1.fee,
         releaseTxHash: finalTxHash,
         updatedAt: new Date(),
       })
-      .where(eq(escrowTransactions.id, escrow.id));
+      .where(eq(escrowTransactions.id, phase1.escrow.id));
 
     await tx.insert(transactions).values({
       taskId,
       type: TRANSACTION_TYPE.ESCROW_RELEASE,
-      toAgentId: escrow.payeeId,
-      amount: payout,
+      toAgentId: phase1.escrow.payeeId,
+      amount: phase1.payout,
       txHash: finalTxHash,
-      network: escrow.network,
+      network: phase1.escrow.network,
       status: TRANSACTION_STATUS.CONFIRMED,
       confirmedAt: new Date(),
     });
@@ -197,45 +204,44 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
       taskId,
       type: TRANSACTION_TYPE.PLATFORM_FEE,
       toAgentId: null,
-      amount: fee,
+      amount: phase1.fee,
       txHash: finalTxHash,
-      network: escrow.network,
+      network: phase1.escrow.network,
       status: TRANSACTION_STATUS.CONFIRMED,
       confirmedAt: new Date(),
     });
 
-    if (escrow.payeeId) {
+    if (phase1.escrow.payeeId) {
       await tx
         .update(agents)
         .set({
-          earningTotal: sql`COALESCE(${agents.earningTotal}, 0) + ${payout}`,
+          earningTotal: sql`COALESCE(${agents.earningTotal}, 0) + ${phase1.payout}`,
           updatedAt: new Date(),
         })
-        .where(eq(agents.id, escrow.payeeId));
+        .where(eq(agents.id, phase1.escrow.payeeId));
     }
 
     await tx
       .update(tasks)
       .set({
-        platformFee: fee,
+        platformFee: phase1.fee,
         paymentTxId: finalTxHash,
         updatedAt: new Date(),
       })
       .where(eq(tasks.id, taskId));
 
-    return { releaseTxHash: finalTxHash, fee, payout, payeeId: escrow.payeeId };
   });
 
-  // Emit events after successful transaction commit
-  if (result.payeeId) {
-    eventBus.emit(result.payeeId, {
+  // Emit events after successful Phase 3 commit
+  if (phase1.escrow.payeeId) {
+    eventBus.emit(phase1.escrow.payeeId, {
       type: 'payment.released',
-      data: { taskId, amount: result.payout.toString(), fee: result.fee.toString(), txHash: result.releaseTxHash },
+      data: { taskId, amount: phase1.payout.toString(), fee: phase1.fee.toString(), txHash: finalTxHash },
     });
   }
 
   escrowReleasedCounter.add(1, { network: process.env.X402_NETWORK ?? 'base-sepolia' });
-  return { releaseTxHash: result.releaseTxHash, fee: result.fee };
+  return { releaseTxHash: finalTxHash, fee: phase1.fee };
 }
 
 export async function refundEscrow(taskId: string): Promise<void> {
@@ -248,10 +254,11 @@ export async function refundEscrow(taskId: string): Promise<void> {
       return null; // Nothing to refund
     }
 
+    const refundLockedId = lockResult.rows[0].id as string;
     const [escrow] = await tx
       .select()
       .from(escrowTransactions)
-      .where(eq(escrowTransactions.taskId, taskId))
+      .where(eq(escrowTransactions.id, refundLockedId))
       .limit(1);
 
     const [payer] = await tx.select({ walletAddress: agents.walletAddress }).from(agents).where(eq(agents.id, escrow.payerId)).limit(1);

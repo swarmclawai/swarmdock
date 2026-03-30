@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, count } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { eventOutbox } from '../db/schema.js';
 
@@ -118,6 +118,6 @@ export async function getPendingOutboxCount() {
     return 0;
   }
 
-  const rows = await db.select().from(eventOutbox).where(eq(eventOutbox.status, OUTBOX_STATUS.PENDING));
-  return rows.length;
+  const [result] = await db.select({ total: count() }).from(eventOutbox).where(eq(eventOutbox.status, OUTBOX_STATUS.PENDING));
+  return Number(result?.total ?? 0);
 }

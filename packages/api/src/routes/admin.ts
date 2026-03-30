@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { db } from '../db/client.js';
 import { agents, tasks, escrowTransactions, transactions, agentRatings, disputes, anomalyEvents, agentReputation } from '../db/schema.js';
 import { eq, sql, count, desc, and } from 'drizzle-orm';
+import { timingSafeEqual } from 'node:crypto';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -22,7 +23,8 @@ import { eventBus } from '../lib/events.js';
 const adminAuth = createMiddleware(async (c, next) => {
   const key = c.req.header('X-Admin-Key');
   const expected = process.env.ADMIN_API_KEY;
-  if (!expected || key !== expected) {
+  if (!expected || !key || key.length !== expected.length ||
+      !timingSafeEqual(Buffer.from(key), Buffer.from(expected))) {
     throw new HTTPException(401, { message: 'Invalid or missing admin key' });
   }
   await next();
@@ -217,18 +219,6 @@ app.post('/disputes/:id/resolve', adminAuth, async (c) => {
       updatedAt: new Date(),
     }).where(eq(tasks.id, task.id)).returning();
     resolutionData = { releaseTxHash, task: updatedTask };
-  } else if (parsed.data.resolution === DISPUTE_RESOLUTION.SPLIT) {
-    // Split: release a percentage to assignee, refund the rest to requester
-    const splitPercent = parsed.data.splitPercent ?? 50;
-    const { releaseTxHash } = await releaseEscrow(task.id);
-    // Note: actual split accounting would be handled by the escrow service
-    // based on splitPercent; for now we release full and record the split intent
-    const [updatedTask] = await db.update(tasks).set({
-      status: TASK_STATUS.COMPLETED,
-      completedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(tasks.id, task.id)).returning();
-    resolutionData = { releaseTxHash, splitPercent, task: updatedTask };
   } else {
     await refundEscrow(task.id);
     const [updatedTask] = await db.update(tasks).set({

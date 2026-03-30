@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db, type Database } from '../db/client.js';
 import { tasks, taskBids, escrowTransactions } from '../db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, ne, sql } from 'drizzle-orm';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { BidCreateSchema, TASK_STATUS, BID_STATUS, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
@@ -177,7 +177,7 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
 
       await tx.update(taskBids).set({ status: BID_STATUS.ACCEPTED }).where(eq(taskBids.id, bidId));
       await tx.update(taskBids).set({ status: BID_STATUS.REJECTED })
-        .where(and(eq(taskBids.taskId, taskId), eq(taskBids.status, BID_STATUS.PENDING)));
+        .where(and(eq(taskBids.taskId, taskId), eq(taskBids.status, BID_STATUS.PENDING), ne(taskBids.id, bidId)));
 
       const [updatedTask] = await tx.update(tasks).set({
         assigneeId: bid.bidderId,

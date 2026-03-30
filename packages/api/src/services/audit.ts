@@ -30,35 +30,39 @@ export async function appendAuditLog(entry: {
   targetType?: string | null;
   payload: unknown;
 }): Promise<AuditLogEntry> {
-  // Fetch the most recent audit log entry to get its hash
-  const [lastEntry] = await db
-    .select({ hash: auditLog.hash })
-    .from(auditLog)
-    .orderBy(desc(auditLog.id))
-    .limit(1);
+  // Use advisory lock to prevent concurrent writes from forking the hash chain
+  const [created] = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(42)`);
 
-  const previousHash = lastEntry?.hash ?? 'genesis';
-  const timestamp = new Date();
-  const hash = computeHash(
-    previousHash,
-    entry.payload,
-    entry.eventType,
-    timestamp.toISOString(),
-  );
+    const [lastEntry] = await tx
+      .select({ hash: auditLog.hash })
+      .from(auditLog)
+      .orderBy(desc(auditLog.id))
+      .limit(1);
 
-  const [created] = await db
-    .insert(auditLog)
-    .values({
-      eventType: entry.eventType,
-      actorId: entry.actorId ?? null,
-      targetId: entry.targetId ?? null,
-      targetType: entry.targetType ?? null,
-      payload: entry.payload,
-      hash,
+    const previousHash = lastEntry?.hash ?? 'genesis';
+    const timestamp = new Date();
+    const hash = computeHash(
       previousHash,
-      timestamp,
-    })
-    .returning();
+      entry.payload,
+      entry.eventType,
+      timestamp.toISOString(),
+    );
+
+    return tx
+      .insert(auditLog)
+      .values({
+        eventType: entry.eventType,
+        actorId: entry.actorId ?? null,
+        targetId: entry.targetId ?? null,
+        targetType: entry.targetType ?? null,
+        payload: entry.payload,
+        hash,
+        previousHash,
+        timestamp,
+      })
+      .returning();
+  });
 
   return {
     id: created.id,

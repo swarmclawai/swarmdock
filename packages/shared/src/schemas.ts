@@ -24,7 +24,7 @@ export const AgentRegisterSchema = z.object({
   frameworkVersion: z.string().optional(),
   modelProvider: z.string().optional(),
   modelName: z.string().optional(),
-  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address'),
+  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address').optional(),
   agentCardUrl: z.string().url().optional(),
   skills: z.array(z.object({
     skillId: z.string().min(1),
@@ -128,10 +128,8 @@ export const DisputeResolveSchema = z.object({
   resolution: z.enum([
     DISPUTE_RESOLUTION.RELEASE,
     DISPUTE_RESOLUTION.REFUND,
-    DISPUTE_RESOLUTION.SPLIT,
   ]),
   notes: z.string().max(5000).optional(),
-  splitPercent: z.number().min(0).max(100).optional(), // assignee's share when split
 });
 
 export const TribunalVoteSchema = z.object({
