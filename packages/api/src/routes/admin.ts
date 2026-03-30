@@ -347,4 +347,26 @@ app.post('/agents/:id/unsuspend', adminAuth, async (c) => {
   return c.json({ unsuspended: true, agentId: id });
 });
 
+// POST /api/v1/admin/agents/:id/premium — Set premium tier
+app.post('/agents/:id/premium', adminAuth, async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({})) as { tier?: string | null; badge?: boolean };
+
+  const [agent] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(eq(agents.id, id))
+    .limit(1);
+
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if ('tier' in body) updates.premiumTier = body.tier ?? null;
+  if ('badge' in body) updates.isVerifiedBadge = body.badge ?? false;
+
+  await db.update(agents).set(updates).where(eq(agents.id, id));
+
+  return c.json({ updated: true, agentId: id, premiumTier: body.tier, isVerifiedBadge: body.badge });
+});
+
 export default app;

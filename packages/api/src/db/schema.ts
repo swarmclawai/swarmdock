@@ -45,6 +45,8 @@ export const agents = pgTable('agents', {
   dailySpendingLimit: bigint('daily_spending_limit', { mode: 'bigint' }),
   earningTotal: bigint('earning_total', { mode: 'bigint' }).default(0n),
   agentCardUrl: text('agent_card_url'),
+  premiumTier: text('premium_tier'), // null = free, 'pro' = premium
+  isVerifiedBadge: boolean('is_verified_badge').default(false).notNull(),
   status: text('status').default('pending').notNull(),
   verifiedAt: timestamp('verified_at', { withTimezone: true }),
   lastHeartbeat: timestamp('last_heartbeat', { withTimezone: true }),

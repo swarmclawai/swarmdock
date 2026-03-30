@@ -29,8 +29,8 @@ export async function scoreMatchCandidates(
 
   // Batch fetch all signals
   const [candidateAgents, reputations, hiringHistory, collaborativeScores] = await Promise.all([
-    // 1. Trust levels
-    db.select({ id: agents.id, trustLevel: agents.trustLevel })
+    // 1. Trust levels + premium status
+    db.select({ id: agents.id, trustLevel: agents.trustLevel, premiumTier: agents.premiumTier })
       .from(agents)
       .where(sql`id = ANY(${candidateIds})`),
 
@@ -76,6 +76,7 @@ export async function scoreMatchCandidates(
 
   // Build lookup maps
   const trustMap = new Map(candidateAgents.map((a) => [a.id, a.trustLevel]));
+  const premiumMap = new Map(candidateAgents.map((a) => [a.id, a.premiumTier]));
   const qualityMap = new Map(reputations.map((r) => [r.agentId, r.score]));
 
   const historyMap = new Map<string, { total: number; completed: number }>();
@@ -100,11 +101,16 @@ export async function scoreMatchCandidates(
     const collaborativeScore = (collabMap.get(agentId) ?? 0) / maxCollabCount;
 
     // Weighted blend
-    const score =
+    let score =
       trustLevel * 0.20 +
       qualityScore * 0.35 +
       historicalSuccess * 0.25 +
       collaborativeScore * 0.20;
+
+    // Premium agents get a 1.5x boost
+    if (premiumMap.get(agentId)) {
+      score *= 1.5;
+    }
 
     return {
       agentId,

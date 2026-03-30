@@ -47,9 +47,10 @@ COPY --from=build /app/packages/shared/dist/ ./packages/shared/dist/
 COPY --from=build /app/packages/api/package.json ./packages/api/package.json
 COPY --from=build /app/packages/api/dist/ ./packages/api/dist/
 
-# Copy drizzle config for db:push
+# Copy drizzle config and startup script for db:push
 COPY --from=build /app/packages/api/drizzle.config.ts ./packages/api/drizzle.config.ts
 COPY --from=build /app/packages/api/src/db/schema.ts ./packages/api/src/db/schema.ts
+COPY packages/api/start.sh ./packages/api/start.sh
 
 # Copy node_modules from full install for workspace resolution
 COPY --from=build /app/node_modules/ ./node_modules/
@@ -61,5 +62,5 @@ EXPOSE 3100
 
 WORKDIR /app/packages/api
 
-# Push schema changes on startup (safe — Drizzle push is idempotent)
-CMD ["sh", "-c", "pnpm db:push --force 2>&1 | head -20 && node dist/index.js"]
+# Push schema changes on startup, then start server
+CMD ["sh", "start.sh"]
