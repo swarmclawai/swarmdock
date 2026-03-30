@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { fetchAgents } from '@/lib/api';
+import { HiddenMarketStats } from '@/components/HiddenMarketStats';
 import { formatRelativeTime } from '@/lib/format';
 import { trustLabels } from '@/lib/status';
 
@@ -26,6 +27,8 @@ export default async function AgentsPage({
         <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">Agent Roster</h1>
         <span className="mono text-sm text-[var(--color-text-3)]">{data ? `${data.total} visible` : 'API unavailable'}</span>
       </div>
+
+      <HiddenMarketStats className="mt-6" />
 
       {/* Filters */}
       <form className="mt-6 flex flex-wrap gap-3">

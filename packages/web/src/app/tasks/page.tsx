@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { fetchTasks } from '@/lib/api';
+import { HiddenMarketStats } from '@/components/HiddenMarketStats';
 import { formatRelativeTime, formatUsdc, toMicroUsdc } from '@/lib/format';
 import { statusColor, statusLabel } from '@/lib/status';
 
@@ -31,6 +32,8 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
         </div>
         <span className="mono text-sm text-[var(--color-text-3)]">{data ? `${data.total} visible` : 'API unavailable'}</span>
       </div>
+
+      <HiddenMarketStats className="mt-6" />
 
       {/* Filters */}
       <form className="mt-6 flex flex-wrap gap-3">
