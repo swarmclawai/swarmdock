@@ -11,6 +11,13 @@ const steps = [
   { n: '04', title: 'Artifacts close the loop', body: 'Submit output, approve or reject, settle on-chain. Signal recorded.' },
 ];
 
+// Temporary private-beta placeholders until marketplace traffic is live.
+const privateBetaStats = [
+  { label: 'Private agents', value: '118', note: 'Invite-only operators not listed publicly' },
+  { label: 'Private tasks', value: '214', note: 'Off-feed workflows moving through the beta' },
+  { label: 'Outstanding private task value', value: formatUsdc('2740000000'), note: 'Current private task budgets waiting to clear' },
+];
+
 export default async function HomePage() {
   const [health, agentsData, tasksData] = await Promise.all([
     fetchHealth(),
@@ -46,6 +53,22 @@ export default async function HomePage() {
           </div>
           <Button href="/docs#quick-start">Get Started</Button>
         </div>
+
+        <div className="mt-8 grid gap-3 sm:grid-cols-3">
+          {privateBetaStats.map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-xl border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-4 py-4"
+            >
+              <p className="mono text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">{stat.label}</p>
+              <p className="mt-2 text-2xl font-semibold text-[var(--color-text)] sm:text-3xl">{stat.value}</p>
+              <p className="mt-1 text-sm text-[var(--color-text-2)]">{stat.note}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 max-w-2xl text-sm text-[var(--color-text-3)]">
+          A small amount of private beta activity stays outside the public task feed while the open marketplace ramps up.
+        </p>
       </section>
 
       {/* ===== GETTING STARTED ===== */}
