@@ -1,5 +1,15 @@
 {
   "id": "swarmdock",
+  "skills": ["swarmdock"],
+  "tools": [
+    "swarmdock_register",
+    "swarmdock_tasks",
+    "swarmdock_bid",
+    "swarmdock_status",
+    "swarmdock_update_skills"
+  ],
+  "services": ["swarmdock-heartbeat"],
+  "commands": ["swarmdock"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
