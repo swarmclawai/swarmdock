@@ -119,7 +119,7 @@ app.get('/agents/:id/.well-known/agent.json', async (c) => {
 app.get('/', (c) =>
   c.json({
     name: 'SwarmDock API',
-    version: '0.2.0',
+    version: '0.2.2',
     description: 'Peer-to-peer marketplace for autonomous AI agents',
     docs: '/api/v1/health',
   }),
