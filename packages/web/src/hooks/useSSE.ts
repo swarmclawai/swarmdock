@@ -11,12 +11,46 @@ export type SSEEvent = {
   receivedAt: Date;
 };
 
+/**
+ * Parse a raw SSE text chunk into individual frames.
+ * Each frame is separated by a blank line. Fields are `event:` and `data:`.
+ * Returns an array of { event, data } pairs.
+ */
+function parseSSEFrames(chunk: string): Array<{ event: string; data: string }> {
+  const frames: Array<{ event: string; data: string }> = [];
+  // Split on double newline (the SSE frame boundary)
+  const rawFrames = chunk.split(/\n\n/);
+
+  for (const raw of rawFrames) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+
+    let event = 'message';
+    const dataLines: string[] = [];
+
+    for (const line of trimmed.split('\n')) {
+      if (line.startsWith('event:')) {
+        event = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trim());
+      }
+      // Ignore id:, retry:, and comment lines for now
+    }
+
+    if (dataLines.length > 0) {
+      frames.push({ event, data: dataLines.join('\n') });
+    }
+  }
+
+  return frames;
+}
+
 export function useSSE(token?: string | null) {
   const [events, setEvents] = useState<SSEEvent[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<SSEEvent | null>(null);
 
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
   const mountedRef = useRef(true);
@@ -30,69 +64,94 @@ export function useSSE(token?: string | null) {
     });
   }, []);
 
+  const scheduleReconnect = useCallback((connectFn: () => void) => {
+    const delay = backoffRef.current;
+    backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS);
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (mountedRef.current) connectFn();
+    }, delay);
+  }, []);
+
   const connect = useCallback(() => {
     if (!token) return;
 
-    // The EventSource API does not support custom headers.
-    // Pass the token as a query parameter; the API can read it from there.
-    const url = `${SSE_ENDPOINT}?token=${encodeURIComponent(token)}`;
-    const es = new EventSource(url);
-    eventSourceRef.current = es;
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    es.onopen = () => {
-      if (!mountedRef.current) return;
-      setIsConnected(true);
-      backoffRef.current = 1000; // reset backoff on successful connection
-    };
+    // Use fetch + ReadableStream instead of EventSource so we can:
+    // 1. Send the Authorization header (EventSource does not support custom headers)
+    // 2. Capture all named event types without pre-registering listeners
+    fetch(SSE_ENDPOINT, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'text/event-stream',
+      },
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!mountedRef.current) return;
 
-    es.onerror = () => {
-      if (!mountedRef.current) return;
-      setIsConnected(false);
-      es.close();
-      eventSourceRef.current = null;
+        if (!response.ok || !response.body) {
+          setIsConnected(false);
+          scheduleReconnect(connect);
+          return;
+        }
 
-      // Reconnect with exponential backoff
-      const delay = backoffRef.current;
-      backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS);
-      reconnectTimeoutRef.current = setTimeout(() => {
-        if (mountedRef.current) connect();
-      }, delay);
-    };
+        setIsConnected(true);
+        backoffRef.current = 1000; // reset on successful connection
 
-    // Listen for all event types via the generic message handler.
-    // The API uses named events (event: connected, event: heartbeat, etc.)
-    // so we also listen on specific known types plus a catch-all via onmessage.
-    es.onmessage = (e) => {
-      handleRawEvent('message', e.data);
-    };
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-    // Named events sent by the API: connected, heartbeat, and domain events
-    const handleNamedEvent = (e: MessageEvent) => {
-      handleRawEvent(e.type, e.data);
-    };
+        function read(): Promise<void> {
+          return reader.read().then(({ done, value }) => {
+            if (done || !mountedRef.current) {
+              if (mountedRef.current) {
+                setIsConnected(false);
+                scheduleReconnect(connect);
+              }
+              return;
+            }
 
-    // The server sends named events like "connected" and "heartbeat".
-    // EventSource requires explicit addEventListener for named events.
-    es.addEventListener('connected', handleNamedEvent);
-    es.addEventListener('heartbeat', handleNamedEvent);
+            buffer += decoder.decode(value, { stream: true });
 
-    // For dynamic event types, we use the generic onmessage above.
-    // However, the API sends all events as named events (event: <type>).
-    // We rely on the server also sending them as unnamed "message" events,
-    // or consumers can extend this with addEventListener for specific types.
-    // Since the Hono streamSSE sets the `event` field, we need a broader approach:
-    // We override onmessage for unnamed events and add known named listeners.
-  }, [token, pushEvent]); // eslint-disable-line react-hooks/exhaustive-deps
+            // Process complete frames (delimited by double newline)
+            const lastDoubleNewline = buffer.lastIndexOf('\n\n');
+            if (lastDoubleNewline !== -1) {
+              const complete = buffer.slice(0, lastDoubleNewline + 2);
+              buffer = buffer.slice(lastDoubleNewline + 2);
 
-  function handleRawEvent(type: string, raw: string) {
-    if (!mountedRef.current) return;
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      pushEvent({ type, data: parsed, receivedAt: new Date() });
-    } catch {
-      // Ignore malformed events
-    }
-  }
+              const frames = parseSSEFrames(complete);
+              for (const frame of frames) {
+                try {
+                  const parsed = JSON.parse(frame.data) as Record<string, unknown>;
+                  pushEvent({
+                    type: frame.event,
+                    data: parsed,
+                    receivedAt: new Date(),
+                  });
+                } catch {
+                  // Ignore malformed JSON
+                }
+              }
+            }
+
+            return read();
+          });
+        }
+
+        return read();
+      })
+      .catch((err: unknown) => {
+        if (!mountedRef.current) return;
+        // AbortError is expected on cleanup; don't reconnect
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+
+        setIsConnected(false);
+        scheduleReconnect(connect);
+      });
+  }, [token, pushEvent, scheduleReconnect]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -103,8 +162,8 @@ export function useSSE(token?: string | null) {
 
     return () => {
       mountedRef.current = false;
-      eventSourceRef.current?.close();
-      eventSourceRef.current = null;
+      abortRef.current?.abort();
+      abortRef.current = null;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
