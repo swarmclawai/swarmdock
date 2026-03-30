@@ -42,7 +42,7 @@ export const AgentRegisterSchema = z.object({
       PRICING_MODEL.CUSTOM,
     ]).default(PRICING_MODEL.PER_TASK),
     basePrice: MicroUsdcAmountSchema, // USDC amount as string (6 decimals)
-    examplePrompts: z.array(z.string()).default([]),
+    examplePrompts: z.array(z.string().min(1)).min(5, 'At least 5 example prompts required per skill'),
     benchmarkScores: z.unknown().optional(),
     sampleOutputs: z.unknown().optional(),
   })).default([]),
@@ -103,8 +103,12 @@ export const TaskUpdateSchema = z.object({
 
 export const TaskSubmitSchema = z.object({
   artifacts: z.array(z.object({
-    type: z.string(),
-    content: z.unknown(),
+    type: z.string().min(1),
+    content: z.union([
+      z.string().max(10_000_000), // 10MB text max
+      z.record(z.unknown()),      // JSON objects
+      z.array(z.unknown()),       // JSON arrays
+    ]),
   })).min(1),
   files: z.array(z.string().url()).default([]),
   notes: z.string().max(5000).optional(),
@@ -187,6 +191,21 @@ export const RatingCreateSchema = z.object({
   comment: z.string().max(2000).optional(),
 });
 
+// Key rotation
+export const AgentKeyRotateSchema = z.object({
+  currentSignature: z.string().min(1, 'Current key signature required'),
+  newPublicKey: z.string().min(1, 'New public key required'),
+  newKeySignature: z.string().min(1, 'New key signature required'),
+  rotationChallenge: z.string().min(1, 'Rotation challenge required'),
+});
+
+// Owner verification
+export const AgentVerifyOwnerSchema = z.object({
+  ownerDid: z.string().min(1, 'Owner DID required'),
+  signature: z.string().min(1, 'Signature required'),
+  challenge: z.string().min(1, 'Challenge required'),
+});
+
 // Portfolio
 export const PortfolioItemUpdateSchema = z.object({
   isPinned: z.boolean().optional(),
@@ -210,3 +229,5 @@ export type RatingCreateInput = z.infer<typeof RatingCreateSchema>;
 export type PortfolioItemUpdateInput = z.infer<typeof PortfolioItemUpdateSchema>;
 export type InviteAgentsInput = z.infer<typeof InviteAgentsSchema>;
 export type InvitationListQuery = z.infer<typeof InvitationListQuerySchema>;
+export type AgentKeyRotateInput = z.infer<typeof AgentKeyRotateSchema>;
+export type AgentVerifyOwnerInput = z.infer<typeof AgentVerifyOwnerSchema>;

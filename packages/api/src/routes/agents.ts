@@ -12,6 +12,8 @@ import {
   AgentUpdateSchema,
   AgentListQuerySchema,
   PortfolioItemUpdateSchema,
+  AgentKeyRotateSchema,
+  AgentVerifyOwnerSchema,
   AGENT_STATUS,
   TASK_STATUS,
 } from '@swarmdock/shared';
@@ -664,6 +666,116 @@ app.post('/match', async (c) => {
   `);
 
   return c.json({ matches: results.rows });
+});
+
+// POST /api/v1/agents/:id/rotate-key — Rotate Ed25519 public key
+app.post('/:id/rotate-key', authMiddleware, async (c) => {
+  const id = c.req.param('id');
+  const agent = c.get('agent');
+
+  if (agent.agent_id !== id) {
+    return c.json({ error: 'Can only rotate your own key' }, 403);
+  }
+
+  const body = await c.req.json();
+  const parsed = AgentKeyRotateSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  const { currentSignature, newPublicKey, newKeySignature, rotationChallenge } = parsed.data;
+
+  // Fetch current public key
+  const [currentAgent] = await db
+    .select({ publicKey: agents.publicKey })
+    .from(agents)
+    .where(eq(agents.id, id))
+    .limit(1);
+
+  if (!currentAgent) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  // Verify that the current key signed the rotation challenge
+  if (!verifySignature(currentAgent.publicKey, rotationChallenge, currentSignature)) {
+    return c.json({ error: 'Current key signature invalid' }, 401);
+  }
+
+  // Verify that the new key also signed the same challenge (proves possession)
+  if (!verifySignature(newPublicKey, rotationChallenge, newKeySignature)) {
+    return c.json({ error: 'New key signature invalid' }, 401);
+  }
+
+  // Check uniqueness of new key
+  const [existing] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(eq(agents.publicKey, newPublicKey))
+    .limit(1);
+
+  if (existing) {
+    return c.json({ error: 'New public key already in use' }, 409);
+  }
+
+  // Update key atomically
+  await db.update(agents).set({
+    publicKey: newPublicKey,
+    updatedAt: new Date(),
+  }).where(eq(agents.id, id));
+
+  // Invalidate all existing unused challenges for the old key
+  await db.update(challenges).set({ used: true }).where(
+    and(eq(challenges.publicKey, currentAgent.publicKey), eq(challenges.used, false)),
+  );
+
+  // Issue new token
+  const [updatedAgent] = await db.select().from(agents).where(eq(agents.id, id)).limit(1);
+  const session = await issueAgentSession(updatedAgent);
+
+  return c.json({ ...session, message: 'Key rotated successfully' });
+});
+
+// POST /api/v1/agents/:id/verify-owner — Verify human owner via signed message
+app.post('/:id/verify-owner', authMiddleware, async (c) => {
+  const id = c.req.param('id');
+  const agent = c.get('agent');
+
+  if (agent.agent_id !== id) {
+    return c.json({ error: 'Can only verify your own agent' }, 403);
+  }
+
+  const body = await c.req.json();
+  const parsed = AgentVerifyOwnerSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  const { ownerDid, signature, challenge } = parsed.data;
+
+  // Fetch current public key
+  const [currentAgent] = await db
+    .select({ publicKey: agents.publicKey })
+    .from(agents)
+    .where(eq(agents.id, id))
+    .limit(1);
+
+  if (!currentAgent) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  // Verify the signature proves the agent controls the key that claims the DID
+  const message = `verify-owner:${ownerDid}:${challenge}`;
+  if (!verifySignature(currentAgent.publicKey, message, signature)) {
+    return c.json({ error: 'Invalid ownership proof' }, 401);
+  }
+
+  // Update ownerDid
+  await db.update(agents).set({
+    ownerDid,
+    updatedAt: new Date(),
+  }).where(eq(agents.id, id));
+
+  return c.json({ verified: true, ownerDid });
 });
 
 export default app;

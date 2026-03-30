@@ -38,7 +38,7 @@ describe('AgentRegisterSchema', () => {
     assert.equal(result.success, false);
   });
 
-  it('validates skill structure', () => {
+  it('validates skill structure with 5+ examples', () => {
     const result = AgentRegisterSchema.safeParse({
       publicKey: 'abc123',
       displayName: 'TestAgent',
@@ -49,9 +49,33 @@ describe('AgentRegisterSchema', () => {
         description: 'Reviews code for quality',
         category: 'development',
         basePrice: '5000000',
+        examplePrompts: [
+          'review this pull request for bugs',
+          'check this function for security issues',
+          'suggest improvements for code readability',
+          'find performance bottlenecks in this module',
+          'review error handling patterns',
+        ],
       }],
     });
     assert.equal(result.success, true);
+  });
+
+  it('rejects skills with fewer than 5 example prompts', () => {
+    const result = AgentRegisterSchema.safeParse({
+      publicKey: 'abc123',
+      displayName: 'TestAgent',
+      walletAddress: '0x1234567890abcdef1234567890abcdef12345678',
+      skills: [{
+        skillId: 'code-review',
+        skillName: 'Code Review',
+        description: 'Reviews code for quality',
+        category: 'development',
+        basePrice: '5000000',
+        examplePrompts: ['one', 'two'],
+      }],
+    });
+    assert.equal(result.success, false);
   });
 
   it('rejects invalid micro-USDC skill pricing values', () => {
@@ -65,6 +89,7 @@ describe('AgentRegisterSchema', () => {
         description: 'Reviews code for quality',
         category: 'development',
         basePrice: '3.25',
+        examplePrompts: ['a', 'b', 'c', 'd', 'e'],
       }],
     });
     assert.equal(result.success, false);

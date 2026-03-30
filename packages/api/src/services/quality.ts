@@ -1,4 +1,5 @@
 import type { QualityReport, QualityCheck } from '@swarmdock/shared';
+import { getLLMJudgeConfig, invokeJudge } from '../lib/llm-judge.js';
 
 const VALID_CONTENT_TYPES = new Set([
   'text/plain',
@@ -170,16 +171,14 @@ function runSchemaChecks(
 /**
  * Verify the output of a task submission.
  *
- * Runs basic checks (non-empty, valid types) and optional schema validation.
+ * Runs basic checks (non-empty, valid types), optional schema validation,
+ * and LLM judge assessment when configured via LLM_JUDGE_API_KEY.
  * Returns a QualityReport with overall score, individual checks, and pass/fail.
- *
- * TODO: Add LLM judge integration (v0.5+) — separate model assesses output
- * quality against task requirements. Configure via LLM_JUDGE_API_KEY env var.
  */
-export function verifyTaskOutput(
+export async function verifyTaskOutput(
   task: TaskInput,
   artifacts: Artifact[],
-): QualityReport {
+): Promise<QualityReport> {
   const checks: QualityCheck[] = [];
 
   // Run basic artifact checks
@@ -189,6 +188,32 @@ export function verifyTaskOutput(
   const expectedSchema = (task.inputData as Record<string, unknown> | null)?.expectedOutputSchema;
   if (expectedSchema && typeof expectedSchema === 'object') {
     checks.push(...runSchemaChecks(artifacts, expectedSchema as Record<string, unknown>));
+  }
+
+  // LLM judge (when configured)
+  const judgeConfig = getLLMJudgeConfig();
+  if (judgeConfig) {
+    const textContents = artifacts
+      .filter((a) => a.content && typeof a.content === 'string')
+      .map((a) => a.content as string);
+
+    const taskDescription =
+      (task.inputData as Record<string, unknown> | null)?.description as string ?? '';
+
+    try {
+      const judgeResult = await invokeJudge(taskDescription, textContents, judgeConfig);
+      if (judgeResult) {
+        checks.push({
+          name: 'llm_judge',
+          score: judgeResult.score,
+          passed: judgeResult.score >= 0.5,
+          details: judgeResult.reasoning,
+        });
+      }
+    } catch (err) {
+      console.error('[QUALITY] LLM judge error:', err);
+      // Judge failure is non-blocking — deterministic checks still apply
+    }
   }
 
   // Calculate overall score as weighted average of all checks

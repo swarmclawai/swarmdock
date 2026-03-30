@@ -1,11 +1,16 @@
 import { indexAgentDocument, indexTaskDocument, isSearchEnabled, syncAllSearchIndexes } from './services/search.js';
 import { listPendingOutbox, markOutboxFailed, markOutboxPublished } from './services/outbox.js';
 import { isNatsConfigured, publishNatsEvent, toJetStreamSubject } from './lib/nats.js';
+import { runAnomalyDetection } from './services/anomaly.js';
 import { db } from './db/client.js';
 import { agents, tasks, agentSkills, escrowTransactions } from './db/schema.js';
 import { eq, and, lt, inArray, sql, ne } from 'drizzle-orm';
 import { TASK_STATUS, AGENT_STATUS, MATCHING_MODE, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from './lib/events.js';
+
+function isWorkerEnabled(envVar: string, defaultValue = '1'): boolean {
+  return (process.env[envVar] ?? defaultValue) === '1';
+}
 
 function collectIds(row: { agentId: string | null; payload: unknown }) {
   const payload = row.payload as Record<string, unknown>;
@@ -229,37 +234,68 @@ async function processAutoMatch() {
 
 async function start() {
   console.log('[WORKER] starting');
+
+  // Log feature flag status
+  const flags = {
+    'Outbox processor': isWorkerEnabled('ENABLE_EVENT_OUTBOX'),
+    'Task expiry': isWorkerEnabled('ENABLE_WORKER_TASK_EXPIRY'),
+    'Agent dormancy': isWorkerEnabled('ENABLE_WORKER_DORMANCY'),
+    'Auto-matching': isWorkerEnabled('ENABLE_WORKER_AUTO_MATCH'),
+    'Anomaly detection': isWorkerEnabled('ENABLE_WORKER_ANOMALY_DETECTION', '0'),
+  };
+  for (const [name, enabled] of Object.entries(flags)) {
+    console.log(`[WORKER] ${name}: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+  }
+
   if (isSearchEnabled()) {
     await syncAllSearchIndexes().catch((error) => {
       console.error('[WORKER] initial search sync failed:', error);
     });
   }
 
-  await processOutboxBatch();
-  setInterval(() => {
-    void processOutboxBatch();
-  }, Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 2000));
+  // Outbox processor
+  if (isWorkerEnabled('ENABLE_EVENT_OUTBOX')) {
+    await processOutboxBatch();
+    setInterval(() => {
+      void processOutboxBatch();
+    }, Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 2000));
+  }
 
   // Task expiry loop — every 60s
-  setInterval(() => {
-    void processTaskExpiry().catch((err) => {
-      console.error('[WORKER] task expiry loop error:', err);
-    });
-  }, 60_000);
+  if (isWorkerEnabled('ENABLE_WORKER_TASK_EXPIRY')) {
+    setInterval(() => {
+      void processTaskExpiry().catch((err) => {
+        console.error('[WORKER] task expiry loop error:', err);
+      });
+    }, 60_000);
+  }
 
   // Agent dormancy loop — every 5 minutes
-  setInterval(() => {
-    void processAgentDormancy().catch((err) => {
-      console.error('[WORKER] agent dormancy loop error:', err);
-    });
-  }, 5 * 60_000);
+  if (isWorkerEnabled('ENABLE_WORKER_DORMANCY')) {
+    setInterval(() => {
+      void processAgentDormancy().catch((err) => {
+        console.error('[WORKER] agent dormancy loop error:', err);
+      });
+    }, 5 * 60_000);
+  }
 
   // Auto-match loop — every 10s
-  setInterval(() => {
-    void processAutoMatch().catch((err) => {
-      console.error('[WORKER] auto-match loop error:', err);
-    });
-  }, 10_000);
+  if (isWorkerEnabled('ENABLE_WORKER_AUTO_MATCH')) {
+    setInterval(() => {
+      void processAutoMatch().catch((err) => {
+        console.error('[WORKER] auto-match loop error:', err);
+      });
+    }, 10_000);
+  }
+
+  // Anomaly detection loop — every 5 minutes (opt-in)
+  if (isWorkerEnabled('ENABLE_WORKER_ANOMALY_DETECTION', '0')) {
+    setInterval(() => {
+      void runAnomalyDetection().catch((err) => {
+        console.error('[WORKER] anomaly detection error:', err);
+      });
+    }, 5 * 60_000);
+  }
 }
 
 void start();

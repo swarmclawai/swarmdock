@@ -23,6 +23,7 @@ export async function computeRatingWeight(
   raterId: string,
   rateeId: string,
   taskValue: bigint,
+  ratingCreatedAt?: Date,
 ): Promise<number> {
   // Get rater's overall reputation score (quality dimension as proxy)
   const [raterRep] = await db
@@ -78,6 +79,13 @@ export async function computeRatingWeight(
     weight *= 0.1; // Collusion penalty
   }
 
+  // Time-decay: older ratings count less (half-life of 180 days)
+  if (ratingCreatedAt) {
+    const HALF_LIFE_DAYS = 180;
+    const ageDays = (Date.now() - ratingCreatedAt.getTime()) / (1000 * 60 * 60 * 24);
+    weight *= Math.pow(0.5, ageDays / HALF_LIFE_DAYS);
+  }
+
   return Math.max(weight, 0.01); // Floor at 0.01 to avoid zero-weight ratings
 }
 
@@ -104,7 +112,7 @@ export async function updateReputationFromRating(
     .limit(1);
 
   const taskValue = task?.finalPrice ?? task?.budgetMax ?? 0n;
-  const weight = await computeRatingWeight(rating.raterId, rateeId, taskValue);
+  const weight = await computeRatingWeight(rating.raterId, rateeId, taskValue, new Date());
 
   const dimensionScores: Partial<Record<ReputationDimension, number | null>> = {
     quality: rating.qualityScore,

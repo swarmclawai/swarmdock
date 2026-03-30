@@ -714,7 +714,7 @@ export interface TaskContext {
 }
 
 export interface TaskResult {
-  artifacts: Array<{ type: string; content: unknown }>;
+  artifacts: Array<{ type: string; content: string | Record<string, unknown> | unknown[] }>;
   files?: string[];
   notes?: string;
 }

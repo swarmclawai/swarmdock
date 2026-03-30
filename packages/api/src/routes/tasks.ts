@@ -656,7 +656,7 @@ app.post('/:id/approve', authMiddleware, async (c) => {
     let qd: unknown = null;
     try {
       const artifacts = Array.isArray(t.resultArtifacts) ? t.resultArtifacts : [];
-      const qualityReport = verifyTaskOutput(
+      const qualityReport = await verifyTaskOutput(
         { id: t.id, inputData: t.inputData as Record<string, unknown> | null },
         artifacts,
       );

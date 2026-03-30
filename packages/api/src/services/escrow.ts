@@ -12,15 +12,37 @@ const erc20Abi = parseAbi([
   'function balanceOf(address owner) view returns (uint256)',
 ]);
 
-/** Prefix used for simulated (non-on-chain) transaction hashes */
+/** Prefix used for simulated (non-on-chain) transaction hashes. Dev-only — when REQUIRE_ON_CHAIN=1, simulated hashes are never generated. */
 export const SIMULATED_TX_PREFIX = 'sim:0x';
 
+/** Generate a simulated tx hash for development when on-chain transfers are not configured. Never used when REQUIRE_ON_CHAIN=1. */
 export function createSimulatedTxHash(): string {
   return `${SIMULATED_TX_PREFIX}${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex')}`;
 }
 
 export function isSimulatedTx(hash: string): boolean {
   return hash.startsWith(SIMULATED_TX_PREFIX);
+}
+
+function requireOnChain(): boolean {
+  return process.env.REQUIRE_ON_CHAIN === '1';
+}
+
+/** Attempt on-chain transfer, handling failures according to REQUIRE_ON_CHAIN mode. */
+async function attemptTransfer(to: string, amount: bigint, context: string): Promise<string> {
+  let onChainTxHash: string | null;
+  try {
+    onChainTxHash = await transferUsdc(to, amount);
+  } catch (error) {
+    // RPC failure — always propagate, never silently swallow
+    throw new Error(`On-chain transfer failed (${context}): ${error}`);
+  }
+
+  if (!onChainTxHash && requireOnChain()) {
+    throw new Error(`On-chain transfer not configured but REQUIRE_ON_CHAIN=1 (${context})`);
+  }
+
+  return onChainTxHash ?? createSimulatedTxHash();
 }
 
 function getChain() {
@@ -68,16 +90,11 @@ export async function fundEscrow(params: {
   payeeId: string;
   amount: bigint;
 }): Promise<{ id: string; txHash: string | null }> {
-  // Attempt on-chain USDC deposit when configured
-  const onChainTxHash = await transferUsdc(
+  const finalTxHash = await attemptTransfer(
     process.env.PLATFORM_WALLET_ADDRESS ?? '',
     params.amount,
-  ).catch((error) => {
-    console.error('[ESCROW] on-chain deposit failed, recording simulated hash:', error);
-    return null;
-  });
-
-  const finalTxHash = onChainTxHash ?? createSimulatedTxHash();
+    `escrow deposit for task ${params.taskId}`,
+  );
 
   const result = await db.transaction(async (tx) => {
     const [escrow] = await tx.insert(escrowTransactions).values({
@@ -135,14 +152,11 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
       ? await tx.select({ walletAddress: agents.walletAddress }).from(agents).where(eq(agents.id, escrow.payeeId)).limit(1)
       : [null];
 
-    const onChainTxHash = payee?.walletAddress
-      ? await transferUsdc(payee.walletAddress, payout).catch((error) => {
-          console.error('[ESCROW] on-chain release failed, falling back to simulated hash:', error);
-          return null;
-        })
-      : null;
-
-    const finalTxHash = onChainTxHash ?? createSimulatedTxHash();
+    const finalTxHash = await attemptTransfer(
+      payee?.walletAddress ?? '',
+      payout,
+      `escrow release for task ${taskId}`,
+    );
 
     await tx
       .update(escrowTransactions)
@@ -227,14 +241,11 @@ export async function refundEscrow(taskId: string): Promise<void> {
 
     const [payer] = await tx.select({ walletAddress: agents.walletAddress }).from(agents).where(eq(agents.id, escrow.payerId)).limit(1);
 
-    const onChainTxHash = payer?.walletAddress
-      ? await transferUsdc(payer.walletAddress, escrow.amount).catch((error) => {
-          console.error('[ESCROW] on-chain refund failed, falling back to simulated hash:', error);
-          return null;
-        })
-      : null;
-
-    const finalRefundTxHash = onChainTxHash ?? createSimulatedTxHash();
+    const finalRefundTxHash = await attemptTransfer(
+      payer?.walletAddress ?? '',
+      escrow.amount,
+      `escrow refund for task ${taskId}`,
+    );
 
     await tx
       .update(escrowTransactions)
