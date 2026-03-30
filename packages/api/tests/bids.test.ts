@@ -3,9 +3,10 @@ import test from 'node:test';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { AATPayload } from '@swarmdock/shared';
-import { BID_STATUS, ESCROW_STATUS, TASK_STATUS } from '@swarmdock/shared';
+import { BID_STATUS, ESCROW_STATUS, TASK_STATUS, TASK_VISIBILITY } from '@swarmdock/shared';
 import { createBidsApp } from '../src/routes/bids.ts';
 import { escrowTransactions, taskBids, tasks } from '../src/db/schema.ts';
+import type { canReadTask } from '../src/routes/task-access.ts';
 
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function toJSON() {
   return this.toString();
@@ -28,6 +29,12 @@ function authAs(agentId: string) {
 }
 
 function allowScope() {
+  return createMiddleware(async (_c, next) => {
+    await next();
+  });
+}
+
+function noAuth() {
   return createMiddleware(async (_c, next) => {
     await next();
   });
@@ -211,6 +218,8 @@ function createMountedBidsApp(
           };
         }
     >;
+    optionalViewerAgentId?: string | null;
+    canReadTask?: typeof canReadTask;
   } = {},
 ) {
   const emitted = options.emitted ?? [];
@@ -218,6 +227,9 @@ function createMountedBidsApp(
   app.onError((error) => new Response(JSON.stringify({ error: error.message }), { status: 500 }));
   app.route('/tasks/:taskId/bids', createBidsApp({
     authMiddleware: authAs('requester-1'),
+    optionalAuthMiddleware: options.optionalViewerAgentId
+      ? authAs(options.optionalViewerAgentId)
+      : noAuth(),
     requireScope: () => allowScope(),
     eventBus: {
       emit(agentId, event) {
@@ -230,9 +242,70 @@ function createMountedBidsApp(
     createTxHash: () => '0xtesthash',
     db: createFakeDb(state, { failEscrowInsert: options.failEscrowInsert }),
     requirePayment: options.requirePayment ?? (async () => ({ pendingSettlement: null })),
+    canReadTask: options.canReadTask,
   }));
   return { app, emitted };
 }
+
+test('listing bids hides private tasks from unauthorized viewers', async () => {
+  const state: FakeState = {
+    tasks: [{
+      id: 'task-1',
+      requesterId: 'requester-1',
+      assigneeId: null,
+      title: 'Private task',
+      status: TASK_STATUS.OPEN,
+      visibility: TASK_VISIBILITY.PRIVATE,
+    }],
+    bids: [{
+      id: 'bid-1',
+      taskId: 'task-1',
+      bidderId: 'agent-1',
+      proposedPrice: 4_500_000n,
+      status: BID_STATUS.PENDING,
+    }],
+    escrows: [],
+  };
+
+  const { app } = createMountedBidsApp(state, {
+    canReadTask: async () => false,
+  });
+
+  const response = await app.request('http://swarmdock.test/tasks/task-1/bids');
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: 'Task not found' });
+});
+
+test('listing bids keeps public tasks readable without auth', async () => {
+  const state: FakeState = {
+    tasks: [{
+      id: 'task-1',
+      requesterId: 'requester-1',
+      assigneeId: null,
+      title: 'Public task',
+      status: TASK_STATUS.OPEN,
+      visibility: TASK_VISIBILITY.PUBLIC,
+    }],
+    bids: [{
+      id: 'bid-1',
+      taskId: 'task-1',
+      bidderId: 'agent-1',
+      proposedPrice: 4_500_000n,
+      status: BID_STATUS.PENDING,
+    }],
+    escrows: [],
+  };
+
+  const { app } = createMountedBidsApp(state, {
+    canReadTask: async () => true,
+  });
+
+  const response = await app.request('http://swarmdock.test/tasks/task-1/bids');
+  assert.equal(response.status, 200);
+  const body = await response.json() as { bids: Array<{ id: string }> };
+  assert.equal(body.bids.length, 1);
+  assert.equal(body.bids[0]?.id, 'bid-1');
+});
 
 test('accepting a bid assigns the task, rejects competing bids, and funds escrow', async () => {
   const state: FakeState = {

@@ -1,11 +1,18 @@
 import { Hono } from 'hono';
-import { readStoredArtifact } from '../services/storage.js';
+import { normalizeArtifactKey, readStoredArtifact } from '../services/storage.js';
 
 const app = new Hono();
 
 app.get('/*', async (c) => {
   const prefix = '/api/v1/artifacts/';
-  const key = decodeURIComponent(c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : '');
+  let rawKey = '';
+  try {
+    rawKey = decodeURIComponent(c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : '');
+  } catch {
+    return c.json({ error: 'Invalid artifact key' }, 400);
+  }
+
+  const key = normalizeArtifactKey(rawKey);
   if (!key) {
     return c.json({ error: 'Artifact key required' }, 400);
   }

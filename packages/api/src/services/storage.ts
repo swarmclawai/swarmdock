@@ -13,6 +13,10 @@ type StoredObject = {
 const DEFAULT_STORAGE_DIR = path.join(process.cwd(), '.swarmdock-artifacts');
 const ARTIFACT_ROUTE_PREFIX = '/api/v1/artifacts/';
 
+function artifactStorageRoot(): string {
+  return path.resolve(process.env.ARTIFACT_STORAGE_DIR ?? DEFAULT_STORAGE_DIR);
+}
+
 function normalizeContentType(value: string | null | undefined): string {
   if (!value) {
     return 'application/octet-stream';
@@ -37,9 +41,39 @@ function extensionForContentType(contentType: string): string {
 }
 
 function buildArtifactUrl(key: string): string {
-  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+  const normalizedKey = normalizeArtifactKey(key);
+  if (!normalizedKey) {
+    throw new Error(`Invalid artifact key: ${key}`);
+  }
+
+  const encodedKey = normalizedKey.split('/').map(encodeURIComponent).join('/');
   const platformUrl = process.env.PLATFORM_URL?.replace(/\/+$/, '');
   return platformUrl ? `${platformUrl}${ARTIFACT_ROUTE_PREFIX}${encodedKey}` : `${ARTIFACT_ROUTE_PREFIX}${encodedKey}`;
+}
+
+export function normalizeArtifactKey(key: string | null | undefined): string | null {
+  if (!key) {
+    return null;
+  }
+
+  if (key.includes('\0') || key.includes('\\') || path.posix.isAbsolute(key)) {
+    return null;
+  }
+
+  const normalized = path.posix.normalize(key);
+  if (!normalized || normalized === '.' || normalized === '..') {
+    return null;
+  }
+
+  if (normalized !== key || normalized.startsWith('../') || normalized.includes('/../')) {
+    return null;
+  }
+
+  if (normalized.split('/').some((segment) => !segment || segment === '.' || segment === '..')) {
+    return null;
+  }
+
+  return normalized;
 }
 
 export function trustedArtifactOrigins(): string[] {
@@ -69,12 +103,29 @@ export function artifactKeyFromTrustedUrl(url: string): string | null {
     return null;
   }
 
-  const key = decodeURIComponent(parsedUrl.pathname.slice(ARTIFACT_ROUTE_PREFIX.length));
-  return key || null;
+  let key: string;
+  try {
+    key = decodeURIComponent(parsedUrl.pathname.slice(ARTIFACT_ROUTE_PREFIX.length));
+  } catch {
+    return null;
+  }
+
+  return normalizeArtifactKey(key);
 }
 
-function localArtifactPath(key: string): string {
-  return path.join(process.env.ARTIFACT_STORAGE_DIR ?? DEFAULT_STORAGE_DIR, key);
+function localArtifactPath(key: string): string | null {
+  const normalizedKey = normalizeArtifactKey(key);
+  if (!normalizedKey) {
+    return null;
+  }
+
+  const root = artifactStorageRoot();
+  const resolved = path.resolve(root, normalizedKey);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    return null;
+  }
+
+  return resolved;
 }
 
 function basenameFromUrl(url: string, fallback: string): string {
@@ -109,17 +160,25 @@ function storageClient(): S3Client | null {
 const s3 = storageClient();
 
 async function writeStoredObject(key: string, body: Buffer, contentType: string): Promise<void> {
+  const normalizedKey = normalizeArtifactKey(key);
+  if (!normalizedKey) {
+    throw new Error(`Invalid artifact key: ${key}`);
+  }
+
   if (s3 && process.env.R2_BUCKET) {
     await s3.send(new PutObjectCommand({
       Bucket: process.env.R2_BUCKET,
-      Key: key,
+      Key: normalizedKey,
       Body: body,
       ContentType: contentType,
     }));
     return;
   }
 
-  const filePath = localArtifactPath(key);
+  const filePath = localArtifactPath(normalizedKey);
+  if (!filePath) {
+    throw new Error(`Invalid artifact key: ${key}`);
+  }
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, body);
 }
@@ -133,10 +192,15 @@ async function readReadableBody(body: Readable): Promise<Buffer> {
 }
 
 export async function readStoredArtifact(key: string): Promise<StoredObject | null> {
+  const normalizedKey = normalizeArtifactKey(key);
+  if (!normalizedKey) {
+    return null;
+  }
+
   if (s3 && process.env.R2_BUCKET) {
     const response = await s3.send(new GetObjectCommand({
       Bucket: process.env.R2_BUCKET,
-      Key: key,
+      Key: normalizedKey,
     })).catch(() => null);
 
     if (!response?.Body) {
@@ -153,7 +217,10 @@ export async function readStoredArtifact(key: string): Promise<StoredObject | nu
     };
   }
 
-  const filePath = localArtifactPath(key);
+  const filePath = localArtifactPath(normalizedKey);
+  if (!filePath) {
+    return null;
+  }
   const body = await readFile(filePath).catch(() => null);
   if (!body) {
     return null;
@@ -172,11 +239,16 @@ async function storeBuffer(params: {
   source: 'inline' | 'file';
   originalUrl?: string;
 }): Promise<StoredArtifactRef> {
-  await writeStoredObject(params.key, params.body, params.contentType);
+  const normalizedKey = normalizeArtifactKey(params.key);
+  if (!normalizedKey) {
+    throw new Error(`Invalid artifact key: ${params.key}`);
+  }
+
+  await writeStoredObject(normalizedKey, params.body, params.contentType);
 
   return {
-    key: params.key,
-    url: buildArtifactUrl(params.key),
+    key: normalizedKey,
+    url: buildArtifactUrl(normalizedKey),
     contentType: params.contentType,
     byteLength: params.body.byteLength,
     source: params.source,

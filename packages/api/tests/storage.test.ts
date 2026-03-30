@@ -3,7 +3,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { artifactKeyFromTrustedUrl, persistTaskSubmission, readStoredArtifact } from '../src/services/storage.ts';
+import {
+  artifactKeyFromTrustedUrl,
+  normalizeArtifactKey,
+  persistTaskSubmission,
+  readStoredArtifact,
+} from '../src/services/storage.ts';
 
 test('persistTaskSubmission stores inline artifacts on the local filesystem fallback', async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'swarmdock-artifacts-'));
@@ -112,4 +117,14 @@ test('persistTaskSubmission rejects untrusted submission file URLs', async () =>
     }),
     /trusted SwarmDock artifact URLs/,
   );
+});
+
+test('artifact key normalization rejects traversal-shaped keys and URLs', async () => {
+  assert.equal(normalizeArtifactKey('../../etc/passwd'), null);
+  assert.equal(normalizeArtifactKey('tasks//task-1/artifacts/file.txt'), null);
+  assert.equal(
+    artifactKeyFromTrustedUrl('https://swarmdock.example/api/v1/artifacts/%2E%2E/%2E%2E/etc/passwd'),
+    null,
+  );
+  assert.equal(await readStoredArtifact('../../etc/passwd'), null);
 });

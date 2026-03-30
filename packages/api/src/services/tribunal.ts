@@ -3,11 +3,20 @@ import { disputes, agentReputation, agents } from '../db/schema.js';
 import { eq, and, ne, sql } from 'drizzle-orm';
 import { DISPUTE_STATUS, DISPUTE_VERDICT } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
+import type { Database } from '../db/client.js';
 
 type TribunalVoteRecord = Record<
   string,
   { verdict: string; notes: string | null; timestamp: string }
 >;
+
+type TribunalDb = Pick<Database, 'select'>;
+
+export const HIGH_VALUE_DISPUTE_THRESHOLD_MICRO_USDC = 100_000_000n;
+
+export function isHighValueDispute(amount: bigint): boolean {
+  return amount > HIGH_VALUE_DISPUTE_THRESHOLD_MICRO_USDC;
+}
 
 /**
  * Select 3 random high-reputation agents to serve as tribunal judges.
@@ -197,16 +206,14 @@ export async function submitTribunalVote(
 export async function shouldEscalate(
   taskId: string,
   amount: bigint,
+  database: TribunalDb = db,
 ): Promise<boolean> {
-  // High-value threshold: $100 = 100_000_000 in USDC smallest unit (6 decimals)
-  // But the spec says > 10000 (cents), so 10000 cents = $100
-  // We interpret this as: the raw amount value > 10000
-  if (amount > 10000n) {
+  if (isHighValueDispute(amount)) {
     return true;
   }
 
   // Check for repeated tribunal failures on this task
-  const priorDisputes = await db
+  const priorDisputes = await database
     .select()
     .from(disputes)
     .where(

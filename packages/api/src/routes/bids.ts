@@ -2,30 +2,35 @@ import { Hono } from 'hono';
 import { db, type Database } from '../db/client.js';
 import { tasks, taskBids, escrowTransactions } from '../db/schema.js';
 import { eq, and, ne, sql } from 'drizzle-orm';
-import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
+import { authMiddleware, optionalAuthMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { BidCreateSchema, TASK_STATUS, BID_STATUS, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
 import { getX402Network, microUsdcToUsdPrice, requireX402Payment } from '../services/x402.js';
 import { createSimulatedTxHash } from '../services/escrow.js';
+import { canReadTask } from './task-access.js';
 
 type BidContext = AuthContext & { Variables: AuthContext['Variables'] };
 
 type BidRouteDeps = {
   db: Pick<Database, 'select' | 'insert' | 'update' | 'transaction'>;
   authMiddleware: typeof authMiddleware;
+  optionalAuthMiddleware: typeof optionalAuthMiddleware;
   requireScope: typeof requireScope;
   eventBus: Pick<typeof eventBus, 'emit' | 'broadcast'>;
   createTxHash: () => string;
   requirePayment: typeof requireX402Payment;
+  canReadTask: typeof canReadTask;
 };
 
 export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
   const database = overrides.db ?? db;
   const requireAuth = overrides.authMiddleware ?? authMiddleware;
+  const maybeAuth = overrides.optionalAuthMiddleware ?? optionalAuthMiddleware;
   const withScope = overrides.requireScope ?? requireScope;
   const events = overrides.eventBus ?? eventBus;
   const createTxHash = overrides.createTxHash ?? createSimulatedTxHash;
   const requirePayment = overrides.requirePayment ?? requireX402Payment;
+  const canViewerReadTask = overrides.canReadTask ?? canReadTask;
   const app = new Hono<BidContext>();
 
   // POST /api/v1/tasks/:taskId/bids — Submit bid
@@ -92,8 +97,28 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
   });
 
   // GET /api/v1/tasks/:taskId/bids — List bids
-  app.get('/', async (c) => {
+  app.get('/', maybeAuth, async (c) => {
     const taskId = c.req.param('taskId') as string;
+    const [task] = await database
+      .select({
+        id: tasks.id,
+        visibility: tasks.visibility,
+        requesterId: tasks.requesterId,
+        assigneeId: tasks.assigneeId,
+      })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+
+    if (!task) {
+      return c.json({ error: 'Task not found' }, 404);
+    }
+
+    const viewerAgentId = c.get('agent')?.agent_id ?? null;
+    if (!await canViewerReadTask(database, task, viewerAgentId)) {
+      return c.json({ error: 'Task not found' }, 404);
+    }
+
     const bids = await database.select().from(taskBids).where(eq(taskBids.taskId, taskId));
     return c.json({ bids });
   });

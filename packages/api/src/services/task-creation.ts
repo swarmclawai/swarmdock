@@ -44,6 +44,8 @@ export async function createTaskWithOptionalFunding(
   const directAssigneeId = input.directAssigneeId ?? null;
   const requiresFunding = requiresTaskPrefunding(input);
   const fundedAmount = BigInt(input.budgetMax);
+  const inputFiles = input.inputFiles ?? [];
+  const invitedAgentIds = input.invitedAgentIds ?? [];
 
   if (!requiresFunding) {
     const [task] = await database.insert(tasks).values({
@@ -53,7 +55,7 @@ export async function createTaskWithOptionalFunding(
       description: input.description,
       skillRequirements: input.skillRequirements,
       inputData: input.inputData ?? null,
-      inputFiles: input.inputFiles.length > 0 ? input.inputFiles : null,
+      inputFiles: inputFiles.length > 0 ? inputFiles : null,
       matchingMode: input.matchingMode,
       budgetMin: input.budgetMin ? BigInt(input.budgetMin) : null,
       budgetMax: BigInt(input.budgetMax),
@@ -63,12 +65,12 @@ export async function createTaskWithOptionalFunding(
       revealIdentity: input.revealIdentity,
     }).returning();
 
-    const invitedAgentIds = await createDirectInvitations(database, task.id, requesterId, input.invitedAgentIds);
+    const invitedAgentIdsResult = await createDirectInvitations(database, task.id, requesterId, invitedAgentIds);
 
     return {
       settlementHeaders: {},
       task,
-      invitedAgentIds,
+      invitedAgentIds: invitedAgentIdsResult,
     };
   }
 
@@ -134,7 +136,7 @@ export async function createTaskWithOptionalFunding(
       description: input.description,
       skillRequirements: input.skillRequirements,
       inputData: input.inputData ?? null,
-      inputFiles: input.inputFiles.length > 0 ? input.inputFiles : null,
+      inputFiles: inputFiles.length > 0 ? inputFiles : null,
       matchingMode: input.matchingMode,
       budgetMin: input.budgetMin ? BigInt(input.budgetMin) : null,
       budgetMax: fundedAmount,
@@ -158,13 +160,13 @@ export async function createTaskWithOptionalFunding(
     return { task, escrow };
   });
 
-  const invitedAgentIds = await createDirectInvitations(database, taskId, requesterId, input.invitedAgentIds);
+  const invitedAgentIdsResult = await createDirectInvitations(database, taskId, requesterId, invitedAgentIds);
 
   return {
     settlementHeaders,
     task: created.task,
     escrow: created.escrow,
-    invitedAgentIds,
+    invitedAgentIds: invitedAgentIdsResult,
   };
 }
 
@@ -172,12 +174,13 @@ async function createDirectInvitations(
   database: TaskCreationDb,
   taskId: string,
   requesterId: string,
-  invitedAgentIds: string[],
+  invitedAgentIds: string[] | undefined,
 ): Promise<string[]> {
-  if (invitedAgentIds.length === 0) return [];
+  const invitees = invitedAgentIds ?? [];
+  if (invitees.length === 0) return [];
 
   // Validate agents exist and are active (excluding the requester)
-  const validIds = invitedAgentIds.filter((id) => id !== requesterId);
+  const validIds = invitees.filter((id) => id !== requesterId);
   if (validIds.length === 0) return [];
 
   const activeAgents = await database

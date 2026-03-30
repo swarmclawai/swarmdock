@@ -21,6 +21,7 @@ import { persistTaskSubmission } from '../services/storage.js';
 import { fetchOrderedRowsByIds, searchTasksIndex } from '../services/search.js';
 import { createTaskWithOptionalFunding } from '../services/task-creation.js';
 import { findSkillMatchedAgents, createSystemMatchInvitations } from '../services/invitation-matching.js';
+import { canReadTask } from './task-access.js';
 
 const app = new Hono<AuthContext>();
 
@@ -396,27 +397,9 @@ app.get('/:id', optionalAuthMiddleware, async (c) => {
 
   // Private task access control
   if (task.visibility === TASK_VISIBILITY.PRIVATE) {
-    const agentPayload = c.get('agent');
-    if (!agentPayload) {
+    const viewerAgentId = c.get('agent')?.agent_id ?? null;
+    if (!await canReadTask(db, task, viewerAgentId)) {
       return c.json({ error: 'Task not found' }, 404);
-    }
-    const isOwner = task.requesterId === agentPayload.agent_id;
-    if (!isOwner) {
-      const [invitation] = await db
-        .select({ id: taskInvitations.id })
-        .from(taskInvitations)
-        .where(
-          and(
-            eq(taskInvitations.taskId, id),
-            eq(taskInvitations.agentId, agentPayload.agent_id),
-            ne(taskInvitations.status, INVITATION_STATUS.DECLINED),
-          ),
-        )
-        .limit(1);
-      const isAssignee = task.assigneeId === agentPayload.agent_id;
-      if (!invitation && !isAssignee) {
-        return c.json({ error: 'Task not found' }, 404);
-      }
     }
   }
 
@@ -761,8 +744,28 @@ app.post('/:id/reject', authMiddleware, async (c) => {
 });
 
 // GET /api/v1/tasks/:id/dispute — Get latest dispute for a task
-app.get('/:id/dispute', async (c) => {
+app.get('/:id/dispute', optionalAuthMiddleware, async (c) => {
   const id = c.req.param('id');
+  const [task] = await db
+    .select({
+      id: tasks.id,
+      visibility: tasks.visibility,
+      requesterId: tasks.requesterId,
+      assigneeId: tasks.assigneeId,
+    })
+    .from(tasks)
+    .where(eq(tasks.id, id))
+    .limit(1);
+
+  if (!task) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+
+  const viewerAgentId = c.get('agent')?.agent_id ?? null;
+  if (!await canReadTask(db, task, viewerAgentId)) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+
   const [dispute] = await db
     .select()
     .from(disputes)
@@ -846,7 +849,11 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
   // Check if dispute should be escalated (high-value or repeated failures)
   const [taskForEscalation] = await db.select({ budgetMax: tasks.budgetMax }).from(tasks).where(eq(tasks.id, id)).limit(1);
   if (taskForEscalation && await shouldEscalate(id, taskForEscalation.budgetMax)) {
-    await db.update(disputes).set({ status: DISPUTE_STATUS.ESCALATED, updatedAt: new Date() }).where(eq(disputes.id, dispute.id));
+    const [updatedDispute] = await db
+      .update(disputes)
+      .set({ status: DISPUTE_STATUS.ESCALATED, updatedAt: new Date() })
+      .where(eq(disputes.id, dispute.id))
+      .returning();
     sendEscalationNotification({
       disputeId: dispute.id,
       taskId: id,
@@ -855,6 +862,7 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
       raisedBy: agent.agent_id,
       against: againstAgentId ?? null,
     }).catch((err) => console.error('[ESCALATION] notification failed:', err));
+    return c.json(updatedDispute ?? { ...dispute, status: DISPUTE_STATUS.ESCALATED }, 201);
   }
 
   return c.json(dispute, 201);
