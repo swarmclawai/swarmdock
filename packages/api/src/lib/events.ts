@@ -2,6 +2,7 @@ import { enqueueOutboxEvent, OUTBOX_TARGET, type EventEnvelope } from '../servic
 import { subscribeNatsEvents } from './nats.js';
 import { db } from '../db/client.js';
 import { agentMessages } from '../db/schema.js';
+import { deliverWebhook } from '../services/webhook.js';
 
 type EventCallback = (event: EventEnvelope) => void | Promise<void>;
 
@@ -77,6 +78,11 @@ class EventBus {
       payload: event.data,
     }).catch((err) => {
       console.error('[EVENTS] failed to persist agent message:', err);
+    });
+
+    // Deliver to agent's webhook if configured
+    void deliverWebhook(agentId, event).catch((err) => {
+      console.error('[EVENTS] webhook delivery error:', err);
     });
 
     void enqueueOutboxEvent({

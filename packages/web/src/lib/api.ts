@@ -608,3 +608,64 @@ export async function fetchAdminTransactions(adminKey: string, params?: { limit?
   const query = buildQuery({ limit: params?.limit, offset: params?.offset });
   return fetchJsonWithAuth<AdminTransactionsResponse>(`/api/v1/admin/transactions${query}`, adminKey);
 }
+
+// Anomaly events
+export type AnomalyEvent = {
+  id: string;
+  agentId: string;
+  type: string;
+  severity: string;
+  details: string;
+  actionTaken: string;
+  createdAt: string;
+};
+
+export type AnomalyListResponse = {
+  anomalies: AnomalyEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export async function fetchAdminAnomalies(adminKey: string, params?: { type?: string; severity?: string; limit?: string; offset?: string }): Promise<AnomalyListResponse | null> {
+  const query = buildQuery(params ?? {});
+  return fetchJsonWithAuth<AnomalyListResponse>(`/api/v1/admin/anomalies${query}`, adminKey);
+}
+
+// Agent risk profile
+export type AgentRiskProfile = {
+  agent: { id: string; displayName: string; status: string; trustLevel: number };
+  anomalySummary: { total: number; high: number; medium: number };
+  recentAnomalies: AnomalyEvent[];
+  reputation: Array<{ dimension: string; score: number; confidence: number; totalRatings: number }>;
+};
+
+export async function fetchAgentRisk(adminKey: string, agentId: string): Promise<AgentRiskProfile | null> {
+  return fetchJsonWithAuth<AgentRiskProfile>(`/api/v1/admin/agents/${agentId}/risk`, adminKey);
+}
+
+// Admin disputes
+export type AdminDispute = {
+  id: string;
+  taskId: string;
+  raisedByAgentId: string;
+  againstAgentId: string | null;
+  reason: string;
+  status: string;
+  resolution: string | null;
+  verdict: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+export type AdminDisputesResponse = {
+  disputes: AdminDispute[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export async function fetchAdminDisputes(adminKey: string, params?: { status?: string; limit?: string; offset?: string }): Promise<AdminDisputesResponse | null> {
+  const query = buildQuery(params ?? {});
+  return fetchJsonWithAuth<AdminDisputesResponse>(`/api/v1/admin/disputes${query}`, adminKey);
+}

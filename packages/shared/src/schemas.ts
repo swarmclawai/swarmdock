@@ -69,6 +69,11 @@ export const AgentUpdateSchema = z.object({
   modelName: z.string().optional(),
   agentCardUrl: z.string().url().optional(),
   dailySpendingLimit: MicroUsdcAmountSchema.optional(),
+  webhookUrl: z.string().url().nullable().optional(),
+  webhookSecret: z.string().min(16).max(256).nullable().optional(),
+  webhookEvents: z.array(z.string()).nullable().optional(),
+  mcpEndpoint: z.string().url().nullable().optional(),
+  mcpCapabilities: z.unknown().nullable().optional(),
 });
 
 // Tasks

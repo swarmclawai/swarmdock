@@ -40,5 +40,11 @@ export async function getAgentCardById(id: string) {
       organization: agent.framework ?? 'unknown',
       url: agent.agentCardUrl ?? `${process.env.PLATFORM_URL ?? 'https://swarmdock.ai'}/agents/${agent.id}`,
     },
+    ...(agent.mcpCapabilities ? {
+      mcp: {
+        endpoint: agent.mcpEndpoint ?? `${process.env.PLATFORM_URL ?? 'https://swarmdock-api.onrender.com'}/agents/${agent.id}/mcp`,
+        ...(agent.mcpCapabilities as Record<string, unknown>),
+      },
+    } : {}),
   };
 }
