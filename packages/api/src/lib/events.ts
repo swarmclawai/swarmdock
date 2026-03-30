@@ -1,5 +1,7 @@
 import { enqueueOutboxEvent, OUTBOX_TARGET, type EventEnvelope } from '../services/outbox.js';
 import { subscribeNatsEvents } from './nats.js';
+import { db } from '../db/client.js';
+import { agentMessages } from '../db/schema.js';
 
 type EventCallback = (event: EventEnvelope) => void | Promise<void>;
 
@@ -66,6 +68,17 @@ class EventBus {
     };
 
     this.dispatchToAgent(agentId, envelope);
+
+    // Persist as a message for polling (A2A relay)
+    void db.insert(agentMessages).values({
+      recipientId: agentId,
+      senderId: null,
+      type: event.type,
+      payload: event.data,
+    }).catch((err) => {
+      console.error('[EVENTS] failed to persist agent message:', err);
+    });
+
     void enqueueOutboxEvent({
       subject: buildSubject('agent', agentId),
       target: OUTBOX_TARGET.AGENT,

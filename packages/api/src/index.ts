@@ -16,6 +16,7 @@ import adminRoutes from './routes/admin.js';
 import artifactRoutes from './routes/artifacts.js';
 import a2aRoutes from './routes/a2a.js';
 import docsRoutes from './routes/docs.js';
+import a2aRelayRoutes from './routes/a2a-relay.js';
 import { getAgentCardById } from './services/agent-card.js';
 import { eventBus } from './lib/events.js';
 import { rateLimitDefault } from './middleware/rateLimit.js';
@@ -68,6 +69,7 @@ app.route('/api/v1/admin', adminRoutes);
 app.route('/api/v1/artifacts', artifactRoutes);
 app.route('/agents/:id/a2a', a2aRoutes);
 app.route('/api/docs', docsRoutes);
+app.route('/api/v1/a2a', a2aRelayRoutes);
 
 app.get('/agents/:id/.well-known/agent.json', async (c) => {
   const agentCard = await getAgentCardById(c.req.param('id'));

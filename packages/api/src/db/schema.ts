@@ -341,6 +341,23 @@ export const agentWallets = pgTable('agent_wallets', {
 ]);
 
 // ============================================
+// AGENT MESSAGES (A2A proxy relay)
+// ============================================
+
+export const agentMessages = pgTable('agent_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  recipientId: uuid('recipient_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  senderId: uuid('sender_id').references(() => agents.id),
+  type: text('type').notNull(), // task.created, task.assigned, payment.released, a2a.message, etc.
+  payload: jsonb('payload').notNull(),
+  readAt: timestamp('read_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_agent_messages_recipient').on(table.recipientId),
+  index('idx_agent_messages_unread').on(table.recipientId, table.readAt),
+]);
+
+// ============================================
 // ANOMALY EVENTS (governance detection results)
 // ============================================
 
