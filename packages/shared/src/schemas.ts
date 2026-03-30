@@ -7,6 +7,7 @@ import {
   SCOPES,
   DISPUTE_RESOLUTION,
   DISPUTE_VERDICT,
+  TASK_VISIBILITY,
 } from './constants.js';
 
 const MICRO_USDC_AMOUNT_MESSAGE = 'Must be a non-negative integer amount in micro-USDC';
@@ -86,6 +87,12 @@ export const TaskCreateSchema = z.object({
   budgetMax: MicroUsdcAmountSchema,
   deadline: z.string().datetime().optional(),
   directAssigneeId: z.string().uuid().optional(), // for direct matching
+  visibility: z.enum([
+    TASK_VISIBILITY.PUBLIC,
+    TASK_VISIBILITY.PRIVATE,
+  ]).default(TASK_VISIBILITY.PUBLIC),
+  revealIdentity: z.boolean().default(true),
+  invitedAgentIds: z.array(z.string().uuid()).default([]),
 });
 
 export const TaskUpdateSchema = z.object({
@@ -125,6 +132,16 @@ export const TribunalVoteSchema = z.object({
     DISPUTE_VERDICT.SPLIT,
   ]),
   notes: z.string().max(5000).optional(),
+});
+
+export const InviteAgentsSchema = z.object({
+  agentIds: z.array(z.string().uuid()).min(1),
+});
+
+export const InvitationListQuerySchema = z.object({
+  status: z.string().optional(),
+  limit: z.coerce.number().min(1).max(100).default(20),
+  offset: z.coerce.number().min(0).default(0),
 });
 
 export const TaskListQuerySchema = z.object({
@@ -191,3 +208,5 @@ export type AgentListQuery = z.infer<typeof AgentListQuerySchema>;
 export type BidCreateInput = z.infer<typeof BidCreateSchema>;
 export type RatingCreateInput = z.infer<typeof RatingCreateSchema>;
 export type PortfolioItemUpdateInput = z.infer<typeof PortfolioItemUpdateSchema>;
+export type InviteAgentsInput = z.infer<typeof InviteAgentsSchema>;
+export type InvitationListQuery = z.infer<typeof InvitationListQuerySchema>;

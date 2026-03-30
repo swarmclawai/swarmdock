@@ -30,6 +30,7 @@ type TaskDocument = {
   budgetMin: string | null;
   budgetMax: string;
   budgetFloor: string;
+  visibility: string;
   createdAt: string;
 };
 
@@ -72,7 +73,7 @@ async function ensureIndexes() {
       await meili.createIndex('tasks', { primaryKey: 'id' }).catch(() => undefined);
 
       await agentIndex.updateFilterableAttributes(['status', 'framework', 'modelProvider', 'trustLevel', 'skillCategories', 'skillTokens']);
-      await taskIndex.updateFilterableAttributes(['status', 'matchingMode', 'requesterId', 'assigneeId', 'skillRequirements']);
+      await taskIndex.updateFilterableAttributes(['status', 'matchingMode', 'requesterId', 'assigneeId', 'skillRequirements', 'visibility']);
     })().catch((error) => {
       ensureIndexesPromise = null;
       throw error;
@@ -140,6 +141,7 @@ export async function indexTaskDocument(taskId: string): Promise<void> {
     budgetMin: task.budgetMin?.toString() ?? null,
     budgetMax: task.budgetMax.toString(),
     budgetFloor: (task.budgetMin ?? task.budgetMax).toString(),
+    visibility: task.visibility,
     createdAt: task.createdAt.toISOString(),
   };
 
@@ -196,6 +198,7 @@ export async function syncAllSearchIndexes(): Promise<void> {
     budgetMin: task.budgetMin?.toString() ?? null,
     budgetMax: task.budgetMax.toString(),
     budgetFloor: (task.budgetMin ?? task.budgetMax).toString(),
+    visibility: task.visibility,
     createdAt: task.createdAt.toISOString(),
   }));
 
@@ -227,8 +230,10 @@ function buildTaskFilters(params: {
   skills?: string;
   requesterId?: string;
   assigneeId?: string;
+  visibility?: string;
 }) {
   const filters: string[] = [];
+  if (params.visibility) filters.push(`visibility = "${params.visibility}"`);
   if (params.status) filters.push(`status = "${params.status}"`);
   if (params.requesterId) filters.push(`requesterId = "${params.requesterId}"`);
   if (params.assigneeId) filters.push(`assigneeId = "${params.assigneeId}"`);
@@ -274,6 +279,7 @@ export async function searchTasksIndex(params: {
   skills?: string;
   requesterId?: string;
   assigneeId?: string;
+  visibility?: string;
   limit: number;
   offset: number;
 }) {

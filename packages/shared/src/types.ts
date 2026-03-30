@@ -74,6 +74,18 @@ export interface Task {
   resultFiles: string[] | null;
   qualityScore: number | null;
   qualityDetails: unknown;
+  visibility: string;
+  revealIdentity: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskInvitation {
+  id: string;
+  taskId: string;
+  agentId: string;
+  source: string;
+  status: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,12 +1,13 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../db/client.js';
-import { tasks, taskBids, agents, disputes } from '../db/schema.js';
-import { eq, and, inArray, sql, count, gte, lte, ilike, or, desc } from 'drizzle-orm';
-import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
+import { tasks, taskBids, agents, disputes, taskInvitations } from '../db/schema.js';
+import { eq, and, ne, inArray, sql, count, gte, lte, ilike, or, desc } from 'drizzle-orm';
+import { authMiddleware, optionalAuthMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import {
   TaskCreateSchema, TaskUpdateSchema, TaskSubmitSchema, TaskListQuerySchema, TaskDisputeSchema,
-  TASK_STATUS,
+  InviteAgentsSchema, InvitationListQuerySchema,
+  TASK_STATUS, TASK_VISIBILITY, MATCHING_MODE, INVITATION_STATUS, AGENT_STATUS,
   DISPUTE_STATUS,
 } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
@@ -17,6 +18,7 @@ import { embed } from '../services/embeddings.js';
 import { persistTaskSubmission } from '../services/storage.js';
 import { fetchOrderedRowsByIds, searchTasksIndex } from '../services/search.js';
 import { createTaskWithOptionalFunding } from '../services/task-creation.js';
+import { findSkillMatchedAgents, createSystemMatchInvitations } from '../services/invitation-matching.js';
 
 const app = new Hono<AuthContext>();
 
@@ -38,6 +40,7 @@ app.get('/', async (c) => {
       assigneeId,
       limit,
       offset,
+      visibility: TASK_VISIBILITY.PUBLIC,
     });
 
     if (indexed) {
@@ -77,6 +80,7 @@ app.get('/', async (c) => {
   }
 
   const conditions = [];
+  conditions.push(eq(tasks.visibility, TASK_VISIBILITY.PUBLIC));
   if (status) conditions.push(eq(tasks.status, status));
   if (requesterId) conditions.push(eq(tasks.requesterId, requesterId));
   if (assigneeId) conditions.push(eq(tasks.assigneeId, assigneeId));
@@ -161,20 +165,54 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
     budgetMax: bigint;
     finalPrice: bigint | null;
     matchingMode: string;
+    visibility: string;
+    revealIdentity: boolean;
   };
   const directAssigneeId = parsed.data.directAssigneeId ?? null;
+  const isPrivate = parsed.data.visibility === TASK_VISIBILITY.PRIVATE;
 
-  // Broadcast to all connected agents
-  eventBus.broadcast({
-    type: 'task.created',
-    data: {
+  if (isPrivate) {
+    // Run skill matching for private tasks with open/auto matching
+    let allInvitedIds = creation.invitedAgentIds ?? [];
+    if (
+      parsed.data.skillRequirements.length > 0 &&
+      (parsed.data.matchingMode === MATCHING_MODE.OPEN || parsed.data.matchingMode === MATCHING_MODE.AUTO)
+    ) {
+      const excludeIds = [agent.agent_id, ...allInvitedIds];
+      const matchedIds = await findSkillMatchedAgents(db, parsed.data.skillRequirements, excludeIds);
+      if (matchedIds.length > 0) {
+        await createSystemMatchInvitations(db, task.id, matchedIds);
+        allInvitedIds = [...allInvitedIds, ...matchedIds];
+      }
+    }
+
+    // Emit targeted invitations instead of broadcast
+    const eventData: Record<string, unknown> = {
       taskId: task.id,
       title: task.title,
       skillRequirements: parsed.data.skillRequirements,
       budgetMax: parsed.data.budgetMax,
       matchingMode: parsed.data.matchingMode,
-    },
-  });
+    };
+    if (task.revealIdentity) {
+      eventData.requesterId = agent.agent_id;
+    }
+    for (const invitedId of allInvitedIds) {
+      eventBus.emit(invitedId, { type: 'task.invited', data: eventData });
+    }
+  } else {
+    // Broadcast to all connected agents for public tasks
+    eventBus.broadcast({
+      type: 'task.created',
+      data: {
+        taskId: task.id,
+        title: task.title,
+        skillRequirements: parsed.data.skillRequirements,
+        budgetMax: parsed.data.budgetMax,
+        matchingMode: parsed.data.matchingMode,
+      },
+    });
+  }
 
   if (creation.escrow) {
     eventBus.emit(agent.agent_id, {
@@ -205,13 +243,179 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
   return c.json(task, 201, creation.settlementHeaders);
 });
 
+// GET /api/v1/tasks/invitations — List agent's private task invitations
+app.get('/invitations', authMiddleware, async (c) => {
+  const query = InvitationListQuerySchema.safeParse(c.req.query());
+  if (!query.success) {
+    return c.json({ error: 'Invalid query', details: query.error.flatten() }, 400);
+  }
+
+  const agent = c.get('agent');
+  const { status: invStatus, limit, offset } = query.data;
+
+  const conditions = [eq(taskInvitations.agentId, agent.agent_id)];
+  if (invStatus) {
+    conditions.push(eq(taskInvitations.status, invStatus));
+  } else {
+    conditions.push(ne(taskInvitations.status, INVITATION_STATUS.DECLINED));
+  }
+
+  const whereClause = and(...conditions);
+
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(taskInvitations)
+    .where(whereClause);
+
+  const rows = await db
+    .select()
+    .from(taskInvitations)
+    .innerJoin(tasks, eq(tasks.id, taskInvitations.taskId))
+    .where(whereClause)
+    .limit(limit)
+    .offset(offset)
+    .orderBy(desc(taskInvitations.createdAt));
+
+  const invitations = rows.map((row) => {
+    const task = row.tasks;
+    const invitation = row.task_invitations;
+
+    // Identity masking
+    const isDisputed = task.status === TASK_STATUS.DISPUTED;
+    const shouldMask = !task.revealIdentity && !isDisputed;
+
+    return {
+      invitation,
+      task: {
+        ...task,
+        requesterId: shouldMask ? null : task.requesterId,
+      },
+    };
+  });
+
+  return c.json({ invitations, limit, offset, total: Number(total) });
+});
+
+// POST /api/v1/tasks/:id/invite — Invite agents to a private task
+app.post('/:id/invite', authMiddleware, requireScope('tasks.write'), async (c) => {
+  const id = c.req.param('id');
+  const agent = c.get('agent');
+
+  const body = await c.req.json();
+  const parsed = InviteAgentsSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+  if (!task) return c.json({ error: 'Task not found' }, 404);
+  if (task.requesterId !== agent.agent_id) return c.json({ error: 'Not task owner' }, 403);
+  if (task.visibility !== TASK_VISIBILITY.PRIVATE) {
+    return c.json({ error: 'Can only invite agents to private tasks' }, 400);
+  }
+
+  // Validate agents exist and are active
+  const validIds = parsed.data.agentIds.filter((agentId) => agentId !== agent.agent_id);
+  if (validIds.length === 0) {
+    return c.json({ error: 'No valid agent IDs provided' }, 400);
+  }
+
+  const activeAgents = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(inArray(agents.id, validIds), eq(agents.status, AGENT_STATUS.ACTIVE)));
+
+  const activeIds = activeAgents.map((a) => a.id);
+  if (activeIds.length === 0) {
+    return c.json({ error: 'No active agents found for the given IDs' }, 400);
+  }
+
+  // Insert invitations, skipping duplicates
+  await db.insert(taskInvitations).values(
+    activeIds.map((agentId) => ({ taskId: id, agentId, source: 'direct' as const })),
+  ).onConflictDoNothing();
+
+  // Emit invitation events
+  const eventData: Record<string, unknown> = {
+    taskId: task.id,
+    title: task.title,
+    skillRequirements: task.skillRequirements,
+    budgetMax: task.budgetMax.toString(),
+    matchingMode: task.matchingMode,
+  };
+  if (task.revealIdentity) {
+    eventData.requesterId = agent.agent_id;
+  }
+  for (const invitedId of activeIds) {
+    eventBus.emit(invitedId, { type: 'task.invited', data: eventData });
+  }
+
+  return c.json({ invited: activeIds.length }, 201);
+});
+
+// POST /api/v1/tasks/:id/invitations/decline — Decline a task invitation
+app.post('/:id/invitations/decline', authMiddleware, async (c) => {
+  const id = c.req.param('id');
+  const agent = c.get('agent');
+
+  const [invitation] = await db
+    .select()
+    .from(taskInvitations)
+    .where(
+      and(
+        eq(taskInvitations.taskId, id),
+        eq(taskInvitations.agentId, agent.agent_id),
+        ne(taskInvitations.status, INVITATION_STATUS.DECLINED),
+      ),
+    )
+    .limit(1);
+
+  if (!invitation) {
+    return c.json({ error: 'Invitation not found' }, 404);
+  }
+
+  const [updated] = await db
+    .update(taskInvitations)
+    .set({ status: INVITATION_STATUS.DECLINED, updatedAt: new Date() })
+    .where(eq(taskInvitations.id, invitation.id))
+    .returning();
+
+  return c.json(updated);
+});
+
 // GET /api/v1/tasks/:id — Task detail
-app.get('/:id', async (c) => {
+app.get('/:id', optionalAuthMiddleware, async (c) => {
   const id = c.req.param('id');
   const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
 
   if (!task) {
     return c.json({ error: 'Task not found' }, 404);
+  }
+
+  // Private task access control
+  if (task.visibility === TASK_VISIBILITY.PRIVATE) {
+    const agentPayload = c.get('agent');
+    if (!agentPayload) {
+      return c.json({ error: 'Task not found' }, 404);
+    }
+    const isOwner = task.requesterId === agentPayload.agent_id;
+    if (!isOwner) {
+      const [invitation] = await db
+        .select({ id: taskInvitations.id })
+        .from(taskInvitations)
+        .where(
+          and(
+            eq(taskInvitations.taskId, id),
+            eq(taskInvitations.agentId, agentPayload.agent_id),
+            ne(taskInvitations.status, INVITATION_STATUS.DECLINED),
+          ),
+        )
+        .limit(1);
+      const isAssignee = task.assigneeId === agentPayload.agent_id;
+      if (!invitation && !isAssignee) {
+        return c.json({ error: 'Task not found' }, 404);
+      }
+    }
   }
 
   const bids = await db.select().from(taskBids).where(eq(taskBids.taskId, id));
@@ -241,9 +445,19 @@ app.get('/:id', async (c) => {
 
   const agentMap = new Map(agentRows.map((agent) => [agent.id, agent]));
 
+  // Identity masking for private tasks
+  const agentPayload = c.get('agent');
+  const isOwner = agentPayload?.agent_id === task.requesterId;
+  const isDisputed = task.status === TASK_STATUS.DISPUTED;
+  const shouldMaskIdentity = task.visibility === TASK_VISIBILITY.PRIVATE
+    && !task.revealIdentity
+    && !isOwner
+    && !isDisputed;
+
   return c.json({
     ...task,
-    requester: agentMap.get(task.requesterId) ?? null,
+    requesterId: shouldMaskIdentity ? null : task.requesterId,
+    requester: shouldMaskIdentity ? null : (agentMap.get(task.requesterId) ?? null),
     assignee: task.assigneeId ? (agentMap.get(task.assigneeId) ?? null) : null,
     bids: bids.map((bid) => ({
       ...bid,

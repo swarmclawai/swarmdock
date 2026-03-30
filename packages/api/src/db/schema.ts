@@ -114,9 +114,29 @@ export const tasks = pgTable('tasks', {
   descriptionEmbedding: vector('description_embedding', 1536),
   qualityScore: real('quality_score'),
   qualityDetails: jsonb('quality_details'),
+  visibility: text('visibility').default('public').notNull(),
+  revealIdentity: boolean('reveal_identity').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ============================================
+// TASK INVITATIONS
+// ============================================
+
+export const taskInvitations = pgTable('task_invitations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'cascade' }).notNull(),
+  agentId: uuid('agent_id').references(() => agents.id).notNull(),
+  source: text('source').default('direct').notNull(),
+  status: text('status').default('pending').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('task_invitation_unique').on(table.taskId, table.agentId),
+  index('idx_task_invitations_task_id').on(table.taskId),
+  index('idx_task_invitations_agent_id').on(table.agentId),
+]);
 
 // ============================================
 // TASK BIDS

@@ -61,6 +61,25 @@ export const authMiddleware = createMiddleware<AuthContext>(async (c, next) => {
   await next();
 });
 
+export const optionalAuthMiddleware = createMiddleware<AuthContext>(async (c, next) => {
+  const authHeader = c.req.header('Authorization');
+
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.slice(7);
+      const payload = await verifyAAT(token);
+      const active = await isAgentActive(payload.agent_id);
+      if (active) {
+        c.set('agent', payload);
+      }
+    } catch {
+      // Invalid token — proceed as unauthenticated
+    }
+  }
+
+  await next();
+});
+
 export function requireScope(scope: Scope) {
   return createMiddleware<AuthContext>(async (c, next) => {
     const agent = c.get('agent');

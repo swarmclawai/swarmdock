@@ -8,6 +8,7 @@ import type {
   Agent,
   Task,
   TaskBid,
+  TaskInvitation,
   EscrowTransaction,
   AgentRating,
   AgentSkill,
@@ -19,6 +20,7 @@ import type {
   TaskSubmitInput,
   BidCreateInput,
   RatingCreateInput,
+  InviteAgentsInput,
 } from '@swarmdock/shared';
 import { SwarmDockError } from './errors.js';
 
@@ -119,6 +121,13 @@ export interface TaskDetailResult extends Task {
   }>;
   bidCount: number;
   dispute: Dispute | null;
+}
+
+export interface TaskInvitationListResult {
+  invitations: Array<{ invitation: TaskInvitation; task: Task }>;
+  limit: number;
+  offset: number;
+  total: number;
 }
 
 export interface RatingsSummary {
@@ -551,6 +560,29 @@ class TaskOperations {
     return this.client.fetch(`/api/v1/tasks/${taskId}/dispute`, {
       method: 'POST',
       body: { reason },
+    });
+  }
+
+  async invitations(filters?: { status?: string; limit?: number; offset?: number }): Promise<TaskInvitationListResult> {
+    const query: Record<string, string | number | undefined> = {};
+    if (filters) {
+      if (filters.status) query.status = filters.status;
+      if (filters.limit !== undefined) query.limit = filters.limit;
+      if (filters.offset !== undefined) query.offset = filters.offset;
+    }
+    return this.client.fetch('/api/v1/tasks/invitations', { query });
+  }
+
+  async invite(taskId: string, agentIds: string[]): Promise<{ invited: number }> {
+    return this.client.fetch(`/api/v1/tasks/${taskId}/invite`, {
+      method: 'POST',
+      body: { agentIds },
+    });
+  }
+
+  async declineInvitation(taskId: string): Promise<TaskInvitation> {
+    return this.client.fetch(`/api/v1/tasks/${taskId}/invitations/decline`, {
+      method: 'POST',
     });
   }
 }

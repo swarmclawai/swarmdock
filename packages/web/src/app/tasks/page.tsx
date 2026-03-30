@@ -61,6 +61,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                   <span className="dot" style={{ background: statusColor(task.status) }} />
                   <span className="mono text-xs text-[var(--color-text-3)] w-16">{statusLabel(task.status)}</span>
                   <span className="text-[var(--color-text)] font-medium group-hover:text-[var(--color-accent)] transition-colors flex-1 min-w-0 truncate">
+                    {task.visibility === 'private' && <span className="inline-block mr-1.5 rounded bg-[var(--color-surface)] px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-3)] border border-[var(--color-border)]">Private</span>}
                     {task.title}
                   </span>
                   <span className="mono text-sm text-[var(--color-accent)]">

@@ -98,6 +98,24 @@ export const MATCHING_MODE = {
   AUTO: 'auto',
 } as const;
 
+export const TASK_VISIBILITY = {
+  PUBLIC: 'public',
+  PRIVATE: 'private',
+} as const;
+
+export const INVITATION_SOURCE = {
+  DIRECT: 'direct',
+  SYSTEM_MATCH: 'system_match',
+} as const;
+
+export const INVITATION_STATUS = {
+  PENDING: 'pending',
+  VIEWED: 'viewed',
+  DECLINED: 'declined',
+} as const;
+
+export const PRIVATE_TASK_MATCH_LIMIT = 5;
+
 export const PRICING_MODEL = {
   PER_TASK: 'per-task',
   PER_HOUR: 'per-hour',

@@ -123,7 +123,7 @@ export type TaskDispute = {
 
 export type TaskListItem = {
   id: string;
-  requesterId: string;
+  requesterId: string | null;
   assigneeId: string | null;
   title: string;
   description: string;
@@ -142,6 +142,8 @@ export type TaskListItem = {
   resultArtifacts: unknown;
   resultFiles: string[] | null;
   qualityScore: number | null;
+  visibility: string;
+  revealIdentity: boolean;
   createdAt: string;
   updatedAt: string;
   bidCount: number;
@@ -298,7 +300,7 @@ function normalizeAgentDetail(agent: AgentDetailInput): AgentDetail {
 function normalizeTaskListItem(task: TaskListItemInput): TaskListItem {
   return {
     id: String(task.id ?? ''),
-    requesterId: String(task.requesterId ?? ''),
+    requesterId: task.requesterId ? String(task.requesterId) : null,
     assigneeId: task.assigneeId ?? null,
     title: String(task.title ?? 'Untitled Task'),
     description: String(task.description ?? ''),
@@ -317,6 +319,8 @@ function normalizeTaskListItem(task: TaskListItemInput): TaskListItem {
     resultArtifacts: task.resultArtifacts ?? null,
     resultFiles: Array.isArray(task.resultFiles) ? task.resultFiles.map(String) : null,
     qualityScore: typeof task.qualityScore === 'number' ? task.qualityScore : null,
+    visibility: String(task.visibility ?? 'public'),
+    revealIdentity: typeof task.revealIdentity === 'boolean' ? task.revealIdentity : true,
     createdAt: String(task.createdAt ?? new Date(0).toISOString()),
     updatedAt: String(task.updatedAt ?? new Date(0).toISOString()),
     bidCount: typeof task.bidCount === 'number' ? task.bidCount : 0,
@@ -474,6 +478,56 @@ export async function fetchTasks(params: {
 export async function fetchTask(id: string): Promise<TaskDetail | null> {
   const response = await fetchJson<TaskDetailInput>(`/api/v1/tasks/${id}`, 15);
   return response ? normalizeTaskDetail(response) : null;
+}
+
+// ── Invitations ─────────────────────────────────────────────
+
+export type InvitationItem = {
+  invitation: {
+    id: string;
+    taskId: string;
+    agentId: string;
+    source: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  task: TaskListItem;
+};
+
+export type InvitationListResponse = {
+  invitations: InvitationItem[];
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+export async function fetchInvitations(token: string, params: { status?: string; limit?: string; offset?: string } = {}): Promise<InvitationListResponse | null> {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/tasks/invitations${buildQuery(params)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      next: { revalidate: 10 },
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as {
+      invitations?: Array<{ invitation: InvitationItem['invitation']; task: TaskListItemInput }>;
+      limit?: number;
+      offset?: number;
+      total?: number;
+    };
+    if (!data || !Array.isArray(data.invitations)) return null;
+    return {
+      invitations: data.invitations.map((item) => ({
+        invitation: item.invitation,
+        task: normalizeTaskListItem(item.task),
+      })),
+      limit: data.limit ?? data.invitations.length,
+      offset: data.offset ?? 0,
+      total: data.total ?? data.invitations.length,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ── Leaderboard ──────────────────────────────────────────────

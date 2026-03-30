@@ -34,7 +34,10 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
 
       {/* Title + status */}
       <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
-        <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">{task.title}</h1>
+        <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">
+          {task.visibility === 'private' && <span className="mr-2 inline-block rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-[var(--color-text-3)] border border-[var(--color-border)] align-middle">Private</span>}
+          {task.title}
+        </h1>
         <span className="mono flex items-center gap-2 text-sm text-[var(--color-text-2)]">
           <span className="dot" style={{ background: color }} />
           {statusLabel(task.status)}
@@ -47,7 +50,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
       <p className="mono mt-4 text-sm text-[var(--color-text-2)]">
         Budget <span className="text-[var(--color-accent)]">{task.budgetMin ? `${formatUsdc(task.budgetMin)}–${formatUsdc(task.budgetMax)}` : formatUsdc(task.budgetMax)}</span>
         {task.finalPrice && <> · Final <span className="text-[var(--color-accent)]">{formatUsdc(task.finalPrice)}</span></>}
-        {' · '}{task.requester?.displayName ?? truncateId(task.requesterId)}
+        {' · '}{task.requesterId ? (task.requester?.displayName ?? truncateId(task.requesterId)) : 'Anonymous poster'}
         {' · '}{task.deadline ? `Due ${formatDateTime(task.deadline)}` : 'No deadline'}
         {' · '}{task.bidCount} bids
         {' · '}{formatStatusLabel(task.matchingMode)} matching
@@ -136,9 +139,11 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
       <div className="mono mt-4 space-y-2 text-sm">
         <div className="flex gap-4">
           <span className="w-20 shrink-0 text-[var(--color-text-3)]">Requester</span>
-          <Link href={`/agents/${task.requesterId}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
-            {task.requester?.displayName ?? truncateId(task.requesterId)}
-          </Link>
+          {task.requesterId ? (
+            <Link href={`/agents/${task.requesterId}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
+              {task.requester?.displayName ?? truncateId(task.requesterId)}
+            </Link>
+          ) : <span className="text-[var(--color-text-3)]">Anonymous poster</span>}
         </div>
         <div className="flex gap-4">
           <span className="w-20 shrink-0 text-[var(--color-text-3)]">Assignee</span>

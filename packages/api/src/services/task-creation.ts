@@ -1,12 +1,13 @@
 import type { Context } from 'hono';
 import type { TaskCreateInput } from '@swarmdock/shared';
-import { ESCROW_STATUS, MATCHING_MODE, TASK_STATUS } from '@swarmdock/shared';
+import { ESCROW_STATUS, MATCHING_MODE, TASK_STATUS, TASK_VISIBILITY, AGENT_STATUS } from '@swarmdock/shared';
 import type { Database } from '../db/client.js';
-import { escrowTransactions, tasks } from '../db/schema.js';
+import { escrowTransactions, tasks, taskInvitations, agents } from '../db/schema.js';
+import { eq, inArray, and } from 'drizzle-orm';
 import { createSimulatedTxHash } from './escrow.js';
 import { getX402Network, microUsdcToUsdPrice, requireX402Payment } from './x402.js';
 
-type TaskCreationDb = Pick<Database, 'insert' | 'transaction'>;
+type TaskCreationDb = Pick<Database, 'insert' | 'transaction' | 'select'>;
 
 type CreateTaskWithFundingDeps = {
   db: TaskCreationDb;
@@ -19,6 +20,7 @@ type CreatedTaskResult = {
   settlementHeaders: Record<string, string>;
   task?: Record<string, unknown>;
   escrow?: Record<string, unknown>;
+  invitedAgentIds?: string[];
 };
 
 export function requiresTaskPrefunding(input: Pick<TaskCreateInput, 'directAssigneeId' | 'matchingMode'>): boolean {
@@ -57,11 +59,16 @@ export async function createTaskWithOptionalFunding(
       budgetMax: BigInt(input.budgetMax),
       deadline: input.deadline ? new Date(input.deadline) : null,
       status: TASK_STATUS.OPEN,
+      visibility: input.visibility,
+      revealIdentity: input.revealIdentity,
     }).returning();
+
+    const invitedAgentIds = await createDirectInvitations(database, task.id, requesterId, input.invitedAgentIds);
 
     return {
       settlementHeaders: {},
       task,
+      invitedAgentIds,
     };
   }
 
@@ -134,6 +141,8 @@ export async function createTaskWithOptionalFunding(
       deadline: input.deadline ? new Date(input.deadline) : null,
       finalPrice: fundedAmount,
       status: directAssigneeId ? TASK_STATUS.ASSIGNED : TASK_STATUS.OPEN,
+      visibility: input.visibility,
+      revealIdentity: input.revealIdentity,
     }).returning();
 
     const [escrow] = await tx.insert(escrowTransactions).values({
@@ -149,9 +158,43 @@ export async function createTaskWithOptionalFunding(
     return { task, escrow };
   });
 
+  const invitedAgentIds = await createDirectInvitations(database, taskId, requesterId, input.invitedAgentIds);
+
   return {
     settlementHeaders,
     task: created.task,
     escrow: created.escrow,
+    invitedAgentIds,
   };
+}
+
+async function createDirectInvitations(
+  database: TaskCreationDb,
+  taskId: string,
+  requesterId: string,
+  invitedAgentIds: string[],
+): Promise<string[]> {
+  if (invitedAgentIds.length === 0) return [];
+
+  // Validate agents exist and are active (excluding the requester)
+  const validIds = invitedAgentIds.filter((id) => id !== requesterId);
+  if (validIds.length === 0) return [];
+
+  const activeAgents = await database
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(inArray(agents.id, validIds), eq(agents.status, AGENT_STATUS.ACTIVE)));
+
+  const activeIds = activeAgents.map((a) => a.id);
+  if (activeIds.length === 0) return [];
+
+  await database.insert(taskInvitations).values(
+    activeIds.map((agentId) => ({
+      taskId,
+      agentId,
+      source: 'direct' as const,
+    })),
+  );
+
+  return activeIds;
 }
