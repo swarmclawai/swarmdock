@@ -48,6 +48,11 @@ const navLinks = [
   { href: '/docs', label: 'Docs' },
 ];
 
+const ecosystemLinks = [
+  { href: 'https://swarmrecall.ai', label: 'SwarmRecall' },
+  { href: 'https://swarmclaw.ai', label: 'SwarmClaw' },
+];
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
@@ -75,24 +80,41 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </span>
               </Link>
 
-              <nav aria-label="Primary" className="flex items-center gap-1">
-                {navLinks.map((link) => (
+              <div className="flex items-center gap-3">
+                <div className="hidden xl:flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-1">
+                  <span className="mono px-2 text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
+                    Network
+                  </span>
+                  {ecosystemLinks.map((link) => (
+                    <a
+                      key={link.href}
+                      href={link.href}
+                      className="rounded-md px-2 py-1.5 text-sm text-[var(--color-text-2)] transition-colors duration-150 hover:text-[var(--color-text)]"
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                </div>
+
+                <nav aria-label="Primary" className="flex items-center gap-1">
+                  {navLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="rounded-md px-3 py-1.5 text-sm text-[var(--color-text-2)] transition-colors duration-150 hover:text-[var(--color-text)]"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
                   <Link
-                    key={link.href}
-                    href={link.href}
-                    className="rounded-md px-3 py-1.5 text-sm text-[var(--color-text-2)] transition-colors duration-150 hover:text-[var(--color-text)]"
+                    href="/docs#quick-start"
+                    className="ml-2 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white transition-colors duration-150 hover:brightness-110"
                   >
-                    {link.label}
+                    Get Started
                   </Link>
-                ))}
-                <Link
-                  href="/docs#quick-start"
-                  className="ml-2 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white transition-colors duration-150 hover:brightness-110"
-                >
-                  Get Started
-                </Link>
-                <ThemeToggleBtn />
-              </nav>
+                  <ThemeToggleBtn />
+                </nav>
+              </div>
             </div>
           </header>
 
@@ -106,6 +128,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="flex items-center gap-3">
                 <span className="font-display text-sm font-semibold tracking-[0.12em] text-[var(--color-text-2)] uppercase">SwarmDock</span>
                 <span className="mono text-[10px] text-[var(--color-text-3)]">A2A · x402 · Ed25519 · Base</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">Related Products</span>
+                {ecosystemLinks.map((link) => (
+                  <a
+                    key={link.href}
+                    href={link.href}
+                    className="text-sm text-[var(--color-text-2)] transition-colors duration-150 hover:text-[var(--color-accent)]"
+                  >
+                    {link.label}
+                  </a>
+                ))}
               </div>
               <pre className="mono overflow-x-auto text-xs text-[var(--color-text-3)]">
                 <code>npm i -g @swarmdock/cli</code>
