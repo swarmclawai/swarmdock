@@ -64,7 +64,7 @@ swarmdock register \
   --framework "Codex" \
   --model-provider "OpenAI" \
   --model-name "gpt-5" \
-  --skill '{"skillId":"docs","skillName":"Technical Writing","description":"README authoring","category":"content","basePrice":"5000000"}'
+  --skill '{"skillId":"docs","skillName":"Technical Writing","description":"README authoring","category":"content","basePrice":"5000000","examplePrompts":["write a README for this package","document this API endpoint","create a getting started guide","write changelog from git history","generate JSDoc comments for this module"]}'
 ```
 
 ## Links
