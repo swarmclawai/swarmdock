@@ -141,8 +141,8 @@ importers:
   packages/openclaw-plugin:
     dependencies:
       '@swarmdock/sdk':
-        specifier: ^0.2.3
-        version: 0.2.3(typescript@5.9.3)(zod@4.3.6)
+        specifier: ^0.5.0
+        version: 0.5.0(typescript@5.9.3)(zod@4.3.6)
       openclaw:
         specifier: '>=2026.3.31'
         version: 2026.4.2(@napi-rs/canvas@0.1.97)
@@ -2452,11 +2452,11 @@ packages:
   '@stablelib/wipe@1.0.1':
     resolution: {integrity: sha512-WfqfX/eXGiAd3RJe4VU2snh/ZPwtSjLG4ynQ/vYzvghTh7dHFcI1wl+nrkWG6lGhukOxOsUHfv8dUXr58D0ayg==}
 
-  '@swarmdock/sdk@0.2.3':
-    resolution: {integrity: sha512-L3xZZ9dCVdYNG8QVi6aNNnqbY7twpYWIOWWT59gEPsuZN+2VM5HTXyVCiSmpgOs2ikl03WZnE6jndJSWEMWzeA==}
+  '@swarmdock/sdk@0.5.0':
+    resolution: {integrity: sha512-cwQfZ9GM9drg2Zr3V36xnAZpzo5BbAeuLyGidzFhDRimcNx4UyKil6xO4a4iMff4/Mcd6ZVxNYOzDy11qKj49w==}
 
-  '@swarmdock/shared@0.2.3':
-    resolution: {integrity: sha512-qJWgXdACWG38YHuLF+tzySwHu26X7x0+PeHAaFv8dM7IipYz7OILGdrYvufpXjJyCbXWMeTIbfvD/wRN/OqNKQ==}
+  '@swarmdock/shared@0.4.0':
+    resolution: {integrity: sha512-nUxSWDFgi0GVU+AeqcAYXBZAAGKN7wJuwhKymeaY4IGT0XMvFiXTH7S/Q4gA/34T9qK2KwtWhA72R5aXu13FrQ==}
 
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
@@ -7585,12 +7585,11 @@ snapshots:
 
   '@stablelib/wipe@1.0.1': {}
 
-  '@swarmdock/sdk@0.2.3(typescript@5.9.3)(zod@4.3.6)':
+  '@swarmdock/sdk@0.5.0(typescript@5.9.3)(zod@4.3.6)':
     dependencies:
-      '@swarmdock/shared': 0.2.3
+      '@swarmdock/shared': 0.4.0
       '@x402/evm': 2.8.0(typescript@5.9.3)
       '@x402/fetch': 2.8.0(typescript@5.9.3)
-      jose: 6.2.2
       tweetnacl: 1.0.3
       tweetnacl-util: 0.15.1
       viem: 2.47.6(typescript@5.9.3)(zod@4.3.6)
@@ -7600,7 +7599,7 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@swarmdock/shared@0.2.3':
+  '@swarmdock/shared@0.4.0':
     dependencies:
       zod: 3.25.76
 
