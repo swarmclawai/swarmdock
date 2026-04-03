@@ -1,4 +1,4 @@
-CREATE TABLE "agent_activity" (
+CREATE TABLE IF NOT EXISTS "agent_activity" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"agent_id" uuid NOT NULL,
 	"type" text NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE "agent_activity" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "agent_endorsements" (
+CREATE TABLE IF NOT EXISTS "agent_endorsements" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"endorser_id" uuid NOT NULL,
 	"endorsee_id" uuid NOT NULL,
@@ -26,14 +26,14 @@ CREATE TABLE "agent_endorsements" (
 	"accepted_at" timestamp with time zone
 );
 --> statement-breakpoint
-CREATE TABLE "agent_following" (
+CREATE TABLE IF NOT EXISTS "agent_following" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"follower_id" uuid NOT NULL,
 	"followee_id" uuid NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "agent_guilds" (
+CREATE TABLE IF NOT EXISTS "agent_guilds" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,
 	"description" text,
@@ -48,7 +48,7 @@ CREATE TABLE "agent_guilds" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "agent_messages" (
+CREATE TABLE IF NOT EXISTS "agent_messages" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"recipient_id" uuid NOT NULL,
 	"sender_id" uuid,
@@ -58,7 +58,7 @@ CREATE TABLE "agent_messages" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "agent_ratings" (
+CREATE TABLE IF NOT EXISTS "agent_ratings" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"task_id" uuid NOT NULL,
 	"rater_id" uuid NOT NULL,
@@ -76,7 +76,7 @@ CREATE TABLE "agent_ratings" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "agent_reputation" (
+CREATE TABLE IF NOT EXISTS "agent_reputation" (
 	"agent_id" uuid NOT NULL,
 	"dimension" text NOT NULL,
 	"score" real DEFAULT 0.5 NOT NULL,
@@ -86,7 +86,7 @@ CREATE TABLE "agent_reputation" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "agent_skills" (
+CREATE TABLE IF NOT EXISTS "agent_skills" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"agent_id" uuid NOT NULL,
 	"skill_id" text NOT NULL,
@@ -110,7 +110,7 @@ CREATE TABLE "agent_skills" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "agent_wallets" (
+CREATE TABLE IF NOT EXISTS "agent_wallets" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"agent_id" uuid NOT NULL,
 	"address" text NOT NULL,
@@ -119,7 +119,7 @@ CREATE TABLE "agent_wallets" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "agents" (
+CREATE TABLE IF NOT EXISTS "agents" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"did" text NOT NULL,
 	"public_key" text NOT NULL,
@@ -154,7 +154,7 @@ CREATE TABLE "agents" (
 	CONSTRAINT "agents_did_unique" UNIQUE("did")
 );
 --> statement-breakpoint
-CREATE TABLE "anomaly_events" (
+CREATE TABLE IF NOT EXISTS "anomaly_events" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"agent_id" uuid NOT NULL,
 	"type" text NOT NULL,
@@ -164,7 +164,7 @@ CREATE TABLE "anomaly_events" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "audit_log" (
+CREATE TABLE IF NOT EXISTS "audit_log" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"timestamp" timestamp with time zone DEFAULT now() NOT NULL,
 	"event_type" text NOT NULL,
@@ -176,7 +176,7 @@ CREATE TABLE "audit_log" (
 	"previous_hash" text
 );
 --> statement-breakpoint
-CREATE TABLE "challenges" (
+CREATE TABLE IF NOT EXISTS "challenges" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"public_key" text NOT NULL,
 	"challenge" text NOT NULL,
@@ -185,7 +185,7 @@ CREATE TABLE "challenges" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "disputes" (
+CREATE TABLE IF NOT EXISTS "disputes" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"task_id" uuid NOT NULL,
 	"raised_by_agent_id" uuid NOT NULL,
@@ -203,7 +203,7 @@ CREATE TABLE "disputes" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "escrow_transactions" (
+CREATE TABLE IF NOT EXISTS "escrow_transactions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"task_id" uuid NOT NULL,
 	"payer_id" uuid NOT NULL,
@@ -220,7 +220,7 @@ CREATE TABLE "escrow_transactions" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "event_outbox" (
+CREATE TABLE IF NOT EXISTS "event_outbox" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"subject" text NOT NULL,
 	"target" text NOT NULL,
@@ -235,7 +235,7 @@ CREATE TABLE "event_outbox" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "guild_members" (
+CREATE TABLE IF NOT EXISTS "guild_members" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"guild_id" uuid NOT NULL,
 	"agent_id" uuid NOT NULL,
@@ -243,7 +243,7 @@ CREATE TABLE "guild_members" (
 	"joined_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "mcp_services" (
+CREATE TABLE IF NOT EXISTS "mcp_services" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"agent_id" uuid NOT NULL,
 	"name" text NOT NULL,
@@ -272,7 +272,7 @@ CREATE TABLE "mcp_services" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "mcp_subscriptions" (
+CREATE TABLE IF NOT EXISTS "mcp_subscriptions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"mcp_service_id" uuid NOT NULL,
 	"subscriber_id" uuid NOT NULL,
@@ -284,7 +284,7 @@ CREATE TABLE "mcp_subscriptions" (
 	"cost_this_month" bigint DEFAULT 0 NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "mcp_tool_calls" (
+CREATE TABLE IF NOT EXISTS "mcp_tool_calls" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"mcp_service_id" uuid NOT NULL,
 	"caller_id" uuid NOT NULL,
@@ -300,7 +300,7 @@ CREATE TABLE "mcp_tool_calls" (
 	"paid" boolean DEFAULT false NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "portfolio_items" (
+CREATE TABLE IF NOT EXISTS "portfolio_items" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"agent_id" uuid NOT NULL,
 	"task_id" uuid,
@@ -317,7 +317,7 @@ CREATE TABLE "portfolio_items" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "quality_evaluations" (
+CREATE TABLE IF NOT EXISTS "quality_evaluations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"task_id" uuid NOT NULL,
 	"submitted_by" uuid NOT NULL,
@@ -344,7 +344,7 @@ CREATE TABLE "quality_evaluations" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "quality_metrics" (
+CREATE TABLE IF NOT EXISTS "quality_metrics" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"evaluation_id" uuid NOT NULL,
 	"stage" text NOT NULL,
@@ -354,7 +354,7 @@ CREATE TABLE "quality_metrics" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "task_bids" (
+CREATE TABLE IF NOT EXISTS "task_bids" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"task_id" uuid NOT NULL,
 	"bidder_id" uuid NOT NULL,
@@ -367,7 +367,7 @@ CREATE TABLE "task_bids" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "task_invitations" (
+CREATE TABLE IF NOT EXISTS "task_invitations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"task_id" uuid NOT NULL,
 	"agent_id" uuid NOT NULL,
@@ -377,7 +377,7 @@ CREATE TABLE "task_invitations" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "tasks" (
+CREATE TABLE IF NOT EXISTS "tasks" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"requester_id" uuid NOT NULL,
 	"assignee_id" uuid,
@@ -409,7 +409,7 @@ CREATE TABLE "tasks" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "transactions" (
+CREATE TABLE IF NOT EXISTS "transactions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"task_id" uuid,
 	"type" text NOT NULL,
@@ -425,99 +425,99 @@ CREATE TABLE "transactions" (
 	"confirmed_at" timestamp with time zone
 );
 --> statement-breakpoint
-ALTER TABLE "agent_activity" ADD CONSTRAINT "agent_activity_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_activity" ADD CONSTRAINT "agent_activity_related_task_id_tasks_id_fk" FOREIGN KEY ("related_task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_activity" ADD CONSTRAINT "agent_activity_related_agent_id_agents_id_fk" FOREIGN KEY ("related_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_endorsements" ADD CONSTRAINT "agent_endorsements_endorser_id_agents_id_fk" FOREIGN KEY ("endorser_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_endorsements" ADD CONSTRAINT "agent_endorsements_endorsee_id_agents_id_fk" FOREIGN KEY ("endorsee_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_endorsements" ADD CONSTRAINT "agent_endorsements_related_task_id_tasks_id_fk" FOREIGN KEY ("related_task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_following" ADD CONSTRAINT "agent_following_follower_id_agents_id_fk" FOREIGN KEY ("follower_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_following" ADD CONSTRAINT "agent_following_followee_id_agents_id_fk" FOREIGN KEY ("followee_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_guilds" ADD CONSTRAINT "agent_guilds_founder_id_agents_id_fk" FOREIGN KEY ("founder_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_messages" ADD CONSTRAINT "agent_messages_recipient_id_agents_id_fk" FOREIGN KEY ("recipient_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_messages" ADD CONSTRAINT "agent_messages_sender_id_agents_id_fk" FOREIGN KEY ("sender_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_ratings" ADD CONSTRAINT "agent_ratings_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_ratings" ADD CONSTRAINT "agent_ratings_rater_id_agents_id_fk" FOREIGN KEY ("rater_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_ratings" ADD CONSTRAINT "agent_ratings_ratee_id_agents_id_fk" FOREIGN KEY ("ratee_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_reputation" ADD CONSTRAINT "agent_reputation_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_skills" ADD CONSTRAINT "agent_skills_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_wallets" ADD CONSTRAINT "agent_wallets_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "anomaly_events" ADD CONSTRAINT "anomaly_events_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "disputes" ADD CONSTRAINT "disputes_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "disputes" ADD CONSTRAINT "disputes_raised_by_agent_id_agents_id_fk" FOREIGN KEY ("raised_by_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "disputes" ADD CONSTRAINT "disputes_against_agent_id_agents_id_fk" FOREIGN KEY ("against_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "escrow_transactions" ADD CONSTRAINT "escrow_transactions_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "escrow_transactions" ADD CONSTRAINT "escrow_transactions_payer_id_agents_id_fk" FOREIGN KEY ("payer_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "escrow_transactions" ADD CONSTRAINT "escrow_transactions_payee_id_agents_id_fk" FOREIGN KEY ("payee_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "event_outbox" ADD CONSTRAINT "event_outbox_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "guild_members" ADD CONSTRAINT "guild_members_guild_id_agent_guilds_id_fk" FOREIGN KEY ("guild_id") REFERENCES "public"."agent_guilds"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "guild_members" ADD CONSTRAINT "guild_members_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "mcp_services" ADD CONSTRAINT "mcp_services_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "mcp_subscriptions" ADD CONSTRAINT "mcp_subscriptions_mcp_service_id_mcp_services_id_fk" FOREIGN KEY ("mcp_service_id") REFERENCES "public"."mcp_services"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "mcp_subscriptions" ADD CONSTRAINT "mcp_subscriptions_subscriber_id_agents_id_fk" FOREIGN KEY ("subscriber_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "mcp_tool_calls" ADD CONSTRAINT "mcp_tool_calls_mcp_service_id_mcp_services_id_fk" FOREIGN KEY ("mcp_service_id") REFERENCES "public"."mcp_services"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "mcp_tool_calls" ADD CONSTRAINT "mcp_tool_calls_caller_id_agents_id_fk" FOREIGN KEY ("caller_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "portfolio_items" ADD CONSTRAINT "portfolio_items_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "portfolio_items" ADD CONSTRAINT "portfolio_items_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "quality_evaluations" ADD CONSTRAINT "quality_evaluations_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "quality_evaluations" ADD CONSTRAINT "quality_evaluations_submitted_by_agents_id_fk" FOREIGN KEY ("submitted_by") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "quality_metrics" ADD CONSTRAINT "quality_metrics_evaluation_id_quality_evaluations_id_fk" FOREIGN KEY ("evaluation_id") REFERENCES "public"."quality_evaluations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "task_bids" ADD CONSTRAINT "task_bids_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "task_bids" ADD CONSTRAINT "task_bids_bidder_id_agents_id_fk" FOREIGN KEY ("bidder_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "task_invitations" ADD CONSTRAINT "task_invitations_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "task_invitations" ADD CONSTRAINT "task_invitations_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "tasks" ADD CONSTRAINT "tasks_requester_id_agents_id_fk" FOREIGN KEY ("requester_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "tasks" ADD CONSTRAINT "tasks_assignee_id_agents_id_fk" FOREIGN KEY ("assignee_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "transactions" ADD CONSTRAINT "transactions_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "transactions" ADD CONSTRAINT "transactions_from_agent_id_agents_id_fk" FOREIGN KEY ("from_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "transactions" ADD CONSTRAINT "transactions_to_agent_id_agents_id_fk" FOREIGN KEY ("to_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "idx_activity_agent" ON "agent_activity" USING btree ("agent_id");--> statement-breakpoint
-CREATE INDEX "idx_activity_created" ON "agent_activity" USING btree ("created_at");--> statement-breakpoint
-CREATE INDEX "idx_activity_type" ON "agent_activity" USING btree ("type");--> statement-breakpoint
-CREATE INDEX "idx_endorsements_endorsee" ON "agent_endorsements" USING btree ("endorsee_id");--> statement-breakpoint
-CREATE INDEX "idx_endorsements_endorser" ON "agent_endorsements" USING btree ("endorser_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "agent_following_unique" ON "agent_following" USING btree ("follower_id","followee_id");--> statement-breakpoint
-CREATE INDEX "idx_following_follower" ON "agent_following" USING btree ("follower_id");--> statement-breakpoint
-CREATE INDEX "idx_following_followee" ON "agent_following" USING btree ("followee_id");--> statement-breakpoint
-CREATE INDEX "idx_agent_messages_recipient" ON "agent_messages" USING btree ("recipient_id");--> statement-breakpoint
-CREATE INDEX "idx_agent_messages_unread" ON "agent_messages" USING btree ("recipient_id","read_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "rating_unique" ON "agent_ratings" USING btree ("task_id","rater_id");--> statement-breakpoint
-CREATE INDEX "idx_ratings_ratee" ON "agent_ratings" USING btree ("ratee_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "agent_reputation_pk" ON "agent_reputation" USING btree ("agent_id","dimension");--> statement-breakpoint
-CREATE UNIQUE INDEX "agent_skill_unique" ON "agent_skills" USING btree ("agent_id","skill_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "agent_wallet_unique" ON "agent_wallets" USING btree ("agent_id");--> statement-breakpoint
-CREATE INDEX "idx_anomaly_events_agent" ON "anomaly_events" USING btree ("agent_id");--> statement-breakpoint
-CREATE INDEX "idx_anomaly_events_type" ON "anomaly_events" USING btree ("type");--> statement-breakpoint
-CREATE INDEX "idx_anomaly_events_severity" ON "anomaly_events" USING btree ("severity");--> statement-breakpoint
-CREATE INDEX "idx_audit_timestamp" ON "audit_log" USING btree ("timestamp");--> statement-breakpoint
-CREATE INDEX "idx_audit_event_type" ON "audit_log" USING btree ("event_type");--> statement-breakpoint
-CREATE INDEX "idx_audit_actor" ON "audit_log" USING btree ("actor_id");--> statement-breakpoint
-CREATE INDEX "idx_challenges_pubkey_used" ON "challenges" USING btree ("public_key","used");--> statement-breakpoint
-CREATE INDEX "idx_disputes_status" ON "disputes" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "idx_disputes_task_id" ON "disputes" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_escrow_task_status" ON "escrow_transactions" USING btree ("task_id","status");--> statement-breakpoint
-CREATE INDEX "idx_event_outbox_status_created" ON "event_outbox" USING btree ("status","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "guild_member_unique" ON "guild_members" USING btree ("guild_id","agent_id");--> statement-breakpoint
-CREATE INDEX "idx_mcp_services_agent" ON "mcp_services" USING btree ("agent_id");--> statement-breakpoint
-CREATE INDEX "idx_mcp_services_category" ON "mcp_services" USING btree ("category");--> statement-breakpoint
-CREATE INDEX "idx_mcp_services_status" ON "mcp_services" USING btree ("status");--> statement-breakpoint
-CREATE UNIQUE INDEX "mcp_subscription_unique" ON "mcp_subscriptions" USING btree ("subscriber_id","mcp_service_id");--> statement-breakpoint
-CREATE INDEX "idx_mcp_calls_service" ON "mcp_tool_calls" USING btree ("mcp_service_id");--> statement-breakpoint
-CREATE INDEX "idx_mcp_calls_caller" ON "mcp_tool_calls" USING btree ("caller_id");--> statement-breakpoint
-CREATE INDEX "idx_portfolio_agent" ON "portfolio_items" USING btree ("agent_id");--> statement-breakpoint
-CREATE INDEX "idx_quality_eval_task" ON "quality_evaluations" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_quality_eval_submitted_by" ON "quality_evaluations" USING btree ("submitted_by");--> statement-breakpoint
-CREATE INDEX "idx_quality_metrics_eval" ON "quality_metrics" USING btree ("evaluation_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "task_bid_unique" ON "task_bids" USING btree ("task_id","bidder_id");--> statement-breakpoint
-CREATE INDEX "idx_task_bids_task_id" ON "task_bids" USING btree ("task_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "task_invitation_unique" ON "task_invitations" USING btree ("task_id","agent_id");--> statement-breakpoint
-CREATE INDEX "idx_task_invitations_task_id" ON "task_invitations" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_task_invitations_agent_id" ON "task_invitations" USING btree ("agent_id");--> statement-breakpoint
-CREATE INDEX "idx_tasks_status" ON "tasks" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "idx_tasks_requester_id" ON "tasks" USING btree ("requester_id");--> statement-breakpoint
-CREATE INDEX "idx_tasks_assignee_id" ON "tasks" USING btree ("assignee_id");--> statement-breakpoint
-CREATE INDEX "idx_transactions_task" ON "transactions" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_transactions_type" ON "transactions" USING btree ("type");--> statement-breakpoint
-CREATE INDEX "idx_transactions_from" ON "transactions" USING btree ("from_agent_id");--> statement-breakpoint
-CREATE INDEX "idx_transactions_to" ON "transactions" USING btree ("to_agent_id");--> statement-breakpoint
-CREATE INDEX "idx_transactions_status" ON "transactions" USING btree ("status");
+DO $$ BEGIN ALTER TABLE "agent_activity" ADD CONSTRAINT "agent_activity_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_activity" ADD CONSTRAINT "agent_activity_related_task_id_tasks_id_fk" FOREIGN KEY ("related_task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_activity" ADD CONSTRAINT "agent_activity_related_agent_id_agents_id_fk" FOREIGN KEY ("related_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_endorsements" ADD CONSTRAINT "agent_endorsements_endorser_id_agents_id_fk" FOREIGN KEY ("endorser_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_endorsements" ADD CONSTRAINT "agent_endorsements_endorsee_id_agents_id_fk" FOREIGN KEY ("endorsee_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_endorsements" ADD CONSTRAINT "agent_endorsements_related_task_id_tasks_id_fk" FOREIGN KEY ("related_task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_following" ADD CONSTRAINT "agent_following_follower_id_agents_id_fk" FOREIGN KEY ("follower_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_following" ADD CONSTRAINT "agent_following_followee_id_agents_id_fk" FOREIGN KEY ("followee_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_guilds" ADD CONSTRAINT "agent_guilds_founder_id_agents_id_fk" FOREIGN KEY ("founder_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_messages" ADD CONSTRAINT "agent_messages_recipient_id_agents_id_fk" FOREIGN KEY ("recipient_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_messages" ADD CONSTRAINT "agent_messages_sender_id_agents_id_fk" FOREIGN KEY ("sender_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_ratings" ADD CONSTRAINT "agent_ratings_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_ratings" ADD CONSTRAINT "agent_ratings_rater_id_agents_id_fk" FOREIGN KEY ("rater_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_ratings" ADD CONSTRAINT "agent_ratings_ratee_id_agents_id_fk" FOREIGN KEY ("ratee_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_reputation" ADD CONSTRAINT "agent_reputation_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_skills" ADD CONSTRAINT "agent_skills_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "agent_wallets" ADD CONSTRAINT "agent_wallets_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "anomaly_events" ADD CONSTRAINT "anomaly_events_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "disputes" ADD CONSTRAINT "disputes_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "disputes" ADD CONSTRAINT "disputes_raised_by_agent_id_agents_id_fk" FOREIGN KEY ("raised_by_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "disputes" ADD CONSTRAINT "disputes_against_agent_id_agents_id_fk" FOREIGN KEY ("against_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "escrow_transactions" ADD CONSTRAINT "escrow_transactions_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "escrow_transactions" ADD CONSTRAINT "escrow_transactions_payer_id_agents_id_fk" FOREIGN KEY ("payer_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "escrow_transactions" ADD CONSTRAINT "escrow_transactions_payee_id_agents_id_fk" FOREIGN KEY ("payee_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "event_outbox" ADD CONSTRAINT "event_outbox_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "guild_members" ADD CONSTRAINT "guild_members_guild_id_agent_guilds_id_fk" FOREIGN KEY ("guild_id") REFERENCES "public"."agent_guilds"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "guild_members" ADD CONSTRAINT "guild_members_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "mcp_services" ADD CONSTRAINT "mcp_services_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "mcp_subscriptions" ADD CONSTRAINT "mcp_subscriptions_mcp_service_id_mcp_services_id_fk" FOREIGN KEY ("mcp_service_id") REFERENCES "public"."mcp_services"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "mcp_subscriptions" ADD CONSTRAINT "mcp_subscriptions_subscriber_id_agents_id_fk" FOREIGN KEY ("subscriber_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "mcp_tool_calls" ADD CONSTRAINT "mcp_tool_calls_mcp_service_id_mcp_services_id_fk" FOREIGN KEY ("mcp_service_id") REFERENCES "public"."mcp_services"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "mcp_tool_calls" ADD CONSTRAINT "mcp_tool_calls_caller_id_agents_id_fk" FOREIGN KEY ("caller_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "portfolio_items" ADD CONSTRAINT "portfolio_items_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "portfolio_items" ADD CONSTRAINT "portfolio_items_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "quality_evaluations" ADD CONSTRAINT "quality_evaluations_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "quality_evaluations" ADD CONSTRAINT "quality_evaluations_submitted_by_agents_id_fk" FOREIGN KEY ("submitted_by") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "quality_metrics" ADD CONSTRAINT "quality_metrics_evaluation_id_quality_evaluations_id_fk" FOREIGN KEY ("evaluation_id") REFERENCES "public"."quality_evaluations"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "task_bids" ADD CONSTRAINT "task_bids_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "task_bids" ADD CONSTRAINT "task_bids_bidder_id_agents_id_fk" FOREIGN KEY ("bidder_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "task_invitations" ADD CONSTRAINT "task_invitations_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "task_invitations" ADD CONSTRAINT "task_invitations_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "tasks" ADD CONSTRAINT "tasks_requester_id_agents_id_fk" FOREIGN KEY ("requester_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "tasks" ADD CONSTRAINT "tasks_assignee_id_agents_id_fk" FOREIGN KEY ("assignee_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "transactions" ADD CONSTRAINT "transactions_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "transactions" ADD CONSTRAINT "transactions_from_agent_id_agents_id_fk" FOREIGN KEY ("from_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "transactions" ADD CONSTRAINT "transactions_to_agent_id_agents_id_fk" FOREIGN KEY ("to_agent_id") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_activity_agent" ON "agent_activity" USING btree ("agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_activity_created" ON "agent_activity" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_activity_type" ON "agent_activity" USING btree ("type");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_endorsements_endorsee" ON "agent_endorsements" USING btree ("endorsee_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_endorsements_endorser" ON "agent_endorsements" USING btree ("endorser_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_following_unique" ON "agent_following" USING btree ("follower_id","followee_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_following_follower" ON "agent_following" USING btree ("follower_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_following_followee" ON "agent_following" USING btree ("followee_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_agent_messages_recipient" ON "agent_messages" USING btree ("recipient_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_agent_messages_unread" ON "agent_messages" USING btree ("recipient_id","read_at");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "rating_unique" ON "agent_ratings" USING btree ("task_id","rater_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_ratings_ratee" ON "agent_ratings" USING btree ("ratee_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_reputation_pk" ON "agent_reputation" USING btree ("agent_id","dimension");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_skill_unique" ON "agent_skills" USING btree ("agent_id","skill_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_wallet_unique" ON "agent_wallets" USING btree ("agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_anomaly_events_agent" ON "anomaly_events" USING btree ("agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_anomaly_events_type" ON "anomaly_events" USING btree ("type");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_anomaly_events_severity" ON "anomaly_events" USING btree ("severity");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_audit_timestamp" ON "audit_log" USING btree ("timestamp");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_audit_event_type" ON "audit_log" USING btree ("event_type");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_audit_actor" ON "audit_log" USING btree ("actor_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_challenges_pubkey_used" ON "challenges" USING btree ("public_key","used");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_disputes_status" ON "disputes" USING btree ("status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_disputes_task_id" ON "disputes" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_escrow_task_status" ON "escrow_transactions" USING btree ("task_id","status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_event_outbox_status_created" ON "event_outbox" USING btree ("status","created_at");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "guild_member_unique" ON "guild_members" USING btree ("guild_id","agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_mcp_services_agent" ON "mcp_services" USING btree ("agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_mcp_services_category" ON "mcp_services" USING btree ("category");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_mcp_services_status" ON "mcp_services" USING btree ("status");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "mcp_subscription_unique" ON "mcp_subscriptions" USING btree ("subscriber_id","mcp_service_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_mcp_calls_service" ON "mcp_tool_calls" USING btree ("mcp_service_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_mcp_calls_caller" ON "mcp_tool_calls" USING btree ("caller_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_portfolio_agent" ON "portfolio_items" USING btree ("agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_quality_eval_task" ON "quality_evaluations" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_quality_eval_submitted_by" ON "quality_evaluations" USING btree ("submitted_by");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_quality_metrics_eval" ON "quality_metrics" USING btree ("evaluation_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "task_bid_unique" ON "task_bids" USING btree ("task_id","bidder_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_task_bids_task_id" ON "task_bids" USING btree ("task_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "task_invitation_unique" ON "task_invitations" USING btree ("task_id","agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_task_invitations_task_id" ON "task_invitations" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_task_invitations_agent_id" ON "task_invitations" USING btree ("agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_tasks_status" ON "tasks" USING btree ("status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_tasks_requester_id" ON "tasks" USING btree ("requester_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_tasks_assignee_id" ON "tasks" USING btree ("assignee_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_transactions_task" ON "transactions" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_transactions_type" ON "transactions" USING btree ("type");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_transactions_from" ON "transactions" USING btree ("from_agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_transactions_to" ON "transactions" USING btree ("to_agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_transactions_status" ON "transactions" USING btree ("status");
