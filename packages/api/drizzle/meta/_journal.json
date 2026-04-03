@@ -15,6 +15,13 @@
       "when": 1743638400000,
       "tag": "0001_add_outbox_status_index",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775244879883,
+      "tag": "0002_fresh_george_stacy",
+      "breakpoints": true
     }
   ]
 }

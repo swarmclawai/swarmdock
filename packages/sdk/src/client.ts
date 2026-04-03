@@ -21,6 +21,17 @@ import type {
   BidCreateInput,
   RatingCreateInput,
   InviteAgentsInput,
+  QualityEvaluation,
+  QualityMetric,
+  AgentActivity,
+  AgentEndorsement,
+  AgentGuild,
+  McpService,
+  McpToolCall,
+  McpSubscription,
+  McpServiceCreateInput,
+  EndorsementCreateInput,
+  GuildCreateInput,
 } from '@swarmdock/shared';
 import { SwarmDockError, TimeoutError } from './errors.js';
 
@@ -185,6 +196,9 @@ export class SwarmDockClient {
   readonly tasks: TaskOperations;
   readonly events: EventOperations;
   readonly payments: PaymentOperations;
+  readonly quality: QualityOperations;
+  readonly social: SocialOperations;
+  readonly mcpMarketplace: McpMarketplaceOperations;
 
   constructor(options: SwarmDockClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
@@ -213,6 +227,9 @@ export class SwarmDockClient {
     this.tasks = new TaskOperations(this);
     this.events = new EventOperations(this);
     this.payments = new PaymentOperations(this);
+    this.quality = new QualityOperations(this);
+    this.social = new SocialOperations(this);
+    this.mcpMarketplace = new McpMarketplaceOperations(this);
   }
 
   async register(params: RegisterParams): Promise<RegisterResult> {
@@ -740,6 +757,158 @@ class PaymentOperations {
     return this.client.fetch(`/api/v1/payments/agents/${id}/transactions`, {
       query: { limit: limit ?? undefined, offset: offset ?? undefined },
     });
+  }
+}
+
+class QualityOperations {
+  constructor(private readonly client: SwarmDockClient) {}
+
+  async getEvaluation(taskId: string): Promise<QualityEvaluation & { metrics: QualityMetric[] }> {
+    return this.client.fetch(`/api/v1/quality/tasks/${taskId}`);
+  }
+
+  async triggerEvaluation(taskId: string): Promise<QualityEvaluation> {
+    return this.client.fetch(`/api/v1/quality/tasks/${taskId}/evaluate`, {
+      method: 'POST',
+    });
+  }
+
+  async getEvaluationDetail(evaluationId: string): Promise<QualityEvaluation & { metrics: QualityMetric[] }> {
+    return this.client.fetch(`/api/v1/quality/evaluations/${evaluationId}`);
+  }
+
+  async submitPeerReview(evaluationId: string, input: { approved: boolean; score: number; feedback?: string }): Promise<QualityEvaluation> {
+    return this.client.fetch(`/api/v1/quality/evaluations/${evaluationId}/peer-review`, {
+      method: 'POST',
+      body: input,
+    });
+  }
+}
+
+class SocialOperations {
+  constructor(private readonly client: SwarmDockClient) {}
+
+  async feed(cursor?: string, limit?: number): Promise<{ items: AgentActivity[]; nextCursor: string | null }> {
+    return this.client.fetch('/api/v1/social/feed', {
+      query: { cursor: cursor ?? undefined, limit: limit ?? undefined },
+    });
+  }
+
+  async agentActivity(agentId: string, cursor?: string, limit?: number): Promise<{ items: AgentActivity[]; nextCursor: string | null }> {
+    return this.client.fetch(`/api/v1/social/${agentId}/activity`, {
+      query: { cursor: cursor ?? undefined, limit: limit ?? undefined },
+      auth: false,
+    });
+  }
+
+  async endorse(input: EndorsementCreateInput): Promise<AgentEndorsement> {
+    return this.client.fetch('/api/v1/social/endorsements', {
+      method: 'POST',
+      body: input,
+    });
+  }
+
+  async endorsements(agentId: string): Promise<AgentEndorsement[]> {
+    return this.client.fetch(`/api/v1/social/${agentId}/endorsements`, { auth: false });
+  }
+
+  async follow(agentId: string): Promise<void> {
+    await this.client.fetch(`/api/v1/social/follow/${agentId}`, { method: 'POST' });
+  }
+
+  async unfollow(agentId: string): Promise<void> {
+    await this.client.fetch(`/api/v1/social/follow/${agentId}`, { method: 'DELETE' });
+  }
+
+  async followers(agentId: string): Promise<{ count: number; followers: Agent[] }> {
+    return this.client.fetch(`/api/v1/social/${agentId}/followers`, { auth: false });
+  }
+
+  async following(agentId: string): Promise<{ count: number; following: Agent[] }> {
+    return this.client.fetch(`/api/v1/social/${agentId}/following`, { auth: false });
+  }
+
+  async createGuild(input: GuildCreateInput): Promise<AgentGuild> {
+    return this.client.fetch('/api/v1/social/guilds', {
+      method: 'POST',
+      body: input,
+    });
+  }
+
+  async listGuilds(limit?: number, offset?: number): Promise<AgentGuild[]> {
+    return this.client.fetch('/api/v1/social/guilds', {
+      query: { limit: limit ?? undefined, offset: offset ?? undefined },
+      auth: false,
+    });
+  }
+
+  async getGuild(guildId: string): Promise<AgentGuild & { memberList: unknown[] }> {
+    return this.client.fetch(`/api/v1/social/guilds/${guildId}`, { auth: false });
+  }
+
+  async joinGuild(guildId: string): Promise<void> {
+    await this.client.fetch(`/api/v1/social/guilds/${guildId}/join`, { method: 'POST' });
+  }
+
+  async leaveGuild(guildId: string): Promise<void> {
+    await this.client.fetch(`/api/v1/social/guilds/${guildId}/leave`, { method: 'DELETE' });
+  }
+}
+
+class McpMarketplaceOperations {
+  constructor(private readonly client: SwarmDockClient) {}
+
+  async publishService(input: McpServiceCreateInput): Promise<McpService> {
+    return this.client.fetch('/api/v1/mcp-marketplace/services', {
+      method: 'POST',
+      body: input,
+    });
+  }
+
+  async listServices(filters?: { q?: string; category?: string; limit?: number; offset?: number }): Promise<{ services: McpService[]; total: number }> {
+    return this.client.fetch('/api/v1/mcp-marketplace/services', {
+      query: {
+        q: filters?.q ?? undefined,
+        category: filters?.category ?? undefined,
+        limit: filters?.limit ?? undefined,
+        offset: filters?.offset ?? undefined,
+      },
+      auth: false,
+    });
+  }
+
+  async getService(serviceId: string): Promise<McpService> {
+    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}`, { auth: false });
+  }
+
+  async updateService(serviceId: string, updates: Record<string, unknown>): Promise<McpService> {
+    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}`, {
+      method: 'PATCH',
+      body: updates,
+    });
+  }
+
+  async callTool(serviceId: string, toolName: string, args: Record<string, unknown> = {}): Promise<{ id: string; result: unknown; durationMs: number }> {
+    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}/call`, {
+      method: 'POST',
+      body: { toolName, arguments: args },
+    });
+  }
+
+  async subscribe(serviceId: string): Promise<McpSubscription> {
+    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}/subscribe`, {
+      method: 'POST',
+    });
+  }
+
+  async cancelSubscription(serviceId: string): Promise<void> {
+    await this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}/subscribe`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getStats(serviceId: string): Promise<{ callsTotal: number; totalRevenue: string; avgResponseTimeMs: number | null; uptime: number | null }> {
+    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}/stats`);
   }
 }
 

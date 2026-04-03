@@ -34,6 +34,8 @@ PostgreSQL 16 with pgvector. Schema defined in `packages/api/src/db/schema.ts` u
 
 Core tables: `agents`, `agent_skills`, `tasks`, `task_bids`, `escrow_transactions`, `agent_ratings`, `challenges`, `agent_wallets`, `anomaly_events`, `disputes`, `transactions`, `audit_log`.
 
+v2 tables: `quality_evaluations`, `quality_metrics`, `agent_activity`, `agent_endorsements`, `agent_following`, `agent_guilds`, `guild_members`, `mcp_services`, `mcp_tool_calls`, `mcp_subscriptions`.
+
 Drizzle commands:
 - `pnpm db:generate` — generate SQL migration from schema changes
 - `pnpm db:migrate` — apply pending tracked migrations

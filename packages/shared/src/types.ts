@@ -272,3 +272,162 @@ export interface QualityCheck {
   passed: boolean;
   details?: string;
 }
+
+// ============================================
+// QUALITY VERIFICATION PIPELINE (v2)
+// ============================================
+
+export interface QualityEvaluation {
+  id: string;
+  taskId: string;
+  submittedBy: string;
+  schemaValidationPassed: boolean | null;
+  schemaValidationErrors: unknown;
+  schemaValidatedAt: string | null;
+  llmScore: number | null;
+  llmReasoning: string | null;
+  llmMetrics: unknown;
+  llmConfidence: number | null;
+  llmEvaluatedAt: string | null;
+  faithfulnessScore: number | null;
+  faithfulnessDetails: unknown;
+  faithfulnessEvaluatedAt: string | null;
+  peerReviewRequested: boolean;
+  peerReviewers: string[] | null;
+  peerReviewScore: number | null;
+  peerReviewVotes: unknown;
+  peerReviewCompletedAt: string | null;
+  finalScore: number | null;
+  finalVerdict: string | null;
+  qualityReport: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QualityMetric {
+  id: string;
+  evaluationId: string;
+  stage: string;
+  metric: string;
+  score: number;
+  reasoning: string | null;
+  createdAt: string;
+}
+
+// ============================================
+// SOCIAL LAYER (v2)
+// ============================================
+
+export interface AgentActivity {
+  id: string;
+  agentId: string;
+  type: string;
+  title: string;
+  description: string | null;
+  relatedTaskId: string | null;
+  relatedAgentId: string | null;
+  relatedSkillId: string | null;
+  metadata: unknown;
+  visibility: string;
+  createdAt: string;
+}
+
+export interface AgentEndorsement {
+  id: string;
+  endorserId: string;
+  endorseeId: string;
+  skillId: string | null;
+  title: string;
+  message: string | null;
+  relatedTaskId: string | null;
+  verified: boolean;
+  status: string;
+  createdAt: string;
+  acceptedAt: string | null;
+}
+
+export interface AgentGuild {
+  id: string;
+  name: string;
+  description: string | null;
+  founderId: string;
+  avatarUrl: string | null;
+  memberCount: number;
+  visibility: string;
+  guildType: string | null;
+  minMemberReputation: number;
+  acceptsNewMembers: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GuildMember {
+  id: string;
+  guildId: string;
+  agentId: string;
+  role: string;
+  joinedAt: string;
+}
+
+// ============================================
+// MCP MARKETPLACE (v2)
+// ============================================
+
+export interface McpService {
+  id: string;
+  agentId: string;
+  name: string;
+  description: string;
+  version: string;
+  endpoint: string;
+  tools: unknown[];
+  resources: unknown[] | null;
+  pricingModel: string;
+  pricePerCall: string | null;
+  pricePerMinute: string | null;
+  subscriptionPrice: string | null;
+  currency: string;
+  category: string;
+  tags: string[] | null;
+  documentation: string | null;
+  callsTotal: string;
+  callsMonthly: string;
+  revenueTotal: string;
+  avgResponseTimeMs: number | null;
+  uptime: number | null;
+  status: string;
+  visibility: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface McpToolCall {
+  id: string;
+  mcpServiceId: string;
+  callerId: string;
+  toolName: string;
+  arguments: unknown;
+  result: unknown;
+  startedAt: string;
+  completedAt: string | null;
+  durationMs: number | null;
+  status: string | null;
+  error: string | null;
+  costUSDC: string | null;
+  paid: boolean;
+}
+
+export interface McpSubscription {
+  id: string;
+  mcpServiceId: string;
+  subscriberId: string;
+  status: string;
+  startedAt: string;
+  renewsAt: string | null;
+  cancelledAt: string | null;
+  callsThisMonth: number;
+  costThisMonth: string;
+}
+
+// Input types for McpService, Endorsement, Guild are inferred from
+// Zod schemas in schemas.ts (McpServiceCreateInput, EndorsementCreateInput, GuildCreateInput)

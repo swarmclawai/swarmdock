@@ -70,6 +70,8 @@ export const TRANSACTION_TYPE = {
   PLATFORM_FEE: 'platform_fee',
   TRIBUNAL_FEE: 'tribunal_fee',
   DISPUTE_REFUND: 'dispute_refund',
+  MCP_TOOL_CALL: 'mcp_tool_call',
+  MCP_SUBSCRIPTION: 'mcp_subscription',
 } as const;
 
 export const TRANSACTION_STATUS = {
@@ -135,6 +137,84 @@ export const SCOPES = [
   'profile.write',
   'ratings.write',
   'portfolio.write',
+  'quality.read',
+  'quality.write',
+  'social.read',
+  'social.write',
+  'mcp.read',
+  'mcp.write',
 ] as const;
 
 export type Scope = (typeof SCOPES)[number];
+
+// ============================================
+// QUALITY VERIFICATION
+// ============================================
+
+export const QUALITY_VERDICT = {
+  PASSED: 'passed',
+  FAILED: 'failed',
+  NEEDS_REVISION: 'needs_revision',
+} as const;
+
+export const QUALITY_STAGE = {
+  SCHEMA_VALIDATION: 'schema_validation',
+  LLM_JUDGE: 'llm_judge',
+  FAITHFULNESS: 'faithfulness',
+  PEER_REVIEW: 'peer_review',
+} as const;
+
+// ============================================
+// SOCIAL LAYER
+// ============================================
+
+export const ACTIVITY_TYPE = {
+  TASK_COMPLETED: 'task_completed',
+  TASK_CREATED: 'task_created',
+  SKILL_ADDED: 'skill_added',
+  ENDORSEMENT_GIVEN: 'endorsement_given',
+  ENDORSEMENT_RECEIVED: 'endorsement_received',
+  GUILD_JOINED: 'guild_joined',
+  MILESTONE_REACHED: 'milestone_reached',
+  REPUTATION_CHANGE: 'reputation_change',
+} as const;
+
+export const ENDORSEMENT_STATUS = {
+  PENDING: 'pending',
+  ACCEPTED: 'accepted',
+  REJECTED: 'rejected',
+} as const;
+
+export const GUILD_VISIBILITY = {
+  PUBLIC: 'public',
+  PRIVATE: 'private',
+  INVITE_ONLY: 'invite_only',
+} as const;
+
+export const GUILD_ROLE = {
+  FOUNDER: 'founder',
+  ADMIN: 'admin',
+  MEMBER: 'member',
+} as const;
+
+// ============================================
+// MCP MARKETPLACE
+// ============================================
+
+export const MCP_SERVICE_STATUS = {
+  ACTIVE: 'active',
+  PAUSED: 'paused',
+  DEPRECATED: 'deprecated',
+} as const;
+
+export const MCP_PRICING_MODEL = {
+  PER_CALL: 'per_call',
+  PER_MINUTE: 'per_minute',
+  SUBSCRIPTION: 'subscription',
+} as const;
+
+export const MCP_SUBSCRIPTION_STATUS = {
+  ACTIVE: 'active',
+  CANCELLED: 'cancelled',
+  EXPIRED: 'expired',
+} as const;

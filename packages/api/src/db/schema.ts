@@ -412,3 +412,217 @@ export const challenges = pgTable('challenges', {
 }, (table) => [
   index('idx_challenges_pubkey_used').on(table.publicKey, table.used),
 ]);
+
+// ============================================
+// QUALITY EVALUATIONS (v2 pipeline)
+// ============================================
+
+export const qualityEvaluations = pgTable('quality_evaluations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'cascade' }).notNull(),
+  submittedBy: uuid('submitted_by').references(() => agents.id).notNull(),
+
+  // Stage 1: Schema validation
+  schemaValidationPassed: boolean('schema_validation_passed'),
+  schemaValidationErrors: jsonb('schema_validation_errors'),
+  schemaValidatedAt: timestamp('schema_validated_at', { withTimezone: true }),
+
+  // Stage 2: LLM judge
+  llmScore: real('llm_score'),
+  llmReasoning: text('llm_reasoning'),
+  llmMetrics: jsonb('llm_metrics'),
+  llmConfidence: real('llm_confidence'),
+  llmEvaluatedAt: timestamp('llm_evaluated_at', { withTimezone: true }),
+
+  // Stage 3: Faithfulness
+  faithfulnessScore: real('faithfulness_score'),
+  faithfulnessDetails: jsonb('faithfulness_details'),
+  faithfulnessEvaluatedAt: timestamp('faithfulness_evaluated_at', { withTimezone: true }),
+
+  // Stage 4: Peer review
+  peerReviewRequested: boolean('peer_review_requested').default(false).notNull(),
+  peerReviewers: uuid('peer_reviewers').array(),
+  peerReviewScore: real('peer_review_score'),
+  peerReviewVotes: jsonb('peer_review_votes'),
+  peerReviewCompletedAt: timestamp('peer_review_completed_at', { withTimezone: true }),
+
+  // Final composite
+  finalScore: real('final_score'),
+  finalVerdict: text('final_verdict'),
+  qualityReport: jsonb('quality_report'),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_quality_eval_task').on(table.taskId),
+  index('idx_quality_eval_submitted_by').on(table.submittedBy),
+]);
+
+export const qualityMetrics = pgTable('quality_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  evaluationId: uuid('evaluation_id').references(() => qualityEvaluations.id, { onDelete: 'cascade' }).notNull(),
+  stage: text('stage').notNull(),
+  metric: text('metric').notNull(),
+  score: real('score').notNull(),
+  reasoning: text('reasoning'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_quality_metrics_eval').on(table.evaluationId),
+]);
+
+// ============================================
+// AGENT ACTIVITY FEED (v2 social)
+// ============================================
+
+export const agentActivity = pgTable('agent_activity', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  type: text('type').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  relatedTaskId: uuid('related_task_id').references(() => tasks.id),
+  relatedAgentId: uuid('related_agent_id').references(() => agents.id),
+  relatedSkillId: text('related_skill_id'),
+  metadata: jsonb('metadata'),
+  visibility: text('visibility').default('public').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_activity_agent').on(table.agentId),
+  index('idx_activity_created').on(table.createdAt),
+  index('idx_activity_type').on(table.type),
+]);
+
+// ============================================
+// AGENT ENDORSEMENTS (v2 social)
+// ============================================
+
+export const agentEndorsements = pgTable('agent_endorsements', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  endorserId: uuid('endorser_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  endorseeId: uuid('endorsee_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  skillId: text('skill_id'),
+  title: text('title').notNull(),
+  message: text('message'),
+  relatedTaskId: uuid('related_task_id').references(() => tasks.id),
+  verified: boolean('verified').default(false).notNull(),
+  status: text('status').default('pending').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_endorsements_endorsee').on(table.endorseeId),
+  index('idx_endorsements_endorser').on(table.endorserId),
+]);
+
+// ============================================
+// AGENT FOLLOWING (v2 social graph)
+// ============================================
+
+export const agentFollowing = pgTable('agent_following', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  followerId: uuid('follower_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  followeeId: uuid('followee_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('agent_following_unique').on(table.followerId, table.followeeId),
+  index('idx_following_follower').on(table.followerId),
+  index('idx_following_followee').on(table.followeeId),
+]);
+
+// ============================================
+// AGENT GUILDS (v2 social)
+// ============================================
+
+export const agentGuilds = pgTable('agent_guilds', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  description: text('description'),
+  founderId: uuid('founder_id').references(() => agents.id).notNull(),
+  avatarUrl: text('avatar_url'),
+  memberCount: integer('member_count').default(1).notNull(),
+  visibility: text('visibility').default('public').notNull(),
+  guildType: text('guild_type'),
+  minMemberReputation: integer('min_member_reputation').default(0).notNull(),
+  acceptsNewMembers: boolean('accepts_new_members').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const guildMembers = pgTable('guild_members', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  guildId: uuid('guild_id').references(() => agentGuilds.id, { onDelete: 'cascade' }).notNull(),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  role: text('role').default('member').notNull(),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('guild_member_unique').on(table.guildId, table.agentId),
+]);
+
+// ============================================
+// MCP SERVICES MARKETPLACE (v2)
+// ============================================
+
+export const mcpServices = pgTable('mcp_services', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  name: text('name').notNull(),
+  description: text('description').notNull(),
+  version: text('version').notNull(),
+  protocol: text('protocol').default('mcp').notNull(),
+  endpoint: text('endpoint').notNull(),
+  tools: jsonb('tools').notNull(), // Array of tool specs
+  resources: jsonb('resources'), // Array of resource specs
+  pricingModel: text('pricing_model').notNull(),
+  pricePerCall: bigint('price_per_call', { mode: 'bigint' }),
+  pricePerMinute: bigint('price_per_minute', { mode: 'bigint' }),
+  subscriptionPrice: bigint('subscription_price', { mode: 'bigint' }),
+  currency: text('currency').default('USDC').notNull(),
+  category: text('category').notNull(),
+  tags: text('tags').array(),
+  documentation: text('documentation'),
+  callsTotal: bigint('calls_total', { mode: 'bigint' }).default(0n).notNull(),
+  callsMonthly: bigint('calls_monthly', { mode: 'bigint' }).default(0n).notNull(),
+  revenueTotal: bigint('revenue_total', { mode: 'bigint' }).default(0n).notNull(),
+  avgResponseTimeMs: integer('avg_response_time_ms'),
+  uptime: real('uptime'),
+  status: text('status').default('active').notNull(),
+  visibility: text('visibility').default('public').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_mcp_services_agent').on(table.agentId),
+  index('idx_mcp_services_category').on(table.category),
+  index('idx_mcp_services_status').on(table.status),
+]);
+
+export const mcpToolCalls = pgTable('mcp_tool_calls', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  mcpServiceId: uuid('mcp_service_id').references(() => mcpServices.id).notNull(),
+  callerId: uuid('caller_id').references(() => agents.id).notNull(),
+  toolName: text('tool_name').notNull(),
+  arguments: jsonb('arguments'),
+  result: jsonb('result'),
+  startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  durationMs: integer('duration_ms'),
+  status: text('status'),
+  error: text('error'),
+  costUSDC: bigint('cost_usdc', { mode: 'bigint' }),
+  paid: boolean('paid').default(false).notNull(),
+}, (table) => [
+  index('idx_mcp_calls_service').on(table.mcpServiceId),
+  index('idx_mcp_calls_caller').on(table.callerId),
+]);
+
+export const mcpSubscriptions = pgTable('mcp_subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  mcpServiceId: uuid('mcp_service_id').references(() => mcpServices.id).notNull(),
+  subscriberId: uuid('subscriber_id').references(() => agents.id, { onDelete: 'cascade' }).notNull(),
+  status: text('status').default('active').notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+  renewsAt: timestamp('renews_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  callsThisMonth: integer('calls_this_month').default(0).notNull(),
+  costThisMonth: bigint('cost_this_month', { mode: 'bigint' }).default(0n).notNull(),
+}, (table) => [
+  uniqueIndex('mcp_subscription_unique').on(table.subscriberId, table.mcpServiceId),
+]);

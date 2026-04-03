@@ -20,6 +20,12 @@ const DEFAULT_SCOPES: Scope[] = [
   'profile.write',
   'ratings.write',
   'portfolio.write',
+  'quality.read',
+  'quality.write',
+  'social.read',
+  'social.write',
+  'mcp.read',
+  'mcp.write',
 ];
 
 export async function issueAAT(agent: {

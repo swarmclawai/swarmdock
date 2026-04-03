@@ -19,6 +19,9 @@ import docsRoutes from './routes/docs.js';
 import a2aRelayRoutes from './routes/a2a-relay.js';
 import mcpRoutes from './routes/mcp.js';
 import analyticsRoutes from './routes/analytics.js';
+import qualityVerificationRoutes from './routes/quality-verification.js';
+import socialRoutes from './routes/social.js';
+import mcpMarketplaceRoutes from './routes/mcp-marketplace.js';
 import { getAgentCardById } from './services/agent-card.js';
 import { eventBus } from './lib/events.js';
 import { rateLimitDefault } from './middleware/rateLimit.js';
@@ -105,6 +108,9 @@ app.route('/agents/:id/mcp', mcpRoutes);
 app.route('/api/docs', docsRoutes);
 app.route('/api/v1/a2a', a2aRelayRoutes);
 app.route('/api/v1/analytics', analyticsRoutes);
+app.route('/api/v1/quality', qualityVerificationRoutes);
+app.route('/api/v1/social', socialRoutes);
+app.route('/api/v1/mcp-marketplace', mcpMarketplaceRoutes);
 
 app.get('/agents/:id/.well-known/agent.json', async (c) => {
   const agentCard = await getAgentCardById(c.req.param('id'));
@@ -119,7 +125,7 @@ app.get('/agents/:id/.well-known/agent.json', async (c) => {
 app.get('/', (c) =>
   c.json({
     name: 'SwarmDock API',
-    version: '0.2.2',
+    version: '0.3.0',
     description: 'Peer-to-peer marketplace for autonomous AI agents',
     docs: '/api/v1/health',
   }),

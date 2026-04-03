@@ -8,6 +8,8 @@ import {
   DISPUTE_RESOLUTION,
   DISPUTE_VERDICT,
   TASK_VISIBILITY,
+  GUILD_VISIBILITY,
+  MCP_PRICING_MODEL,
 } from './constants.js';
 
 const MICRO_USDC_AMOUNT_MESSAGE = 'Must be a non-negative integer amount in micro-USDC';
@@ -241,3 +243,108 @@ export type InviteAgentsInput = z.infer<typeof InviteAgentsSchema>;
 export type InvitationListQuery = z.infer<typeof InvitationListQuerySchema>;
 export type AgentKeyRotateInput = z.infer<typeof AgentKeyRotateSchema>;
 export type AgentVerifyOwnerInput = z.infer<typeof AgentVerifyOwnerSchema>;
+
+// ============================================
+// SOCIAL LAYER
+// ============================================
+
+export const EndorsementCreateSchema = z.object({
+  endorseeId: z.string().uuid(),
+  skillId: z.string().optional(),
+  title: z.string().min(1).max(200),
+  message: z.string().max(2000).optional(),
+  relatedTaskId: z.string().uuid().optional(),
+});
+
+export const GuildCreateSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  visibility: z.enum([
+    GUILD_VISIBILITY.PUBLIC,
+    GUILD_VISIBILITY.PRIVATE,
+    GUILD_VISIBILITY.INVITE_ONLY,
+  ]).default(GUILD_VISIBILITY.PUBLIC),
+  guildType: z.string().max(100).optional(),
+  minMemberReputation: z.number().int().min(0).max(4).default(0),
+});
+
+export const ActivityFeedQuerySchema = z.object({
+  cursor: z.string().datetime().optional(),
+  limit: z.coerce.number().min(1).max(100).default(20),
+});
+
+export const PeerReviewSchema = z.object({
+  approved: z.boolean(),
+  score: z.number().min(0).max(1),
+  feedback: z.string().max(5000).optional(),
+});
+
+export type EndorsementCreateInput = z.infer<typeof EndorsementCreateSchema>;
+export type GuildCreateInput = z.infer<typeof GuildCreateSchema>;
+export type ActivityFeedQuery = z.infer<typeof ActivityFeedQuerySchema>;
+export type PeerReviewInput = z.infer<typeof PeerReviewSchema>;
+
+// ============================================
+// MCP MARKETPLACE
+// ============================================
+
+export const McpServiceCreateSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().min(1).max(5000),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/, 'Must be semver'),
+  endpoint: z.string().url(),
+  tools: z.array(z.object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    inputSchema: z.record(z.unknown()),
+  })).min(1),
+  resources: z.array(z.object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    uri: z.string(),
+  })).optional(),
+  pricingModel: z.enum([
+    MCP_PRICING_MODEL.PER_CALL,
+    MCP_PRICING_MODEL.PER_MINUTE,
+    MCP_PRICING_MODEL.SUBSCRIPTION,
+  ]),
+  pricePerCall: MicroUsdcAmountSchema.optional(),
+  pricePerMinute: MicroUsdcAmountSchema.optional(),
+  subscriptionPrice: MicroUsdcAmountSchema.optional(),
+  category: z.string().min(1).max(100),
+  tags: z.array(z.string()).default([]),
+  documentation: z.string().url().optional(),
+});
+
+export const McpServiceUpdateSchema = z.object({
+  description: z.string().min(1).max(5000).optional(),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/, 'Must be semver').optional(),
+  endpoint: z.string().url().optional(),
+  tools: z.array(z.object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    inputSchema: z.record(z.unknown()),
+  })).min(1).optional(),
+  pricePerCall: MicroUsdcAmountSchema.optional(),
+  subscriptionPrice: MicroUsdcAmountSchema.optional(),
+  tags: z.array(z.string()).optional(),
+  documentation: z.string().url().optional(),
+  status: z.enum(['active', 'paused', 'deprecated']).optional(),
+});
+
+export const McpToolCallSchema = z.object({
+  toolName: z.string().min(1),
+  arguments: z.record(z.unknown()).default({}),
+});
+
+export const McpServiceListQuerySchema = z.object({
+  q: z.string().optional(),
+  category: z.string().optional(),
+  limit: z.coerce.number().min(1).max(100).default(20),
+  offset: z.coerce.number().min(0).default(0),
+});
+
+export type McpServiceCreateInput = z.infer<typeof McpServiceCreateSchema>;
+export type McpServiceUpdateInput = z.infer<typeof McpServiceUpdateSchema>;
+export type McpToolCallInput = z.infer<typeof McpToolCallSchema>;
+export type McpServiceListQuery = z.infer<typeof McpServiceListQuerySchema>;
