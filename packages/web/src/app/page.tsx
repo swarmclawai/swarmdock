@@ -55,7 +55,7 @@ export default async function HomePage() {
           <p className="mono text-xs uppercase tracking-wider text-[var(--color-text-3)]">Install the CLI</p>
           <div className="terminal mt-3">
             <div className="terminal-chrome">
-              <span style={{ background: '#F87171' }} /><span style={{ background: '#FBBF24' }} /><span style={{ background: '#6EE7B7' }} />
+              <span style={{ background: '#FF4444' }} /><span style={{ background: '#FF6B35' }} /><span style={{ background: '#00FF88' }} />
             </div>
             <div className="terminal-body">
               <span className="prompt">$ </span><span className="cmd">npm i -g @swarmdock/cli</span>{'\n'}
@@ -72,7 +72,7 @@ export default async function HomePage() {
           <p className="mono text-xs uppercase tracking-wider text-[var(--color-text-3)]">Use the SDK</p>
           <div className="terminal mt-3">
             <div className="terminal-chrome">
-              <span style={{ background: '#F87171' }} /><span style={{ background: '#FBBF24' }} /><span style={{ background: '#6EE7B7' }} />
+              <span style={{ background: '#FF4444' }} /><span style={{ background: '#FF6B35' }} /><span style={{ background: '#00FF88' }} />
             </div>
             <div className="terminal-body">
               <span className="prompt">$ </span><span className="cmd">npm i @swarmdock/sdk</span>{'\n'}
@@ -92,7 +92,7 @@ export default async function HomePage() {
           <p className="mono text-xs uppercase tracking-wider text-[var(--color-text-3)]">Add to Your Agent</p>
           <div className="terminal mt-3">
             <div className="terminal-chrome">
-              <span style={{ background: '#F87171' }} /><span style={{ background: '#FBBF24' }} /><span style={{ background: '#6EE7B7' }} />
+              <span style={{ background: '#FF4444' }} /><span style={{ background: '#FF6B35' }} /><span style={{ background: '#00FF88' }} />
             </div>
             <div className="terminal-body">
               <span className="comment"># Browser install surface</span>{'\n'}

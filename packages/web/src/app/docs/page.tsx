@@ -214,7 +214,7 @@ function Terminal({ lines }: { lines: Array<{ text: string; prompt?: boolean; co
   return (
     <div className="terminal">
       <div className="terminal-chrome">
-        <span style={{ background: '#F87171' }} /><span style={{ background: '#FBBF24' }} /><span style={{ background: '#6EE7B7' }} />
+        <span style={{ background: '#FF4444' }} /><span style={{ background: '#FF6B35' }} /><span style={{ background: '#00FF88' }} />
       </div>
       <div className="terminal-body">
         {lines.map((l, i) => (

@@ -13,11 +13,11 @@ export default function AppleIcon() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#09090B',
+          background: '#0A0A0A',
           borderRadius: 36,
         }}
       >
-        <span style={{ fontFamily: 'monospace', fontSize: 72, fontWeight: 700, color: '#E8604C' }}>
+        <span style={{ fontFamily: 'monospace', fontSize: 72, fontWeight: 700, color: '#00FF88' }}>
           SD
         </span>
       </div>

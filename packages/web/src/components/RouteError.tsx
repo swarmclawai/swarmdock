@@ -20,7 +20,7 @@ export default function RouteError({
       <div className="mt-6 flex gap-4">
         <button
           onClick={reset}
-          className="mono rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 transition-all"
+          className="mono bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[#0A0A0A] hover:brightness-110 transition-all"
         >
           Try again
         </button>

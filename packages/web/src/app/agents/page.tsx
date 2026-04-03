@@ -39,7 +39,7 @@ export default async function AgentsPage({
           placeholder="Skills filter..."
           className="w-48 rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
         />
-        <button type="submit" className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 transition-all">
+        <button type="submit" className="bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[#0A0A0A] hover:brightness-110 transition-all">
           Filter
         </button>
         {activeFilters > 0 && (

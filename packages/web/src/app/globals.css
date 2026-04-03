@@ -1,36 +1,39 @@
 @import "tailwindcss";
 
 /* ------------------------------------------------------------------ */
-/*  SwarmDock — Dense Terminal Design System                            */
+/*  SwarmDock — Terminal / Retro Design System                          */
 /* ------------------------------------------------------------------ */
 
 @theme {
   /* Surfaces */
-  --color-bg:        #09090B;
-  --color-surface:   #141416;
-  --color-elevated:  #1C1C20;
+  --color-bg:        #0A0A0A;
+  --color-surface:   #111111;
+  --color-elevated:  #1A1A1A;
 
   /* Borders */
-  --color-border:      rgba(255, 255, 255, 0.06);
-  --color-border-hard: rgba(255, 255, 255, 0.12);
+  --color-border:      #333333;
+  --color-border-hard: #555555;
 
   /* Text */
-  --color-text:   #EDEDEF;
-  --color-text-2: #8C8C96;
-  --color-text-3: #4A4A54;
+  --color-text:   #E0E0E0;
+  --color-text-2: #888888;
+  --color-text-3: #555555;
 
   /* Accent */
-  --color-accent:     #E8604C;
-  --color-accent-dim: #B84A3A;
+  --color-accent:     #00FF88;
+  --color-accent-dim: rgba(0,255,136,0.15);
 
   /* Semantic status */
-  --color-success: #6EE7B7;
+  --color-success: #00FF88;
   --color-warning: #FBBF24;
   --color-info:    #60A5FA;
   --color-review:  #A78BFA;
-  --color-danger:  #F87171;
-  --color-muted:   #4A4A54;
+  --color-danger:  #FF4444;
+  --color-muted:   #555555;
 }
+
+/* Kill all border radius */
+* { border-radius: 0 !important; }
 
 html {
   color-scheme: dark;
@@ -38,34 +41,11 @@ html {
   scroll-behavior: smooth;
 }
 
-/* ---- Light theme ------------------------------------------------- */
-html.light {
-  color-scheme: light;
-  background: #FAFAF8;
-
-  --color-bg:        #FAFAF8;
-  --color-surface:   #FFFFFF;
-  --color-elevated:  #F1F1EF;
-  --color-border:      rgba(0, 0, 0, 0.06);
-  --color-border-hard: rgba(0, 0, 0, 0.12);
-  --color-text:   #111113;
-  --color-text-2: #5C5C66;
-  --color-text-3: #9C9CA6;
-  --color-accent:     #D4442F;
-  --color-accent-dim: #A8362A;
-  --color-success: #059669;
-  --color-warning: #D97706;
-  --color-info:    #2563EB;
-  --color-review:  #7C3AED;
-  --color-danger:  #DC2626;
-  --color-muted:   #9C9CA6;
-}
-
 /* ---- Body -------------------------------------------------------- */
 body {
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body), ui-monospace, SFMono-Regular, monospace;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -93,7 +73,7 @@ a {
 }
 
 ::selection {
-  background: rgba(232, 96, 76, 0.25);
+  background: rgba(0, 255, 136, 0.25);
   color: var(--color-text);
 }
 
@@ -104,9 +84,8 @@ a {
   top: 1rem;
   z-index: 100;
   transform: translateY(-200%);
-  border-radius: 6px;
   background: var(--color-accent);
-  color: #fff;
+  color: #0A0A0A;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
@@ -119,7 +98,7 @@ a {
 
 /* ---- Typography classes ------------------------------------------ */
 .font-display {
-  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-display), ui-monospace, SFMono-Regular, monospace;
 }
 
 .mono {
@@ -127,12 +106,12 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- Section rule: "─── LABEL ───" divider ----------------------- */
+/* ---- Section rule: "--- LABEL ---" divider ----------------------- */
 .section-rule {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  color: var(--color-text-3);
+  color: #00FF88;
   font-family: var(--font-mono), monospace;
   font-size: 0.6875rem;
   text-transform: uppercase;
@@ -143,7 +122,7 @@ a {
   content: "";
   flex: 1;
   height: 1px;
-  background: var(--color-border-hard);
+  background: #333333;
 }
 .section-rule::before {
   flex: 0 0 1rem;
@@ -156,14 +135,10 @@ a {
   background: var(--color-border);
 }
 
-/* ---- Glass header ------------------------------------------------ */
+/* ---- Glass header (now solid dark) ------------------------------- */
 .glass-header {
-  background: rgba(9, 9, 11, 0.82);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-}
-html.light .glass-header {
-  background: rgba(250, 250, 248, 0.82);
+  background: #0A0A0A;
+  border-bottom: 1px solid #333333;
 }
 
 /* ---- Status dot -------------------------------------------------- */
@@ -175,8 +150,8 @@ html.light .glass-header {
   flex-shrink: 0;
 }
 .dot-online {
-  background: var(--color-success);
-  box-shadow: 0 0 6px var(--color-success);
+  background: #00FF88;
+  box-shadow: 0 0 6px #00FF88;
 }
 .dot-offline {
   background: var(--color-text-3);
@@ -184,9 +159,8 @@ html.light .glass-header {
 
 /* ---- Terminal code block ----------------------------------------- */
 .terminal {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-hard);
-  border-radius: 8px;
+  background: #0A0A0A;
+  border: 1px solid #333333;
   overflow: hidden;
 }
 .terminal-chrome {
@@ -209,7 +183,7 @@ html.light .glass-header {
   overflow-x: auto;
 }
 .terminal-body .prompt {
-  color: var(--color-success);
+  color: #00FF88;
   user-select: none;
 }
 .terminal-body .cmd {
@@ -228,13 +202,13 @@ html.light .glass-header {
 }
 .data-table th {
   text-align: left;
-  color: var(--color-text-3);
+  color: #00FF88;
   font-weight: 400;
   font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 0 0 8px 0;
-  border-bottom: 1px solid var(--color-border-hard);
+  border-bottom: 1px solid #333333;
 }
 .data-table td {
   padding: 10px 0;
@@ -242,8 +216,41 @@ html.light .glass-header {
   color: var(--color-text-2);
 }
 .data-table tr + tr td {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid #333333;
 }
+
+/* ---- Terminal effects -------------------------------------------- */
+.cursor-blink::after {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 1.1em;
+  background: #00FF88;
+  margin-left: 0.15em;
+  animation: blink-cursor 1s step-end infinite;
+}
+
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
+  z-index: 1;
+}
+
+.terminal-prompt::before {
+  content: "> ";
+  color: #00FF88;
+  font-weight: 700;
+}
+
+.typewriter {
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typewriter 2.5s steps(40, end) forwards;
+}
+@keyframes typewriter { from { width: 0 } to { width: 100% } }
 
 /* ---- Animations (minimal) ---------------------------------------- */
 @keyframes fade-in {
@@ -270,11 +277,12 @@ html.light .glass-header {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border-hard);
-  border-radius: 3px;
 }
 
 /* ---- Reduced motion ---------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .animate-fade { animation: none; opacity: 1; }
+  .typewriter { animation: none; width: 100%; }
+  .cursor-blink::after { animation: none; opacity: 1; }
 }

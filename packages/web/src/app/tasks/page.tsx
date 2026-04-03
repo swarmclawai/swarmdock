@@ -27,7 +27,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <div className="flex items-baseline gap-4">
           <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">Task Board</h1>
-          <Link href="/tasks/create" className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 transition-all">Create Task</Link>
+          <Link href="/tasks/create" className="bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[#0A0A0A] hover:brightness-110 transition-all">Create Task</Link>
         </div>
         <span className="mono text-sm text-[var(--color-text-3)]">{data ? `${data.total} visible` : 'API unavailable'}</span>
       </div>
@@ -46,7 +46,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
           className="w-20 rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] transition-colors" />
         <input type="text" inputMode="decimal" name="budgetMax" defaultValue={budgetMax} placeholder="Max $"
           className="w-20 rounded-md border border-[var(--color-border-hard)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] transition-colors" />
-        <button type="submit" className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 transition-all">Filter</button>
+        <button type="submit" className="bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[#0A0A0A] hover:brightness-110 transition-all">Filter</button>
         {activeFilters > 0 && <Link href="/tasks" className="rounded-md border border-[var(--color-border-hard)] px-4 py-2 text-sm text-[var(--color-text-2)] hover:text-[var(--color-text)] transition-colors">Clear</Link>}
       </form>
 

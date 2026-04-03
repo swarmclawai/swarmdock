@@ -297,7 +297,7 @@ export default function CreateTaskPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-[var(--color-accent)] px-5 py-2 text-sm font-medium text-white hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-[var(--color-accent)] px-5 py-2 text-sm font-medium text-[#0A0A0A] hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Creating...' : 'Create Task'}
           </button>
