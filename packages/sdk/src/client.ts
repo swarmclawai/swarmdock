@@ -32,7 +32,9 @@ import type {
   McpServiceCreateInput,
   EndorsementCreateInput,
   GuildCreateInput,
+  SkillTemplate,
 } from '@swarmdock/shared';
+import { SkillTemplates, USDC_DECIMALS } from '@swarmdock/shared';
 import { SwarmDockError, TimeoutError } from './errors.js';
 
 export interface SwarmDockClientOptions {
@@ -200,6 +202,27 @@ export class SwarmDockClient {
   readonly social: SocialOperations;
   readonly mcpMarketplace: McpMarketplaceOperations;
 
+  /** Generate a new Ed25519 keypair for agent authentication */
+  static generateKeys(): { publicKey: string; privateKey: string } {
+    const keyPair = nacl.sign.keyPair();
+    return {
+      publicKey: encodeBase64(keyPair.publicKey),
+      privateKey: encodeBase64(keyPair.secretKey),
+    };
+  }
+
+  /** Convert a human-readable USD amount to micro-USDC string (e.g. 5.00 → '5000000') */
+  static usdToMicro(usd: number): string {
+    const factor = 10 ** USDC_DECIMALS;
+    return Math.round(usd * factor).toString();
+  }
+
+  /** Convert a micro-USDC string to human-readable USD number (e.g. '5000000' → 5.00) */
+  static microToUsd(micro: string): number {
+    const factor = 10 ** USDC_DECIMALS;
+    return Number(micro) / factor;
+  }
+
   constructor(options: SwarmDockClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.defaultTimeout = options.defaultTimeout ?? 30_000;
@@ -330,7 +353,7 @@ export class SwarmDockClient {
 
   /** @internal */
   async fetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
-    const { method = 'GET', body, query, auth = true, timeout } = options;
+    const { method = 'GET', body, query, auth = true, timeout, _retried } = options;
     const timeoutMs = timeout ?? this.defaultTimeout;
 
     let url = `${this.baseUrl}${path}`;
@@ -368,6 +391,12 @@ export class SwarmDockClient {
         throw new TimeoutError(timeoutMs, path);
       }
       throw err;
+    }
+
+    // Token auto-refresh: on 401, clear token and retry once
+    if (res.status === 401 && auth && !_retried && this.secretKey) {
+      this.token = null;
+      return this.fetch<T>(path, { ...options, _retried: true });
     }
 
     if (!res.ok) {
@@ -446,6 +475,8 @@ interface FetchOptions {
   auth?: boolean;
   /** Request timeout in milliseconds (overrides defaultTimeout) */
   timeout?: number;
+  /** @internal Used to prevent infinite retry loops on 401 */
+  _retried?: boolean;
 }
 
 // -- Sub-operation classes --
@@ -945,6 +976,39 @@ export interface TaskListing {
   matchingMode: string;
 }
 
+export interface QuickStartConfig {
+  name: string;
+  description?: string;
+  /** Skill template IDs (e.g. 'data-analysis') or full skill definitions */
+  skills: Array<string | {
+    id: string; name: string; description: string; category: string;
+    pricing?: { model?: string; basePrice: number }; examples?: string[];
+  }>;
+  baseUrl?: string;
+  privateKey?: string;
+  walletAddress?: string;
+  paymentPrivateKey?: `0x${string}`;
+  framework?: string;
+  modelProvider?: string;
+  modelName?: string;
+  logger?: (message: string) => void;
+}
+
+export interface AutoBidConfig {
+  /** Skill IDs to match against task requirements */
+  skills: string[];
+  /** Max task budget in USD (won't bid on tasks above this) */
+  maxPrice?: number;
+  /** Min task budget in USD (won't bid below this) */
+  minPrice?: number;
+  /** Confidence score 0-1, default 0.8 */
+  confidence?: number;
+  /** Default bid proposal text */
+  proposal?: string;
+  /** Max simultaneous in-progress tasks */
+  maxConcurrent?: number;
+}
+
 export interface SwarmDockAgentOptions {
   baseUrl?: string;
   name: string;
@@ -978,9 +1042,53 @@ export class SwarmDockAgent {
   private readonly options: SwarmDockAgentOptions;
   private taskHandlers: Map<string, TaskHandler> = new Map();
   private taskAvailableHandler?: TaskAvailableHandler;
+  private autoBidConfig?: AutoBidConfig;
+  private activeTaskCount = 0;
   private heartbeatInterval?: ReturnType<typeof setInterval>;
   private eventUnsubscribe?: () => void;
   private running = false;
+
+  /**
+   * Quick-start factory: generates keys if needed, resolves skill template IDs,
+   * registers with SwarmDock, and returns a ready-to-start agent.
+   */
+  static async quickStart(config: QuickStartConfig): Promise<SwarmDockAgent> {
+    const privateKey = config.privateKey ?? SwarmDockClient.generateKeys().privateKey;
+
+    // Resolve skill template IDs to full definitions
+    const resolvedSkills = config.skills.map((skill) => {
+      if (typeof skill === 'string') {
+        const template = SkillTemplates.get(skill);
+        if (!template) {
+          throw new SwarmDockError(400, `Unknown skill template: "${skill}". Available: ${SkillTemplates.ids().join(', ')}`);
+        }
+        return {
+          id: template.skillId,
+          name: template.skillName,
+          description: template.description,
+          category: template.category,
+          pricing: { model: template.pricingModel, basePrice: Number(template.basePrice) },
+          examples: template.examplePrompts,
+        };
+      }
+      return skill;
+    });
+
+    const agent = new SwarmDockAgent({
+      baseUrl: config.baseUrl,
+      name: config.name,
+      skills: resolvedSkills,
+      framework: config.framework,
+      modelProvider: config.modelProvider,
+      modelName: config.modelName,
+      walletAddress: config.walletAddress ?? '',
+      privateKey,
+      paymentPrivateKey: config.paymentPrivateKey,
+      logger: config.logger,
+    });
+
+    return agent;
+  }
 
   constructor(options: SwarmDockAgentOptions) {
     this.options = options;
@@ -1097,6 +1205,16 @@ export class SwarmDockAgent {
     });
   }
 
+  /**
+   * Enable automatic bidding on matching tasks.
+   * When a new task appears whose skill requirements overlap with
+   * the configured skills and budget is within range, a bid is
+   * automatically submitted.
+   */
+  autoBid(config: AutoBidConfig): void {
+    this.autoBidConfig = config;
+  }
+
   /** Expose the underlying client for advanced use cases */
   getClient(): SwarmDockClient {
     return this.client;
@@ -1150,17 +1268,20 @@ export class SwarmDockAgent {
       },
     };
 
-    const result = await matchedHandler(ctx);
+    this.activeTaskCount++;
+    try {
+      const result = await matchedHandler(ctx);
 
-    // If the handler returns a result directly, auto-submit it
-    if (result && result.artifacts) {
-      await ctx.complete(result);
+      // If the handler returns a result directly, auto-submit it
+      if (result && result.artifacts) {
+        await ctx.complete(result);
+      }
+    } finally {
+      this.activeTaskCount--;
     }
   }
 
   private async handleTaskCreated(data: Record<string, unknown>): Promise<void> {
-    if (!this.taskAvailableHandler) return;
-
     const listing: TaskListing = {
       id: data.taskId as string,
       title: (data.title as string) ?? '',
@@ -1171,6 +1292,37 @@ export class SwarmDockAgent {
       matchingMode: (data.matchingMode as string) ?? 'manual',
     };
 
-    await this.taskAvailableHandler(listing);
+    // Auto-bidding: check if task matches configured criteria
+    if (this.autoBidConfig) {
+      const cfg = this.autoBidConfig;
+      const taskSkills = new Set(listing.skillRequirements.map((s) => s.toLowerCase()));
+      const hasMatchingSkill = cfg.skills.some((s) => taskSkills.has(s.toLowerCase()));
+
+      if (hasMatchingSkill) {
+        const budgetUsd = SwarmDockClient.microToUsd(listing.budgetMax);
+        const withinBudget =
+          (cfg.maxPrice === undefined || budgetUsd <= cfg.maxPrice) &&
+          (cfg.minPrice === undefined || budgetUsd >= cfg.minPrice);
+        const underConcurrencyLimit = cfg.maxConcurrent === undefined || this.activeTaskCount < cfg.maxConcurrent;
+
+        if (withinBudget && underConcurrencyLimit) {
+          try {
+            await this.client.tasks.bid(listing.id, {
+              proposedPrice: listing.budgetMax,
+              confidenceScore: cfg.confidence ?? 0.8,
+              proposal: cfg.proposal,
+              portfolioRefs: [],
+            });
+            this.options.logger?.(`Auto-bid submitted for task ${listing.id}: ${listing.title}`);
+          } catch {
+            this.options.logger?.(`Auto-bid failed for task ${listing.id}`);
+          }
+        }
+      }
+    }
+
+    if (this.taskAvailableHandler) {
+      await this.taskAvailableHandler(listing);
+    }
   }
 }

@@ -10,10 +10,13 @@ import { Command } from 'commander';
 import {
   SwarmDockClient,
   SwarmDockError,
+  SkillTemplates,
   type RegisterParams,
   type TaskCreateInput,
   type TaskSubmitInput,
+  type SkillTemplate,
 } from '@swarmdock/sdk';
+import { input, select, checkbox, confirm } from '@inquirer/prompts';
 
 type RegisterSkill = NonNullable<RegisterParams['skills']>[number];
 
@@ -268,8 +271,224 @@ program
 export { program };
 
 program
+  .command('init')
+  .description('Interactive setup wizard — generate keys, pick skills, and register in one step')
+  .option('--name <name>', 'Agent display name (non-interactive)')
+  .option('--description <text>', 'Agent description (non-interactive)')
+  .option('--skills <ids>', 'Comma-separated skill template IDs (non-interactive)')
+  .option('--framework <name>', 'Framework name (non-interactive)')
+  .option('--model-provider <name>', 'Model provider (non-interactive)')
+  .option('--model-name <name>', 'Model name (non-interactive)')
+  .option('--wallet-address <address>', 'EVM wallet address (non-interactive)')
+  .option('--auto-keys', 'Auto-generate Ed25519 keys without prompting')
+  .option('--auto-wallet', 'Auto-provision wallet without prompting')
+  .action(async (options, command) => {
+    try {
+      const globalOpts = command.optsWithGlobals() as GlobalOptions;
+      const configPath = resolveConfigPath(globalOpts.config);
+      const config = await readConfig(configPath);
+      const isInteractive = process.stdin.isTTY && !options.name;
+
+      // Step 1: Agent name
+      const displayName = options.name ?? (isInteractive
+        ? await input({ message: 'Agent display name:', validate: (v) => v.trim().length > 0 || 'Name is required' })
+        : (() => { throw new Error('--name is required in non-interactive mode'); })());
+
+      // Step 2: Description
+      const description = options.description ?? (isInteractive
+        ? await input({ message: 'Description (what does your agent do?):', default: '' })
+        : undefined);
+
+      // Step 3: Framework
+      const framework = options.framework ?? (isInteractive
+        ? await select({
+            message: 'Framework:',
+            choices: [
+              { name: 'OpenClaw', value: 'openclaw' },
+              { name: 'LangChain', value: 'langchain' },
+              { name: 'CrewAI', value: 'crewai' },
+              { name: 'Custom', value: 'custom' },
+            ],
+          })
+        : 'custom');
+
+      // Step 4: Model
+      const modelProvider = options.modelProvider ?? (isInteractive
+        ? await select({
+            message: 'Model provider:',
+            choices: [
+              { name: 'Anthropic', value: 'anthropic' },
+              { name: 'OpenAI', value: 'openai' },
+              { name: 'Other', value: 'other' },
+            ],
+          })
+        : undefined);
+
+      const modelName = options.modelName ?? (isInteractive && modelProvider
+        ? await input({ message: 'Model name:', default: modelProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o' })
+        : undefined);
+
+      // Step 5: Skills from templates
+      const allTemplates = SkillTemplates.list();
+      let selectedSkills: SkillTemplate[];
+
+      if (options.skills) {
+        const ids = options.skills.split(',').map((s: string) => s.trim());
+        selectedSkills = ids.map((id: string) => {
+          const t = SkillTemplates.get(id);
+          if (!t) throw new Error(`Unknown skill template: "${id}". Available: ${SkillTemplates.ids().join(', ')}`);
+          return t;
+        });
+      } else if (isInteractive) {
+        const chosen = await checkbox({
+          message: 'Select skills (space to toggle, enter to confirm):',
+          choices: allTemplates.map((t) => ({
+            name: `${t.skillName} — ${t.description.slice(0, 60)}... ($${(Number(t.basePrice) / 1_000_000).toFixed(2)}/task)`,
+            value: t.skillId,
+            checked: false,
+          })),
+        });
+        selectedSkills = chosen.map((id) => SkillTemplates.get(id)!);
+
+        if (selectedSkills.length === 0) {
+          console.log('No skills selected. You can add them later with `swarmdock register --skill`.');
+        }
+      } else {
+        selectedSkills = [];
+      }
+
+      // Step 6: Pricing customization (interactive only)
+      const skills: RegisterParams['skills'] = [];
+      for (const t of selectedSkills) {
+        let basePrice = t.basePrice;
+        if (isInteractive) {
+          const customPrice = await input({
+            message: `Price for ${t.skillName} (USD):`,
+            default: (Number(t.basePrice) / 1_000_000).toFixed(2),
+            validate: (v) => /^\d+(\.\d{1,6})?$/.test(v.trim()) || 'Enter a valid USDC amount',
+          });
+          basePrice = parseUsdcAmount(customPrice);
+        }
+        skills.push({
+          skillId: t.skillId,
+          skillName: t.skillName,
+          description: t.description,
+          category: t.category,
+          tags: t.tags,
+          pricingModel: t.pricingModel,
+          basePrice,
+          examplePrompts: t.examplePrompts,
+        });
+      }
+
+      // Step 7: Keys
+      let privateKey = globalOpts.privateKey ?? process.env.SWARMDOCK_AGENT_PRIVATE_KEY;
+      if (!privateKey) {
+        const generateKeys = options.autoKeys || (isInteractive
+          ? await confirm({ message: 'No Ed25519 key found. Generate a new keypair?', default: true })
+          : false);
+
+        if (generateKeys) {
+          const keys = SwarmDockClient.generateKeys();
+          privateKey = keys.privateKey;
+
+          // Save keys
+          const keysDir = path.join(path.dirname(configPath), '..', 'swarmdock');
+          const keysPath = path.join(keysDir, 'keys.json');
+          await mkdir(keysDir, { recursive: true });
+          await writeFile(keysPath, JSON.stringify({ publicKey: keys.publicKey, privateKey: keys.privateKey }, null, 2) + '\n', 'utf8');
+          console.log(`Keys saved to ${keysPath}`);
+        } else {
+          throw new Error('Ed25519 private key is required. Set SWARMDOCK_AGENT_PRIVATE_KEY or use --auto-keys.');
+        }
+      }
+
+      // Step 8: Wallet
+      let walletAddress = globalOpts.walletAddress ?? process.env.SWARMDOCK_WALLET_ADDRESS ?? config.profile?.walletAddress;
+      if (!walletAddress) {
+        if (options.autoWallet) {
+          walletAddress = '';
+          console.log('Wallet will be auto-provisioned after registration.');
+        } else if (isInteractive) {
+          const hasWallet = await confirm({ message: 'Do you have an EVM wallet address?', default: false });
+          if (hasWallet) {
+            walletAddress = await input({
+              message: 'EVM wallet address (0x...):',
+              validate: (v) => /^0x[a-fA-F0-9]{40}$/.test(v.trim()) || 'Invalid Ethereum address',
+            });
+          } else {
+            walletAddress = '';
+            console.log('Wallet will be auto-provisioned after registration.');
+          }
+        } else {
+          walletAddress = '';
+        }
+      }
+
+      // Step 9: Register
+      const apiUrl = globalOpts.apiUrl ?? process.env.SWARMDOCK_API_URL ?? config.apiUrl ?? DEFAULT_API_URL;
+      const client = new SwarmDockClient({
+        baseUrl: apiUrl,
+        privateKey,
+        paymentPrivateKey: globalOpts.paymentPrivateKey,
+      });
+
+      console.log(`\nRegistering ${displayName} with ${apiUrl}...`);
+      const result = await client.register({
+        displayName,
+        description: description || undefined,
+        framework,
+        modelProvider,
+        modelName,
+        walletAddress,
+        skills,
+      });
+
+      // Step 10: Save config
+      await writeConfigFile(configPath, {
+        ...config,
+        apiUrl,
+        profile: {
+          ...config.profile,
+          agentId: result.agent.id,
+          did: result.agent.did,
+          displayName,
+          description,
+          framework,
+          modelProvider,
+          modelName,
+          walletAddress,
+          skills,
+        },
+      });
+
+      // Step 11: Show results
+      const outputJson = Boolean(globalOpts.json) || !process.stdout.isTTY;
+      if (outputJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log('');
+        console.log(`Agent registered successfully!`);
+        console.log(`  Name:        ${result.agent.displayName}`);
+        console.log(`  Agent ID:    ${result.agent.id}`);
+        console.log(`  DID:         ${result.agent.did}`);
+        console.log(`  Trust Level: ${result.agent.trustLevel}`);
+        console.log(`  Skills:      ${skills.length}`);
+        console.log(`  Config:      ${configPath}`);
+        console.log('');
+        console.log('Next steps:');
+        console.log('  swarmdock status        — check your profile');
+        console.log('  swarmdock tasks list    — browse open tasks');
+        console.log('  swarmdock tasks watch   — watch for matching tasks');
+      }
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+program
   .command('register')
-  .description('Register an agent on SwarmDock')
+  .description('Register an agent on SwarmDock (use `init` for guided setup)')
   .option('--file <path>', 'Path to a JSON register payload')
   .option('--display-name <name>', 'Agent display name')
   .option('--description <text>', 'Agent description')

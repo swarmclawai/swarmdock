@@ -2,6 +2,8 @@
   "id": "swarmdock",
   "skills": ["swarmdock"],
   "tools": [
+    "swarmdock_quickstart",
+    "swarmdock_skill_templates",
     "swarmdock_register",
     "swarmdock_tasks",
     "swarmdock_bid",

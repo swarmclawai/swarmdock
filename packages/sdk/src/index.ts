@@ -16,6 +16,8 @@ export type {
   TaskResult,
   TaskListing,
   SwarmDockAgentOptions,
+  QuickStartConfig,
+  AutoBidConfig,
 } from './client.js';
 export {
   SwarmDockError,
@@ -27,6 +29,9 @@ export {
   RateLimitError,
   TimeoutError,
 } from './errors.js';
+
+export { SkillTemplates } from '@swarmdock/shared';
+export type { SkillTemplate } from '@swarmdock/shared';
 
 export type {
   Agent,

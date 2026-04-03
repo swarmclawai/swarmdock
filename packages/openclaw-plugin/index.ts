@@ -5,7 +5,8 @@
  * P2P marketplace — register, discover tasks, bid, check status.
  */
 
-import { SwarmDockClient } from '@swarmdock/sdk';
+import { SwarmDockClient, SkillTemplates } from '@swarmdock/sdk';
+import type { SkillTemplate } from '@swarmdock/sdk';
 import nacl from 'tweetnacl';
 import tweetnaclUtil from 'tweetnacl-util';
 
@@ -74,14 +75,95 @@ const swarmdockPlugin = {
 
         return [
           {
+            name: 'swarmdock_quickstart',
+            description: 'One-step setup: generates keys, picks skills from templates, registers on SwarmDock, and returns credentials. The fastest way to get an agent earning on SwarmDock.',
+            parameters: {
+              type: 'object',
+              properties: {
+                displayName: { type: 'string', description: 'Agent display name' },
+                description: { type: 'string', description: 'Agent description' },
+                walletAddress: { type: 'string', description: 'Base L2 wallet (0x...). Auto-provisioned if omitted.' },
+                skillTemplates: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: `Skill template IDs to register with. Available: ${SkillTemplates.ids().join(', ')}`,
+                },
+              },
+              required: ['displayName'],
+            },
+            async call(args: any) {
+              // Resolve skill templates
+              const templateIds: string[] = args.skillTemplates ?? ['coding'];
+              const skills = templateIds.map((id: string) => {
+                const t = SkillTemplates.get(id);
+                if (!t) return null;
+                return {
+                  skillId: t.skillId,
+                  skillName: t.skillName,
+                  description: t.description,
+                  category: t.category,
+                  tags: t.tags,
+                  pricingModel: t.pricingModel,
+                  basePrice: t.basePrice,
+                  examplePrompts: t.examplePrompts,
+                };
+              }).filter(Boolean);
+
+              const client = getClient(config);
+              const result = await client.register({
+                displayName: args.displayName,
+                description: args.description,
+                framework: 'openclaw',
+                walletAddress: args.walletAddress ?? config.walletAddress ?? '',
+                skills: skills as any[],
+              });
+
+              return JSON.stringify({
+                agentId: result.agent.id,
+                did: result.agent.did,
+                status: result.agent.status,
+                trustLevel: result.agent.trustLevel,
+                skills: templateIds,
+                message: `Registered with ${skills.length} skills. Use swarmdock_tasks to find work.`,
+              });
+            },
+          },
+          {
+            name: 'swarmdock_skill_templates',
+            description: 'Browse available skill templates for SwarmDock registration. Returns pre-built skill definitions with pricing.',
+            parameters: {
+              type: 'object',
+              properties: {
+                search: { type: 'string', description: 'Optional search query to filter templates' },
+              },
+            },
+            async call(args: any) {
+              const results = args.search
+                ? SkillTemplates.search(args.search)
+                : SkillTemplates.list();
+              return JSON.stringify(results.map((t: SkillTemplate) => ({
+                id: t.skillId,
+                name: t.skillName,
+                description: t.description,
+                category: t.category,
+                price: `$${(Number(t.basePrice) / 1_000_000).toFixed(2)}/task`,
+              })));
+            },
+          },
+          {
             name: 'swarmdock_register',
-            description: 'Register this agent on the SwarmDock P2P marketplace. Generates Ed25519 keypair, performs challenge-response auth, and returns agent profile with DID.',
+            description: 'Register this agent on the SwarmDock P2P marketplace. Supports skill template IDs (e.g. "coding") or full skill objects. Use swarmdock_quickstart for a simpler one-step setup.',
             parameters: {
               type: 'object',
               properties: {
                 displayName: { type: 'string', description: 'Agent display name' },
                 description: { type: 'string', description: 'Agent description' },
                 walletAddress: { type: 'string', description: 'Base L2 wallet (0x...)' },
+                skillTemplates: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: `Skill template IDs. Available: ${SkillTemplates.ids().join(', ')}`,
+                },
                 skills: {
                   type: 'array',
                   items: {
@@ -101,13 +183,26 @@ const swarmdockPlugin = {
               required: ['displayName'],
             },
             async call(args: any) {
+              // Resolve template IDs to full skill definitions
+              const templateSkills = (args.skillTemplates ?? []).map((id: string) => {
+                const t = SkillTemplates.get(id);
+                if (!t) return null;
+                return {
+                  skillId: t.skillId, skillName: t.skillName, description: t.description,
+                  category: t.category, tags: t.tags, pricingModel: t.pricingModel,
+                  basePrice: t.basePrice, examplePrompts: t.examplePrompts,
+                };
+              }).filter(Boolean);
+
+              const allSkills = [...templateSkills, ...(args.skills ?? [])];
+
               const client = getClient(config);
               const result = await client.register({
                 displayName: args.displayName,
                 description: args.description,
                 framework: 'openclaw',
                 walletAddress: args.walletAddress ?? config.walletAddress ?? '0x0000000000000000000000000000000000000001',
-                skills: args.skills ?? [],
+                skills: allSkills,
               });
               return JSON.stringify({ agentId: result.agent.id, did: result.agent.did, status: result.agent.status, trustLevel: result.agent.trustLevel });
             },
@@ -211,7 +306,7 @@ const swarmdockPlugin = {
           },
         ];
       },
-      { names: ['swarmdock_register', 'swarmdock_tasks', 'swarmdock_bid', 'swarmdock_status', 'swarmdock_update_skills'] },
+      { names: ['swarmdock_quickstart', 'swarmdock_skill_templates', 'swarmdock_register', 'swarmdock_tasks', 'swarmdock_bid', 'swarmdock_status', 'swarmdock_update_skills'] },
     );
 
     // ── Auto-reply Command ──

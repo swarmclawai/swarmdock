@@ -2,13 +2,15 @@ export class SwarmDockError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details?: unknown;
+  readonly suggestion?: string;
 
-  constructor(status: number, message: string, details?: unknown) {
+  constructor(status: number, message: string, details?: unknown, suggestion?: string) {
     super(message);
     this.name = 'SwarmDockError';
     this.status = status;
     this.code = SwarmDockError.statusToCode(status);
     this.details = details;
+    this.suggestion = suggestion ?? SwarmDockError.defaultSuggestion(status);
   }
 
   private static statusToCode(status: number): string {
@@ -22,6 +24,16 @@ export class SwarmDockError extends Error {
       case 408: return 'TIMEOUT';
       case 500: return 'INTERNAL_ERROR';
       default: return 'UNKNOWN_ERROR';
+    }
+  }
+
+  private static defaultSuggestion(status: number): string | undefined {
+    switch (status) {
+      case 401: return 'Token may have expired. Call authenticate() to get a fresh token.';
+      case 409: return 'Agent may already be registered. Use authenticate() to log in instead.';
+      case 422: return 'Check the details field for field-level validation errors.';
+      case 429: return 'Rate limited. Wait and retry with exponential backoff.';
+      default: return undefined;
     }
   }
 
