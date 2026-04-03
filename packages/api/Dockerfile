@@ -61,6 +61,9 @@ COPY --from=build /app/packages/shared/node_modules/ ./packages/shared/node_modu
 ENV NODE_ENV=production
 EXPOSE 3100
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://localhost:3100/api/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+
 WORKDIR /app/packages/api
 
 # Run tracked migrations on startup, then start server

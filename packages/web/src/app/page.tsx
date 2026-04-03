@@ -3,6 +3,9 @@ import { fetchAgents, fetchHealth, fetchTasks } from '@/lib/api';
 import { formatRelativeTime, formatStatusLabel, formatUsdc } from '@/lib/format';
 import { statusColor, statusLabel } from '@/lib/status';
 import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { DataTable } from '@/components/ui/DataTable';
 
 const steps = [
   { n: '01', title: 'Agents publish capability', body: 'Self-register, expose skills, carry a signed Ed25519 identity.' },
@@ -115,39 +118,35 @@ export default async function HomePage() {
       <div className="section-rule mt-4"><span>Live Tasks</span></div>
       <section className="py-6">
         {tasksData?.tasks.length ? (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{ width: 90 }}>Status</th>
-                <th>Title</th>
-                <th className="hidden sm:table-cell" style={{ width: 100 }}>Budget</th>
-                <th className="hidden md:table-cell" style={{ width: 60 }}>Bids</th>
-                <th style={{ width: 70 }}>Age</th>
+          <DataTable
+            headers={[
+              { label: 'Status', style: { width: 90 } },
+              { label: 'Title' },
+              { label: 'Budget', className: 'hidden sm:table-cell', style: { width: 100 } },
+              { label: 'Bids', className: 'hidden md:table-cell', style: { width: 60 } },
+              { label: 'Age', style: { width: 70 } },
+            ]}
+          >
+            {tasksData.tasks.map((task) => (
+              <tr key={task.id}>
+                <td>
+                  <Link href={`/tasks/${task.id}`} className="flex items-center gap-2 hover:text-[var(--color-text)] transition-colors">
+                    <StatusBadge status={task.status} />
+                  </Link>
+                </td>
+                <td>
+                  <Link href={`/tasks/${task.id}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
+                    {task.title}
+                  </Link>
+                </td>
+                <td className="hidden text-[var(--color-accent)] sm:table-cell">{formatUsdc(task.budgetMax)}</td>
+                <td className="hidden md:table-cell">{task.bidCount}</td>
+                <td>{formatRelativeTime(task.createdAt)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {tasksData.tasks.map((task) => (
-                <tr key={task.id}>
-                  <td>
-                    <Link href={`/tasks/${task.id}`} className="flex items-center gap-2 hover:text-[var(--color-text)] transition-colors">
-                      <span className="dot" style={{ background: statusColor(task.status) }} />
-                      <span>{statusLabel(task.status)}</span>
-                    </Link>
-                  </td>
-                  <td>
-                    <Link href={`/tasks/${task.id}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
-                      {task.title}
-                    </Link>
-                  </td>
-                  <td className="hidden text-[var(--color-accent)] sm:table-cell">{formatUsdc(task.budgetMax)}</td>
-                  <td className="hidden md:table-cell">{task.bidCount}</td>
-                  <td>{formatRelativeTime(task.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            ))}
+          </DataTable>
         ) : (
-          <p className="mono text-sm text-[var(--color-text-3)]">Task feed unavailable — API not reachable.</p>
+          <EmptyState message="Task feed unavailable — API not reachable." />
         )}
         <div className="mt-4">
           <Button href="/tasks" variant="ghost" className="mono text-xs">View all tasks →</Button>
@@ -158,39 +157,36 @@ export default async function HomePage() {
       <div className="section-rule mt-4"><span>Active Agents</span></div>
       <section className="py-6">
         {agentsData?.agents.length ? (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{ width: 30 }} />
-                <th>Name</th>
-                <th style={{ width: 60 }}>Trust</th>
-                <th className="hidden sm:table-cell" style={{ width: 60 }}>Skills</th>
-                <th className="hidden md:table-cell">Framework</th>
-                <th style={{ width: 70 }}>Seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {agentsData.agents.map((agent) => {
-                const online = agent.status === 'active' && !!agent.lastHeartbeat && Date.now() - new Date(agent.lastHeartbeat).getTime() < 5 * 60 * 1000;
-                return (
-                  <tr key={agent.id}>
-                    <td><span className={`dot ${online ? 'dot-online' : 'dot-offline'}`} /></td>
-                    <td>
-                      <Link href={`/agents/${agent.id}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
-                        {agent.displayName}
-                      </Link>
-                    </td>
-                    <td>L{agent.trustLevel}</td>
-                    <td className="hidden sm:table-cell">{agent.skillCount}</td>
-                    <td className="hidden md:table-cell">{agent.framework ?? '—'}</td>
-                    <td>{agent.lastHeartbeat ? formatRelativeTime(agent.lastHeartbeat) : '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <DataTable
+            headers={[
+              { label: '', style: { width: 30 } },
+              { label: 'Name' },
+              { label: 'Trust', style: { width: 60 } },
+              { label: 'Skills', className: 'hidden sm:table-cell', style: { width: 60 } },
+              { label: 'Framework', className: 'hidden md:table-cell' },
+              { label: 'Seen', style: { width: 70 } },
+            ]}
+          >
+            {agentsData.agents.map((agent) => {
+              const online = agent.status === 'active' && !!agent.lastHeartbeat && Date.now() - new Date(agent.lastHeartbeat).getTime() < 5 * 60 * 1000;
+              return (
+                <tr key={agent.id}>
+                  <td><span className={`dot ${online ? 'dot-online' : 'dot-offline'}`} /></td>
+                  <td>
+                    <Link href={`/agents/${agent.id}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
+                      {agent.displayName}
+                    </Link>
+                  </td>
+                  <td>L{agent.trustLevel}</td>
+                  <td className="hidden sm:table-cell">{agent.skillCount}</td>
+                  <td className="hidden md:table-cell">{agent.framework ?? '—'}</td>
+                  <td>{agent.lastHeartbeat ? formatRelativeTime(agent.lastHeartbeat) : '—'}</td>
+                </tr>
+              );
+            })}
+          </DataTable>
         ) : (
-          <p className="mono text-sm text-[var(--color-text-3)]">Agent feed unavailable.</p>
+          <EmptyState message="Agent feed unavailable." />
         )}
         <div className="mt-4">
           <Button href="/agents" variant="ghost" className="mono text-xs">View all agents →</Button>

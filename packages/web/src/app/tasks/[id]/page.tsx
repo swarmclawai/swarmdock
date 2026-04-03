@@ -4,6 +4,11 @@ import { fetchTask } from '@/lib/api';
 import { formatDateTime, formatStatusLabel, formatUsdc, truncateId } from '@/lib/format';
 import { statusColor, statusLabel, trustLabels } from '@/lib/status';
 import { escapeForPre } from '@/lib/sanitize';
+import TaskActions from '@/components/TaskActions';
+import LiveUpdates from '@/components/LiveUpdates';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { DataTable } from '@/components/ui/DataTable';
 
 type Artifact = { type?: string; content?: unknown; storage?: { url?: string } };
 function artifactList(v: unknown): Artifact[] { return Array.isArray(v) ? (v as Artifact[]) : []; }
@@ -39,9 +44,8 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
           {task.visibility === 'private' && <span className="mr-2 inline-block rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-[var(--color-text-3)] border border-[var(--color-border)] align-middle">Private</span>}
           {task.title}
         </h1>
-        <span className="mono flex items-center gap-2 text-sm text-[var(--color-text-2)]">
-          <span className="dot" style={{ background: color }} />
-          {statusLabel(task.status)}
+        <span className="text-[var(--color-text-2)]">
+          <StatusBadge status={task.status} size="md" />
         </span>
       </div>
 
@@ -83,36 +87,34 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
       {/* Bids */}
       <div className="section-rule mt-10"><span>Bids ({task.bidCount})</span></div>
       {task.bids.length > 0 ? (
-        <table className="data-table mt-4">
-          <thead>
-            <tr>
-              <th style={{ width: 20 }} />
-              <th>Agent</th>
-              <th>Price</th>
-              <th className="hidden sm:table-cell">Confidence</th>
-              <th className="hidden md:table-cell">Status</th>
-              <th className="hidden lg:table-cell">Proposal</th>
+        <DataTable
+          className="mt-4"
+          headers={[
+            { label: '', style: { width: 20 } },
+            { label: 'Agent' },
+            { label: 'Price' },
+            { label: 'Confidence', className: 'hidden sm:table-cell' },
+            { label: 'Status', className: 'hidden md:table-cell' },
+            { label: 'Proposal', className: 'hidden lg:table-cell' },
+          ]}
+        >
+          {task.bids.map((bid) => (
+            <tr key={bid.id} className={bid.status === 'accepted' ? 'bg-[var(--color-success)]/5' : ''}>
+              <td><span className="dot" style={{ background: statusColor(bid.status) }} /></td>
+              <td>
+                <Link href={`/agents/${bid.bidderId}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
+                  {bid.bidderDisplayName ?? truncateId(bid.bidderId)}
+                </Link>
+              </td>
+              <td className="text-[var(--color-accent)]">{formatUsdc(bid.proposedPrice)}</td>
+              <td className="hidden sm:table-cell">{bid.confidenceScore !== null ? `${(bid.confidenceScore * 100).toFixed(0)}%` : '—'}</td>
+              <td className="hidden md:table-cell">{statusLabel(bid.status)}</td>
+              <td className="hidden lg:table-cell max-w-xs truncate">{bid.proposal ?? '—'}</td>
             </tr>
-          </thead>
-          <tbody>
-            {task.bids.map((bid) => (
-              <tr key={bid.id} className={bid.status === 'accepted' ? 'bg-[var(--color-success)]/5' : ''}>
-                <td><span className="dot" style={{ background: statusColor(bid.status) }} /></td>
-                <td>
-                  <Link href={`/agents/${bid.bidderId}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
-                    {bid.bidderDisplayName ?? truncateId(bid.bidderId)}
-                  </Link>
-                </td>
-                <td className="text-[var(--color-accent)]">{formatUsdc(bid.proposedPrice)}</td>
-                <td className="hidden sm:table-cell">{bid.confidenceScore !== null ? `${(bid.confidenceScore * 100).toFixed(0)}%` : '—'}</td>
-                <td className="hidden md:table-cell">{statusLabel(bid.status)}</td>
-                <td className="hidden lg:table-cell max-w-xs truncate">{bid.proposal ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          ))}
+        </DataTable>
       ) : (
-        <p className="mono mt-4 text-sm text-[var(--color-text-3)]">No bids submitted.</p>
+        <EmptyState message="No bids submitted." />
       )}
 
       {/* Artifacts */}
@@ -125,7 +127,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
               {a.type === 'text/html' && typeof a.content === 'string' ? (
                 <iframe
                   srcDoc={a.content}
-                  sandbox="allow-same-origin"
+                  sandbox=""
                   className="mt-2 w-full rounded-md border border-[var(--color-border)] bg-white"
                   style={{ minHeight: '200px', maxHeight: '600px' }}
                   title={`HTML artifact ${i + 1}`}
@@ -142,7 +144,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
           ))}
         </div>
       ) : (
-        <p className="mono mt-4 text-sm text-[var(--color-text-3)]">No artifacts submitted.</p>
+        <EmptyState message="No artifacts submitted." />
       )}
 
       {/* Participants & Quality */}
@@ -179,6 +181,12 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
           <span className="text-[var(--color-text-2)] break-all">{task.id}</span>
         </div>
       </div>
+
+      {/* Approve / Reject actions (shown only when task is in review) */}
+      <TaskActions taskId={task.id} status={task.status} requesterId={task.requesterId} />
+
+      {/* Real-time updates via SSE */}
+      <LiveUpdates filterKey={task.id} />
     </div>
   );
 }

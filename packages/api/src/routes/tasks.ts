@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { db } from '../db/client.js';
+import { db, type Database } from '../db/client.js';
 import { tasks, taskBids, agents, disputes, taskInvitations } from '../db/schema.js';
 import { eq, and, ne, inArray, sql, count, gte, lte, ilike, or, desc } from 'drizzle-orm';
 import { authMiddleware, optionalAuthMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
@@ -23,7 +23,50 @@ import { createTaskWithOptionalFunding } from '../services/task-creation.js';
 import { findSkillMatchedAgents, createSystemMatchInvitations } from '../services/invitation-matching.js';
 import { canReadTask } from './task-access.js';
 
-const app = new Hono<AuthContext>();
+export type TaskRouteDeps = {
+  db: Database;
+  authMiddleware: typeof authMiddleware;
+  optionalAuthMiddleware: typeof optionalAuthMiddleware;
+  requireScope: typeof requireScope;
+  eventBus: Pick<typeof eventBus, 'emit' | 'broadcast'>;
+  releaseEscrow: typeof releaseEscrow;
+  refundEscrow: typeof refundEscrow;
+  verifyTaskOutput: typeof verifyTaskOutput;
+  shouldEscalate: typeof shouldEscalate;
+  sendEscalationNotification: typeof sendEscalationNotification;
+  safeAppendAuditLog: typeof safeAppendAuditLog;
+  embed: typeof embed;
+  persistTaskSubmission: typeof persistTaskSubmission;
+  searchTasksIndex: typeof searchTasksIndex;
+  fetchOrderedRowsByIds: typeof fetchOrderedRowsByIds;
+  createTaskWithOptionalFunding: typeof createTaskWithOptionalFunding;
+  findSkillMatchedAgents: typeof findSkillMatchedAgents;
+  createSystemMatchInvitations: typeof createSystemMatchInvitations;
+  canReadTask: typeof canReadTask;
+};
+
+export function createTasksApp(overrides: Partial<TaskRouteDeps> = {}) {
+  const database = overrides.db ?? db;
+  const requireAuth = overrides.authMiddleware ?? authMiddleware;
+  const maybeAuth = overrides.optionalAuthMiddleware ?? optionalAuthMiddleware;
+  const withScope = overrides.requireScope ?? requireScope;
+  const events = overrides.eventBus ?? eventBus;
+  const releaseEscrowFn = overrides.releaseEscrow ?? releaseEscrow;
+  const refundEscrowFn = overrides.refundEscrow ?? refundEscrow;
+  const verifyOutput = overrides.verifyTaskOutput ?? verifyTaskOutput;
+  const shouldEscalateFn = overrides.shouldEscalate ?? shouldEscalate;
+  const notifyEscalation = overrides.sendEscalationNotification ?? sendEscalationNotification;
+  const auditLog = overrides.safeAppendAuditLog ?? safeAppendAuditLog;
+  const embedText = overrides.embed ?? embed;
+  const persistSubmission = overrides.persistTaskSubmission ?? persistTaskSubmission;
+  const searchIndex = overrides.searchTasksIndex ?? searchTasksIndex;
+  const fetchByIds = overrides.fetchOrderedRowsByIds ?? fetchOrderedRowsByIds;
+  const createTask = overrides.createTaskWithOptionalFunding ?? createTaskWithOptionalFunding;
+  const findMatched = overrides.findSkillMatchedAgents ?? findSkillMatchedAgents;
+  const createInvitations = overrides.createSystemMatchInvitations ?? createSystemMatchInvitations;
+  const canRead = overrides.canReadTask ?? canReadTask;
+
+  const app = new Hono<AuthContext>();
 
 // GET /api/v1/tasks — List/search tasks
 app.get('/', async (c) => {
@@ -35,7 +78,7 @@ app.get('/', async (c) => {
   const { q, status, skills, budgetMin, budgetMax, requesterId, assigneeId, limit, offset } = query.data;
 
   if (!budgetMin && !budgetMax) {
-    const indexed = await searchTasksIndex({
+    const indexed = await searchIndex({
       q,
       status,
       skills,
@@ -51,14 +94,14 @@ app.get('/', async (c) => {
         return c.json({ tasks: [], limit, offset, total: indexed.total, facets: indexed.facets });
       }
 
-      const result = await fetchOrderedRowsByIds(indexed.ids, () =>
-        db
+      const result = await fetchByIds(indexed.ids, () =>
+        database
           .select()
           .from(tasks)
           .where(inArray(tasks.id, indexed.ids)),
       );
 
-      const bidCountRows = await db.execute(sql`
+      const bidCountRows = await database.execute(sql`
         SELECT ${taskBids.taskId} AS task_id, COUNT(*)::int AS bid_count
         FROM ${taskBids}
         WHERE ${taskBids.taskId} IN (${sql.join(indexed.ids.map((id: string) => sql`${id}`), sql`, `)})
@@ -118,12 +161,12 @@ app.get('/', async (c) => {
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-  const [{ total }] = await db.select({ total: count() }).from(tasks).where(whereClause);
-  const result = await db.select().from(tasks).where(whereClause).orderBy(desc(tasks.createdAt)).limit(limit).offset(offset);
+  const [{ total }] = await database.select({ total: count() }).from(tasks).where(whereClause);
+  const result = await database.select().from(tasks).where(whereClause).orderBy(desc(tasks.createdAt)).limit(limit).offset(offset);
 
   const taskIds = result.map((task) => task.id);
   const bidCountRows = taskIds.length > 0
-    ? await db.execute(sql`
+    ? await database.execute(sql`
       SELECT ${taskBids.taskId} AS task_id, COUNT(*)::int AS bid_count
       FROM ${taskBids}
       WHERE ${taskBids.taskId} IN (${sql.join(taskIds.map(id => sql`${id}`), sql`, `)})
@@ -147,7 +190,7 @@ app.get('/', async (c) => {
 });
 
 // POST /api/v1/tasks — Create task
-app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
+app.post('/', requireAuth, withScope('tasks.write'), async (c) => {
   const body = await c.req.json();
   const parsed = TaskCreateSchema.safeParse(body);
 
@@ -156,7 +199,7 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
   }
 
   const agent = c.get('agent');
-  const creation = await createTaskWithOptionalFunding(c, agent.agent_id, parsed.data, { db });
+  const creation = await createTask(c, agent.agent_id, parsed.data, { db: database });
   if (creation.response) {
     return creation.response;
   }
@@ -182,9 +225,9 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
       (parsed.data.matchingMode === MATCHING_MODE.OPEN || parsed.data.matchingMode === MATCHING_MODE.AUTO)
     ) {
       const excludeIds = [agent.agent_id, ...allInvitedIds];
-      const matchedIds = await findSkillMatchedAgents(db, parsed.data.skillRequirements, excludeIds);
+      const matchedIds = await findMatched(database, parsed.data.skillRequirements, excludeIds);
       if (matchedIds.length > 0) {
-        await createSystemMatchInvitations(db, task.id, matchedIds);
+        await createInvitations(database, task.id, matchedIds);
         allInvitedIds = [...allInvitedIds, ...matchedIds];
       }
     }
@@ -201,11 +244,11 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
       eventData.requesterId = agent.agent_id;
     }
     for (const invitedId of allInvitedIds) {
-      eventBus.emit(invitedId, { type: 'task.invited', data: eventData });
+      events.emit(invitedId, { type: 'task.invited', data: eventData });
     }
   } else {
     // Broadcast to all connected agents for public tasks
-    eventBus.broadcast({
+    events.broadcast({
       type: 'task.created',
       data: {
         taskId: task.id,
@@ -218,7 +261,7 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
   }
 
   if (creation.escrow) {
-    eventBus.emit(agent.agent_id, {
+    events.emit(agent.agent_id, {
       type: 'payment.escrowed',
       data: {
         taskId: task.id,
@@ -229,7 +272,7 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
   }
 
   if (directAssigneeId) {
-    eventBus.emit(directAssigneeId, {
+    events.emit(directAssigneeId, {
       type: 'task.assigned',
       data: {
         taskId: task.id,
@@ -239,15 +282,15 @@ app.post('/', authMiddleware, requireScope('tasks.write'), async (c) => {
   }
 
   // Async embed (don't block response)
-  embed(parsed.data.description).then(async (vec) => {
-    await db.update(tasks).set({ descriptionEmbedding: vec }).where(eq(tasks.id, task.id));
+  embedText(parsed.data.description).then(async (vec) => {
+    await database.update(tasks).set({ descriptionEmbedding: vec }).where(eq(tasks.id, task.id));
   }).catch(console.error);
 
   return c.json(task, 201, creation.settlementHeaders);
 });
 
 // GET /api/v1/tasks/invitations — List agent's private task invitations
-app.get('/invitations', authMiddleware, async (c) => {
+app.get('/invitations', requireAuth, async (c) => {
   const query = InvitationListQuerySchema.safeParse(c.req.query());
   if (!query.success) {
     return c.json({ error: 'Invalid query', details: query.error.flatten() }, 400);
@@ -265,12 +308,12 @@ app.get('/invitations', authMiddleware, async (c) => {
 
   const whereClause = and(...conditions);
 
-  const [{ total }] = await db
+  const [{ total }] = await database
     .select({ total: count() })
     .from(taskInvitations)
     .where(whereClause);
 
-  const rows = await db
+  const rows = await database
     .select()
     .from(taskInvitations)
     .innerJoin(tasks, eq(tasks.id, taskInvitations.taskId))
@@ -300,7 +343,7 @@ app.get('/invitations', authMiddleware, async (c) => {
 });
 
 // POST /api/v1/tasks/:id/invite — Invite agents to a private task
-app.post('/:id/invite', authMiddleware, requireScope('tasks.write'), async (c) => {
+app.post('/:id/invite', requireAuth, withScope('tasks.write'), async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
@@ -310,7 +353,7 @@ app.post('/:id/invite', authMiddleware, requireScope('tasks.write'), async (c) =
     return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
   }
 
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+  const [task] = await database.select().from(tasks).where(eq(tasks.id, id)).limit(1);
   if (!task) return c.json({ error: 'Task not found' }, 404);
   if (task.requesterId !== agent.agent_id) return c.json({ error: 'Not task owner' }, 403);
   if (task.visibility !== TASK_VISIBILITY.PRIVATE) {
@@ -323,7 +366,7 @@ app.post('/:id/invite', authMiddleware, requireScope('tasks.write'), async (c) =
     return c.json({ error: 'No valid agent IDs provided' }, 400);
   }
 
-  const activeAgents = await db
+  const activeAgents = await database
     .select({ id: agents.id })
     .from(agents)
     .where(and(inArray(agents.id, validIds), eq(agents.status, AGENT_STATUS.ACTIVE)));
@@ -334,7 +377,7 @@ app.post('/:id/invite', authMiddleware, requireScope('tasks.write'), async (c) =
   }
 
   // Insert invitations, skipping duplicates
-  await db.insert(taskInvitations).values(
+  await database.insert(taskInvitations).values(
     activeIds.map((agentId) => ({ taskId: id, agentId, source: 'direct' as const })),
   ).onConflictDoNothing();
 
@@ -350,18 +393,18 @@ app.post('/:id/invite', authMiddleware, requireScope('tasks.write'), async (c) =
     eventData.requesterId = agent.agent_id;
   }
   for (const invitedId of activeIds) {
-    eventBus.emit(invitedId, { type: 'task.invited', data: eventData });
+    events.emit(invitedId, { type: 'task.invited', data: eventData });
   }
 
   return c.json({ invited: activeIds.length }, 201);
 });
 
 // POST /api/v1/tasks/:id/invitations/decline — Decline a task invitation
-app.post('/:id/invitations/decline', authMiddleware, async (c) => {
+app.post('/:id/invitations/decline', requireAuth, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  const [invitation] = await db
+  const [invitation] = await database
     .select()
     .from(taskInvitations)
     .where(
@@ -377,7 +420,7 @@ app.post('/:id/invitations/decline', authMiddleware, async (c) => {
     return c.json({ error: 'Invitation not found' }, 404);
   }
 
-  const [updated] = await db
+  const [updated] = await database
     .update(taskInvitations)
     .set({ status: INVITATION_STATUS.DECLINED, updatedAt: new Date() })
     .where(eq(taskInvitations.id, invitation.id))
@@ -387,9 +430,9 @@ app.post('/:id/invitations/decline', authMiddleware, async (c) => {
 });
 
 // GET /api/v1/tasks/:id — Task detail
-app.get('/:id', optionalAuthMiddleware, async (c) => {
+app.get('/:id', maybeAuth, async (c) => {
   const id = c.req.param('id');
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+  const [task] = await database.select().from(tasks).where(eq(tasks.id, id)).limit(1);
 
   if (!task) {
     return c.json({ error: 'Task not found' }, 404);
@@ -398,13 +441,13 @@ app.get('/:id', optionalAuthMiddleware, async (c) => {
   // Private task access control
   if (task.visibility === TASK_VISIBILITY.PRIVATE) {
     const viewerAgentId = c.get('agent')?.agent_id ?? null;
-    if (!await canReadTask(db, task, viewerAgentId)) {
+    if (!await canRead(database, task, viewerAgentId)) {
       return c.json({ error: 'Task not found' }, 404);
     }
   }
 
-  const bids = await db.select().from(taskBids).where(eq(taskBids.taskId, id));
-  const [dispute] = await db
+  const bids = await database.select().from(taskBids).where(eq(taskBids.taskId, id));
+  const [dispute] = await database
     .select()
     .from(disputes)
     .where(eq(disputes.taskId, id))
@@ -417,7 +460,7 @@ app.get('/:id', optionalAuthMiddleware, async (c) => {
   ].filter((value): value is string => Boolean(value))));
 
   const agentRows = relatedAgentIds.length > 0
-    ? await db
+    ? await database
       .select({
         id: agents.id,
         displayName: agents.displayName,
@@ -455,7 +498,7 @@ app.get('/:id', optionalAuthMiddleware, async (c) => {
 });
 
 // PATCH /api/v1/tasks/:id — Update task (owner only)
-app.patch('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
+app.patch('/:id', requireAuth, withScope('tasks.write'), async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
@@ -463,7 +506,7 @@ app.patch('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
   const parsed = TaskUpdateSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
 
-  const updated = await db.transaction(async (tx) => {
+  const updated = await database.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
     const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
     if (!task) throw new HTTPException(404, { message: 'Task not found' });
@@ -487,7 +530,7 @@ app.patch('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
     return result;
   });
 
-  eventBus.broadcast({
+  events.broadcast({
     type: 'task.updated',
     data: { taskId: id, status: updated.status },
   });
@@ -496,11 +539,11 @@ app.patch('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
 });
 
 // DELETE /api/v1/tasks/:id — Cancel task
-app.delete('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
+app.delete('/:id', requireAuth, withScope('tasks.write'), async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  await db.transaction(async (tx) => {
+  await database.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
     const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
     if (!task) throw new HTTPException(404, { message: 'Task not found' });
@@ -512,23 +555,23 @@ app.delete('/:id', authMiddleware, requireScope('tasks.write'), async (c) => {
     await tx.update(tasks).set({ status: TASK_STATUS.CANCELLED, updatedAt: new Date() }).where(eq(tasks.id, id));
   });
 
-  eventBus.broadcast({
+  events.broadcast({
     type: 'task.updated',
     data: { taskId: id, status: TASK_STATUS.CANCELLED },
   });
 
   // Refund escrow if any
-  await refundEscrow(id);
+  await refundEscrowFn(id);
 
   return c.json({ message: 'Task cancelled' });
 });
 
 // POST /api/v1/tasks/:id/start — Agent starts work
-app.post('/:id/start', authMiddleware, async (c) => {
+app.post('/:id/start', requireAuth, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
-  const { updated, requesterId } = await db.transaction(async (tx) => {
+  const { updated, requesterId } = await database.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
     const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
     if (!task) throw new HTTPException(404, { message: 'Task not found' });
@@ -544,11 +587,11 @@ app.post('/:id/start', authMiddleware, async (c) => {
     return { updated: result, requesterId: task.requesterId };
   });
 
-  eventBus.emit(requesterId, {
+  events.emit(requesterId, {
     type: 'task.started',
     data: { taskId: id, agentId: agent.agent_id },
   });
-  eventBus.broadcast({
+  events.broadcast({
     type: 'task.updated',
     data: { taskId: id, status: TASK_STATUS.IN_PROGRESS, assigneeId: agent.agent_id },
   });
@@ -557,7 +600,7 @@ app.post('/:id/start', authMiddleware, async (c) => {
 });
 
 // POST /api/v1/tasks/:id/submit — Submit results
-app.post('/:id/submit', authMiddleware, async (c) => {
+app.post('/:id/submit', requireAuth, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
@@ -573,7 +616,7 @@ app.post('/:id/submit', authMiddleware, async (c) => {
     return c.json({ error: 'Total submission size exceeds 50MB limit' }, 400);
   }
 
-  const [currentTask] = await db.select({
+  const [currentTask] = await database.select({
     assigneeId: tasks.assigneeId,
     status: tasks.status,
   }).from(tasks).where(eq(tasks.id, id)).limit(1);
@@ -590,13 +633,13 @@ app.post('/:id/submit', authMiddleware, async (c) => {
 
   let persisted;
   try {
-    persisted = await persistTaskSubmission(id, parsed.data);
+    persisted = await persistSubmission(id, parsed.data);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to persist task submission';
     return c.json({ error: message }, 400);
   }
 
-  const { updated, requesterId } = await db.transaction(async (tx) => {
+  const { updated, requesterId } = await database.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
     const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
     if (!task) throw new HTTPException(404, { message: 'Task not found' });
@@ -614,11 +657,11 @@ app.post('/:id/submit', authMiddleware, async (c) => {
     return { updated: result, requesterId: task.requesterId };
   });
 
-  eventBus.emit(requesterId, {
+  events.emit(requesterId, {
     type: 'task.submitted',
     data: { taskId: id, agentId: agent.agent_id, artifacts: parsed.data.artifacts },
   });
-  eventBus.broadcast({
+  events.broadcast({
     type: 'task.updated',
     data: { taskId: id, status: TASK_STATUS.REVIEW, assigneeId: agent.agent_id },
   });
@@ -627,12 +670,12 @@ app.post('/:id/submit', authMiddleware, async (c) => {
 });
 
 // POST /api/v1/tasks/:id/approve — Approve and release payment
-app.post('/:id/approve', authMiddleware, async (c) => {
+app.post('/:id/approve', requireAuth, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
   // Lock task row and validate status within a transaction to prevent double-release
-  const { task, qualityScore, qualityDetails } = await db.transaction(async (tx) => {
+  const { task, qualityScore, qualityDetails } = await database.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
     const [t] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
     if (!t) throw new HTTPException(404, { message: 'Task not found' });
@@ -650,7 +693,7 @@ app.post('/:id/approve', authMiddleware, async (c) => {
     let qd: unknown = null;
     try {
       const artifacts = Array.isArray(t.resultArtifacts) ? t.resultArtifacts : [];
-      const qualityReport = await verifyTaskOutput(
+      const qualityReport = await verifyOutput(
         { id: t.id, inputData: t.inputData as Record<string, unknown> | null },
         artifacts,
       );
@@ -667,14 +710,14 @@ app.post('/:id/approve', authMiddleware, async (c) => {
   let releaseTxHash: string;
   let fee: bigint;
   try {
-    ({ releaseTxHash, fee } = await releaseEscrow(id));
+    ({ releaseTxHash, fee } = await releaseEscrowFn(id));
   } catch (err) {
     // Rollback task status on escrow failure
-    await db.update(tasks).set({ status: TASK_STATUS.REVIEW, updatedAt: new Date() }).where(eq(tasks.id, id));
+    await database.update(tasks).set({ status: TASK_STATUS.REVIEW, updatedAt: new Date() }).where(eq(tasks.id, id));
     return c.json({ error: err instanceof Error ? err.message : 'Escrow release failed' }, 400);
   }
 
-  const [updated] = await db.update(tasks).set({
+  const [updated] = await database.update(tasks).set({
     completedAt: new Date(),
     qualityScore,
     qualityDetails,
@@ -682,17 +725,17 @@ app.post('/:id/approve', authMiddleware, async (c) => {
   }).where(eq(tasks.id, id)).returning();
 
   if (task.assigneeId) {
-    eventBus.emit(task.assigneeId, {
+    events.emit(task.assigneeId, {
       type: 'task.completed',
       data: { taskId: id, releaseTxHash, fee: fee.toString() },
     });
   }
-  eventBus.broadcast({
+  events.broadcast({
     type: 'task.updated',
     data: { taskId: id, status: TASK_STATUS.COMPLETED, assigneeId: task.assigneeId },
   });
 
-  safeAppendAuditLog({
+  auditLog({
     eventType: 'task.completed',
     actorId: agent.agent_id,
     targetId: id,
@@ -704,14 +747,14 @@ app.post('/:id/approve', authMiddleware, async (c) => {
 });
 
 // POST /api/v1/tasks/:id/reject — Reject submission
-app.post('/:id/reject', authMiddleware, async (c) => {
+app.post('/:id/reject', requireAuth, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
   const body = await c.req.json().catch(() => ({}));
   const reason = (body as { reason?: string }).reason ?? 'No reason provided';
 
-  const { updated, assigneeId } = await db.transaction(async (tx) => {
+  const { updated, assigneeId } = await database.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
     const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
     if (!task) throw new HTTPException(404, { message: 'Task not found' });
@@ -730,12 +773,12 @@ app.post('/:id/reject', authMiddleware, async (c) => {
   });
 
   if (assigneeId) {
-    eventBus.emit(assigneeId, {
+    events.emit(assigneeId, {
       type: 'task.rejected',
       data: { taskId: id, reason },
     });
   }
-  eventBus.broadcast({
+  events.broadcast({
     type: 'task.updated',
     data: { taskId: id, status: TASK_STATUS.IN_PROGRESS, assigneeId },
   });
@@ -744,9 +787,9 @@ app.post('/:id/reject', authMiddleware, async (c) => {
 });
 
 // GET /api/v1/tasks/:id/dispute — Get latest dispute for a task
-app.get('/:id/dispute', optionalAuthMiddleware, async (c) => {
+app.get('/:id/dispute', maybeAuth, async (c) => {
   const id = c.req.param('id');
-  const [task] = await db
+  const [task] = await database
     .select({
       id: tasks.id,
       visibility: tasks.visibility,
@@ -762,11 +805,11 @@ app.get('/:id/dispute', optionalAuthMiddleware, async (c) => {
   }
 
   const viewerAgentId = c.get('agent')?.agent_id ?? null;
-  if (!await canReadTask(db, task, viewerAgentId)) {
+  if (!await canRead(database, task, viewerAgentId)) {
     return c.json({ error: 'Task not found' }, 404);
   }
 
-  const [dispute] = await db
+  const [dispute] = await database
     .select()
     .from(disputes)
     .where(eq(disputes.taskId, id))
@@ -781,7 +824,7 @@ app.get('/:id/dispute', optionalAuthMiddleware, async (c) => {
 });
 
 // POST /api/v1/tasks/:id/dispute — Raise a dispute during review
-app.post('/:id/dispute', authMiddleware, async (c) => {
+app.post('/:id/dispute', requireAuth, async (c) => {
   const id = c.req.param('id');
   const agent = c.get('agent');
 
@@ -789,7 +832,7 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
   const parsed = TaskDisputeSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
 
-  const { dispute, againstAgentId, assigneeId, requesterId } = await db.transaction(async (tx) => {
+  const { dispute, againstAgentId, assigneeId, requesterId } = await database.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM tasks WHERE id = ${id} FOR UPDATE`);
     const [task] = await tx.select().from(tasks).where(eq(tasks.id, id)).limit(1);
     if (!task) throw new HTTPException(404, { message: 'Task not found' });
@@ -828,17 +871,17 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
   });
 
   if (againstAgentId) {
-    eventBus.emit(againstAgentId, {
+    events.emit(againstAgentId, {
       type: 'task.disputed',
       data: { taskId: id, disputeId: dispute.id, reason: parsed.data.reason },
     });
   }
-  eventBus.broadcast({
+  events.broadcast({
     type: 'task.updated',
     data: { taskId: id, status: TASK_STATUS.DISPUTED, assigneeId, requesterId },
   });
 
-  safeAppendAuditLog({
+  auditLog({
     eventType: 'task.disputed',
     actorId: agent.agent_id,
     targetId: id,
@@ -847,14 +890,14 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
   });
 
   // Check if dispute should be escalated (high-value or repeated failures)
-  const [taskForEscalation] = await db.select({ budgetMax: tasks.budgetMax }).from(tasks).where(eq(tasks.id, id)).limit(1);
-  if (taskForEscalation && await shouldEscalate(id, taskForEscalation.budgetMax)) {
-    const [updatedDispute] = await db
+  const [taskForEscalation] = await database.select({ budgetMax: tasks.budgetMax }).from(tasks).where(eq(tasks.id, id)).limit(1);
+  if (taskForEscalation && await shouldEscalateFn(id, taskForEscalation.budgetMax)) {
+    const [updatedDispute] = await database
       .update(disputes)
       .set({ status: DISPUTE_STATUS.ESCALATED, updatedAt: new Date() })
       .where(eq(disputes.id, dispute.id))
       .returning();
-    sendEscalationNotification({
+    notifyEscalation({
       disputeId: dispute.id,
       taskId: id,
       amount: taskForEscalation.budgetMax.toString(),
@@ -868,4 +911,7 @@ app.post('/:id/dispute', authMiddleware, async (c) => {
   return c.json(dispute, 201);
 });
 
-export default app;
+  return app;
+}
+
+export default createTasksApp();

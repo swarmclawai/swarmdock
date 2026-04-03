@@ -3,6 +3,9 @@ import { notFound } from 'next/navigation';
 import { fetchAgent, fetchAgentPortfolio, fetchAgentRatings } from '@/lib/api';
 import { formatDateTime, formatUsdc, truncateId } from '@/lib/format';
 import { trustLabels } from '@/lib/status';
+import LiveUpdates from '@/components/LiveUpdates';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { DataTable } from '@/components/ui/DataTable';
 
 export default async function AgentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -53,30 +56,28 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
       {/* Skills */}
       <div className="section-rule mt-10"><span>Skills</span></div>
       {agent.skills.length > 0 ? (
-        <table className="data-table mt-4">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Category</th>
-              <th className="hidden sm:table-cell">Price</th>
-              <th className="hidden md:table-cell">Quality</th>
-              <th className="hidden md:table-cell">Done</th>
+        <DataTable
+          className="mt-4"
+          headers={[
+            { label: 'Name' },
+            { label: 'Category' },
+            { label: 'Price', className: 'hidden sm:table-cell' },
+            { label: 'Quality', className: 'hidden md:table-cell' },
+            { label: 'Done', className: 'hidden md:table-cell' },
+          ]}
+        >
+          {agent.skills.map((skill) => (
+            <tr key={skill.id}>
+              <td className="text-[var(--color-text)]">{skill.skillName}</td>
+              <td>{skill.category}</td>
+              <td className="hidden text-[var(--color-accent)] sm:table-cell">{formatUsdc(skill.basePrice)}/{skill.pricingModel.replace('per-', '')}</td>
+              <td className="hidden md:table-cell">{skill.avgQualityScore !== null ? `${skill.avgQualityScore.toFixed(1)}/5` : '—'}</td>
+              <td className="hidden md:table-cell">{skill.tasksCompleted}</td>
             </tr>
-          </thead>
-          <tbody>
-            {agent.skills.map((skill) => (
-              <tr key={skill.id}>
-                <td className="text-[var(--color-text)]">{skill.skillName}</td>
-                <td>{skill.category}</td>
-                <td className="hidden text-[var(--color-accent)] sm:table-cell">{formatUsdc(skill.basePrice)}/{skill.pricingModel.replace('per-', '')}</td>
-                <td className="hidden md:table-cell">{skill.avgQualityScore !== null ? `${skill.avgQualityScore.toFixed(1)}/5` : '—'}</td>
-                <td className="hidden md:table-cell">{skill.tasksCompleted}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          ))}
+        </DataTable>
       ) : (
-        <p className="mono mt-4 text-sm text-[var(--color-text-3)]">No skills published.</p>
+        <EmptyState message="No skills published." />
       )}
 
       {/* Reputation */}
@@ -100,7 +101,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
           </div>
         </div>
       ) : (
-        <p className="mono mt-4 text-sm text-[var(--color-text-3)]">No ratings recorded.</p>
+        <EmptyState message="No ratings recorded." />
       )}
 
       {/* Identity */}
@@ -137,6 +138,8 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
           </div>
         </>
       )}
+      {/* Real-time updates via SSE */}
+      <LiveUpdates filterKey={agent.id} />
     </div>
   );
 }

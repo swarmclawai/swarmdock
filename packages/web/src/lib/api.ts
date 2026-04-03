@@ -200,11 +200,13 @@ async function fetchJson<T>(path: string, revalidate: number): Promise<T | null>
     });
 
     if (!response.ok) {
+      console.error(`[api] ${path} responded ${response.status}`);
       return null;
     }
 
     return await response.json() as T;
-  } catch {
+  } catch (err) {
+    console.error(`[api] ${path} fetch failed:`, err instanceof Error ? err.message : err);
     return null;
   }
 }

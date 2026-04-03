@@ -1,6 +1,6 @@
 {
   "name": "@swarmdock/openclaw-plugin",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "SwarmDock marketplace plugin for OpenClaw — native tools for agent registration, task discovery, bidding, and payments",
   "type": "module",
   "files": [
@@ -14,7 +14,7 @@
     "tweetnacl-util": "^0.15.1"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.3.7"
+    "openclaw": ">=2026.3.31"
   },
   "peerDependenciesMeta": {
     "openclaw": {

@@ -22,12 +22,14 @@ import type {
   RatingCreateInput,
   InviteAgentsInput,
 } from '@swarmdock/shared';
-import { SwarmDockError } from './errors.js';
+import { SwarmDockError, TimeoutError } from './errors.js';
 
 export interface SwarmDockClientOptions {
   baseUrl: string;
   privateKey?: string; // Ed25519 secret key, base64
   paymentPrivateKey?: `0x${string}`;
+  /** Default request timeout in milliseconds (default: 30000) */
+  defaultTimeout?: number;
 }
 
 export interface RegisterParams {
@@ -97,6 +99,17 @@ type TaskListFilters = {
   offset?: number;
 };
 
+export interface TaskArtifact {
+  type?: string;
+  content?: unknown;
+  storage?: { url?: string };
+}
+
+export interface TaskArtifactsResult {
+  artifacts: TaskArtifact[];
+  files: string[];
+}
+
 export interface TaskDetailResult extends Task {
   requester?: {
     id: string;
@@ -162,6 +175,7 @@ export class SwarmDockClient {
   private readonly secretKey: Uint8Array | null;
   private readonly publicKeyBase64: string | null;
   private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly defaultTimeout: number;
   private token: string | null = null;
   private agentId: string | null = null;
 
@@ -174,6 +188,7 @@ export class SwarmDockClient {
 
   constructor(options: SwarmDockClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
+    this.defaultTimeout = options.defaultTimeout ?? 30_000;
     if (options.privateKey) {
       this.secretKey = decodeBase64(options.privateKey);
       const keyPair = nacl.sign.keyPair.fromSecretKey(this.secretKey);
@@ -298,7 +313,8 @@ export class SwarmDockClient {
 
   /** @internal */
   async fetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
-    const { method = 'GET', body, query, auth = true } = options;
+    const { method = 'GET', body, query, auth = true, timeout } = options;
+    const timeoutMs = timeout ?? this.defaultTimeout;
 
     let url = `${this.baseUrl}${path}`;
     if (query) {
@@ -322,11 +338,20 @@ export class SwarmDockClient {
       headers['Authorization'] = `Bearer ${this.token!}`;
     }
 
-    const res = await this.fetchImpl(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let res: Response;
+    try {
+      res = await this.fetchImpl(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        throw new TimeoutError(timeoutMs, path);
+      }
+      throw err;
+    }
 
     if (!res.ok) {
       let errorData: { error?: string; details?: unknown } | undefined;
@@ -402,6 +427,8 @@ interface FetchOptions {
   body?: unknown;
   query?: Record<string, string | number | undefined | null>;
   auth?: boolean;
+  /** Request timeout in milliseconds (overrides defaultTimeout) */
+  timeout?: number;
 }
 
 // -- Sub-operation classes --
@@ -524,6 +551,13 @@ class TaskOperations {
 
   async get(taskId: string): Promise<TaskDetailResult> {
     return this.client.fetch(`/api/v1/tasks/${taskId}`, { auth: false });
+  }
+
+  async getArtifacts(taskId: string): Promise<TaskArtifactsResult> {
+    const task = await this.client.fetch<TaskDetailResult>(`/api/v1/tasks/${taskId}`, { auth: false });
+    const artifacts = Array.isArray(task.resultArtifacts) ? task.resultArtifacts as TaskArtifact[] : [];
+    const files = Array.isArray(task.resultFiles) ? task.resultFiles : [];
+    return { artifacts, files };
   }
 
   async listBids(taskId: string): Promise<{ bids: TaskBid[] }> {
@@ -761,6 +795,8 @@ export interface SwarmDockAgentOptions {
   walletAddress: string;
   privateKey?: string;
   paymentPrivateKey?: `0x${string}`;
+  /** Optional logger callback for diagnostic messages */
+  logger?: (message: string) => void;
 }
 
 type TaskHandler = (task: TaskContext) => Promise<TaskResult>;
@@ -830,8 +866,8 @@ export class SwarmDockAgent {
         })),
       });
     } catch (err) {
-      // If already registered, authenticate instead
-      if (err instanceof SwarmDockError && (err.status === 409 || err.message.includes('already registered'))) {
+      if (err instanceof SwarmDockError && err.status === 409) {
+        this.options.logger?.(`Agent already registered (409), falling back to authenticate`);
         await this.client.authenticate();
       } else {
         throw err;

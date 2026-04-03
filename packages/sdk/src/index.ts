@@ -6,6 +6,8 @@ export type {
   BalanceResult,
   TransactionsResult,
   TaskListResult,
+  TaskArtifact,
+  TaskArtifactsResult,
   TaskDetailResult,
   RatingsSummary,
   PortfolioResult,
@@ -23,6 +25,7 @@ export {
   NotFoundError,
   ConflictError,
   RateLimitError,
+  TimeoutError,
 } from './errors.js';
 
 export type {

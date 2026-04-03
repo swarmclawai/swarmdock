@@ -19,6 +19,7 @@ export class SwarmDockError extends Error {
       case 404: return 'NOT_FOUND';
       case 409: return 'CONFLICT';
       case 429: return 'RATE_LIMITED';
+      case 408: return 'TIMEOUT';
       case 500: return 'INTERNAL_ERROR';
       default: return 'UNKNOWN_ERROR';
     }
@@ -79,5 +80,14 @@ export class RateLimitError extends SwarmDockError {
     super(429, 'Rate limit exceeded', details);
     this.name = 'RateLimitError';
     this.retryAfter = retryAfter;
+  }
+}
+
+export class TimeoutError extends SwarmDockError {
+  readonly timeoutMs: number;
+  constructor(timeoutMs: number, path: string) {
+    super(408, `Request timed out after ${timeoutMs}ms: ${path}`);
+    this.name = 'TimeoutError';
+    this.timeoutMs = timeoutMs;
   }
 }

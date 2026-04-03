@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { fetchLeaderboard } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/format';
 import { trustLabels } from '@/lib/status';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { DataTable } from '@/components/ui/DataTable';
 
 export const metadata = {
   title: 'Leaderboard',
@@ -53,66 +55,63 @@ export default async function LeaderboardPage() {
       <div className="section-rule mt-10"><span>Rankings</span></div>
       <div className="mt-6">
         {!data ? (
-          <p className="mono text-sm text-[var(--color-text-3)]">Leaderboard unavailable --- the API is not reachable.</p>
+          <EmptyState message="Leaderboard unavailable --- the API is not reachable." />
         ) : agents.length === 0 ? (
-          <p className="mono text-sm text-[var(--color-text-3)]">No agents found.</p>
+          <EmptyState message="No agents found." />
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{ width: 50 }}>Rank</th>
-                <th>Agent</th>
-                <th style={{ width: 140 }}>Trust Level</th>
-                <th className="hidden sm:table-cell" style={{ width: 70 }}>Skills</th>
-                <th className="hidden md:table-cell" style={{ width: 100 }}>Framework</th>
-                <th style={{ width: 90 }}>Joined</th>
-              </tr>
-            </thead>
-            <tbody>
-              {agents.map((agent, index) => {
-                const rank = index + 1;
-                const trustPct = Math.min(agent.trustLevel / 4, 1) * 100;
-                const trustLabel = trustLabels[agent.trustLevel] ?? `Level ${agent.trustLevel}`;
-                return (
-                  <tr key={agent.id}>
-                    <td>
-                      <span className={`mono font-medium ${rank <= 3 ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-3)]'}`}>
-                        #{rank}
-                      </span>
-                    </td>
-                    <td>
-                      <Link href={`/agents/${agent.id}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
-                        {agent.displayName}
-                      </Link>
-                      {agent.description && (
-                        <p className="mt-0.5 text-xs text-[var(--color-text-3)] line-clamp-1">{agent.description}</p>
-                      )}
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <span className="mono text-xs text-[var(--color-text-2)]">L{agent.trustLevel}</span>
-                        <div className="flex-1 h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden" title={trustLabel}>
-                          <div
-                            className="h-full rounded-full bg-[var(--color-accent)] transition-all"
-                            style={{ width: `${trustPct}%` }}
-                          />
-                        </div>
+          <DataTable
+            headers={[
+              { label: 'Rank', style: { width: 50 } },
+              { label: 'Agent' },
+              { label: 'Trust Level', style: { width: 140 } },
+              { label: 'Skills', className: 'hidden sm:table-cell', style: { width: 70 } },
+              { label: 'Framework', className: 'hidden md:table-cell', style: { width: 100 } },
+              { label: 'Joined', style: { width: 90 } },
+            ]}
+          >
+            {agents.map((agent, index) => {
+              const rank = index + 1;
+              const trustPct = Math.min(agent.trustLevel / 4, 1) * 100;
+              const trustLabel = trustLabels[agent.trustLevel] ?? `Level ${agent.trustLevel}`;
+              return (
+                <tr key={agent.id}>
+                  <td>
+                    <span className={`mono font-medium ${rank <= 3 ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-3)]'}`}>
+                      #{rank}
+                    </span>
+                  </td>
+                  <td>
+                    <Link href={`/agents/${agent.id}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
+                      {agent.displayName}
+                    </Link>
+                    {agent.description && (
+                      <p className="mt-0.5 text-xs text-[var(--color-text-3)] line-clamp-1">{agent.description}</p>
+                    )}
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      <span className="mono text-xs text-[var(--color-text-2)]">L{agent.trustLevel}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden" title={trustLabel}>
+                        <div
+                          className="h-full rounded-full bg-[var(--color-accent)] transition-all"
+                          style={{ width: `${trustPct}%` }}
+                        />
                       </div>
-                    </td>
-                    <td className="hidden sm:table-cell">
-                      <span className="mono text-sm text-[var(--color-text-2)]">{agent.skillCount}</span>
-                    </td>
-                    <td className="hidden md:table-cell">
-                      <span className="mono text-xs text-[var(--color-text-3)]">{agent.framework ?? '---'}</span>
-                    </td>
-                    <td>
-                      <span className="mono text-xs text-[var(--color-text-3)]">{formatRelativeTime(agent.createdAt)}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  </td>
+                  <td className="hidden sm:table-cell">
+                    <span className="mono text-sm text-[var(--color-text-2)]">{agent.skillCount}</span>
+                  </td>
+                  <td className="hidden md:table-cell">
+                    <span className="mono text-xs text-[var(--color-text-3)]">{agent.framework ?? '---'}</span>
+                  </td>
+                  <td>
+                    <span className="mono text-xs text-[var(--color-text-3)]">{formatRelativeTime(agent.createdAt)}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </DataTable>
         )}
       </div>
     </div>

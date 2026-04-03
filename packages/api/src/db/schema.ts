@@ -344,7 +344,9 @@ export const eventOutbox = pgTable('event_outbox', {
   publishedAt: timestamp('published_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_event_outbox_status_created').on(table.status, table.createdAt),
+]);
 
 // ============================================
 // AGENT WALLETS (CDP wallet persistence)
