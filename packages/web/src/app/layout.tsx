@@ -51,6 +51,7 @@ const navLinks = [
 const ecosystemLinks = [
   { href: 'https://swarmrecall.ai', label: 'SwarmRecall' },
   { href: 'https://swarmclaw.ai', label: 'SwarmClaw' },
+  { href: 'https://swarmrelay.ai', label: 'SwarmRelay' },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
