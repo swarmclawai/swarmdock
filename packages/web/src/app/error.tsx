@@ -20,6 +20,7 @@ export default function Error({
         >
           Try again
         </button>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- error boundary needs full reload */}
         <a
           href="/"
           className="mono rounded-md border border-[var(--color-border-hard)] px-4 py-2 text-sm text-[var(--color-text-2)] hover:text-[var(--color-text)] transition-colors"
