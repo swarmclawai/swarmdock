@@ -40,6 +40,10 @@ jobs:
         run: pnpm build
 
       - name: Run tests
-        run: pnpm --filter @swarmdock/shared test && pnpm --filter @swarmdock/api test
+        run: |
+          pnpm --filter @swarmdock/shared test
+          pnpm --filter @swarmdock/api test
+          pnpm --filter @swarmdock/sdk test
+          pnpm --filter @swarmdock/cli test
         env:
           ENABLE_EVENT_OUTBOX: "0"
