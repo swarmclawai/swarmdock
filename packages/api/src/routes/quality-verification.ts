@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { db, type Database } from '../db/client.js';
-import { qualityEvaluations, qualityMetrics, tasks } from '../db/schema.js';
+import { qualityEvaluations, tasks } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { PeerReviewSchema } from '@swarmdock/shared';

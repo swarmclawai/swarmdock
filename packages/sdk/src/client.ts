@@ -17,22 +17,26 @@ import type {
   SSEEvent,
   AgentUpdateInput,
   TaskCreateInput,
+  TaskUpdateInput,
   TaskSubmitInput,
   BidCreateInput,
   RatingCreateInput,
-  InviteAgentsInput,
+  AgentKeyRotateInput,
+  AgentVerifyOwnerInput,
   QualityEvaluation,
   QualityMetric,
   AgentActivity,
   AgentEndorsement,
   AgentGuild,
+  GuildMember,
+  AgentMessage,
+  AgentAnalytics,
   McpService,
-  McpToolCall,
   McpSubscription,
   McpServiceCreateInput,
   EndorsementCreateInput,
   GuildCreateInput,
-  SkillTemplate,
+  A2AMessageCreateInput,
 } from '@swarmdock/shared';
 import { SkillTemplates, USDC_DECIMALS } from '@swarmdock/shared';
 import { SwarmDockError, TimeoutError } from './errors.js';
@@ -201,6 +205,8 @@ export class SwarmDockClient {
   readonly quality: QualityOperations;
   readonly social: SocialOperations;
   readonly mcpMarketplace: McpMarketplaceOperations;
+  readonly a2a: A2AOperations;
+  readonly analytics: AnalyticsOperations;
 
   /** Generate a new Ed25519 keypair for agent authentication */
   static generateKeys(): { publicKey: string; privateKey: string } {
@@ -253,6 +259,8 @@ export class SwarmDockClient {
     this.quality = new QualityOperations(this);
     this.social = new SocialOperations(this);
     this.mcpMarketplace = new McpMarketplaceOperations(this);
+    this.a2a = new A2AOperations(this);
+    this.analytics = new AnalyticsOperations(this);
   }
 
   async register(params: RegisterParams): Promise<RegisterResult> {
@@ -569,6 +577,24 @@ class ProfileOperations {
   async match(params: { description: string; skills?: string[]; limit?: number }): Promise<{ matches: Agent[] }> {
     return this.client.fetch('/api/v1/agents/match', { method: 'POST', body: params, auth: false });
   }
+
+  async rotateKey(input: AgentKeyRotateInput): Promise<{ token: string; publicKey: string }> {
+    await this.client.authenticate();
+    const id = this.client.getAgentId();
+    return this.client.fetch(`/api/v1/agents/${id}/rotate-key`, {
+      method: 'POST',
+      body: input,
+    });
+  }
+
+  async verifyOwner(input: AgentVerifyOwnerInput): Promise<{ verified: boolean }> {
+    await this.client.authenticate();
+    const id = this.client.getAgentId();
+    return this.client.fetch(`/api/v1/agents/${id}/verify-owner`, {
+      method: 'POST',
+      body: input,
+    });
+  }
 }
 
 class TaskOperations {
@@ -594,6 +620,19 @@ class TaskOperations {
     return this.client.fetch('/api/v1/tasks', {
       method: 'POST',
       body: input,
+    });
+  }
+
+  async update(taskId: string, input: TaskUpdateInput): Promise<Task> {
+    return this.client.fetch(`/api/v1/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: input,
+    });
+  }
+
+  async delete(taskId: string): Promise<void> {
+    await this.client.fetch(`/api/v1/tasks/${taskId}`, {
+      method: 'DELETE',
     });
   }
 
@@ -873,7 +912,7 @@ class SocialOperations {
     });
   }
 
-  async getGuild(guildId: string): Promise<AgentGuild & { memberList: unknown[] }> {
+  async getGuild(guildId: string): Promise<AgentGuild & { memberList: GuildMember[] }> {
     return this.client.fetch(`/api/v1/social/guilds/${guildId}`, { auth: false });
   }
 
@@ -940,6 +979,50 @@ class McpMarketplaceOperations {
 
   async getStats(serviceId: string): Promise<{ callsTotal: number; totalRevenue: string; avgResponseTimeMs: number | null; uptime: number | null }> {
     return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}/stats`);
+  }
+}
+
+class A2AOperations {
+  constructor(private readonly client: SwarmDockClient) {}
+
+  async getMessages(options?: { since?: string; limit?: number; ack?: boolean }): Promise<{ messages: AgentMessage[]; count: number; cursor: string | null }> {
+    return this.client.fetch('/api/v1/a2a/messages', {
+      query: {
+        since: options?.since ?? undefined,
+        limit: options?.limit ?? undefined,
+        ack: options?.ack ? 'true' : undefined,
+      },
+    });
+  }
+
+  async sendMessage(input: A2AMessageCreateInput): Promise<AgentMessage> {
+    return this.client.fetch('/api/v1/a2a/messages', {
+      method: 'POST',
+      body: input,
+    });
+  }
+
+  async ackMessages(messageIds: string[]): Promise<{ acknowledged: boolean }> {
+    return this.client.fetch('/api/v1/a2a/messages/ack', {
+      method: 'POST',
+      body: { messageIds },
+    });
+  }
+
+  async unreadCount(): Promise<{ unread: number }> {
+    return this.client.fetch('/api/v1/a2a/messages/count');
+  }
+}
+
+class AnalyticsOperations {
+  constructor(private readonly client: SwarmDockClient) {}
+
+  async get(agentId?: string): Promise<AgentAnalytics> {
+    if (!agentId) {
+      await this.client.authenticate();
+    }
+    const id = agentId ?? this.client.getAgentId();
+    return this.client.fetch(`/api/v1/analytics/${id}`);
   }
 }
 

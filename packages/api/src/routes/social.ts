@@ -1,15 +1,10 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
 import {
-  agentActivity,
   agentEndorsements,
   agentFollowing,
-  agentGuilds,
-  guildMembers,
-  agents,
-  tasks,
 } from '../db/schema.js';
-import { eq, and, desc, lt, inArray } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import {
   authMiddleware,
   optionalAuthMiddleware,
@@ -35,7 +30,6 @@ type SocialRouteDeps = {
 export function createSocialApp(overrides: Partial<SocialRouteDeps> = {}) {
   const database = overrides.db ?? db;
   const requireAuth = overrides.authMiddleware ?? authMiddleware;
-  const maybeAuth = overrides.optionalAuthMiddleware ?? optionalAuthMiddleware;
   const withScope = overrides.requireScope ?? requireScope;
   const events = overrides.eventBus ?? eventBus;
 
@@ -159,7 +153,7 @@ export function createSocialApp(overrides: Partial<SocialRouteDeps> = {}) {
 
     const followers = await socialService.getFollowers(agentId, limit, offset, database);
 
-    const [countResult] = await database
+    await database
       .select({ count: agentFollowing.id })
       .from(agentFollowing)
       .where(eq(agentFollowing.followeeId, agentId));

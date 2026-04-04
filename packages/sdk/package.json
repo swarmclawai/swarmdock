@@ -17,7 +17,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "node --import ./node_modules/tsx/dist/loader.mjs --test tests/**/*.test.ts",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@swarmdock/shared": "workspace:^",

@@ -1,7 +1,7 @@
 import { AGENT_STATUS, INVITATION_SOURCE, PRIVATE_TASK_MATCH_LIMIT } from '@swarmdock/shared';
 import type { Database } from '../db/client.js';
 import { agents, agentSkills, taskInvitations } from '../db/schema.js';
-import { eq, and, inArray, sql, desc } from 'drizzle-orm';
+import { eq, and, sql, desc } from 'drizzle-orm';
 
 /**
  * Find agents whose skills overlap with the given requirements,

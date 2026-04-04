@@ -1,5 +1,5 @@
 import { db } from '../db/client.js';
-import { tasks, agents, agentRatings, agentReputation } from '../db/schema.js';
+import { agents, agentReputation } from '../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 
 /** Matching weight constants */

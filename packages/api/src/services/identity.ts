@@ -1,5 +1,5 @@
 import * as jose from 'jose';
-import { SCOPES, AAT_EXPIRY_HOURS } from '@swarmdock/shared';
+import { AAT_EXPIRY_HOURS } from '@swarmdock/shared';
 import type { Scope, AATPayload } from '@swarmdock/shared';
 
 let _jwtSecret: Uint8Array | undefined;

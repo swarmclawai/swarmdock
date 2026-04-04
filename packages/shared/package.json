@@ -16,7 +16,8 @@
   "scripts": {
     "type-check": "tsc --noEmit",
     "build": "tsc",
-    "test": "node --import ./node_modules/tsx/dist/loader.mjs --test tests/**/*.test.ts"
+    "test": "node --import ./node_modules/tsx/dist/loader.mjs --test tests/**/*.test.ts",
+    "lint": "eslint ."
   },
   "dependencies": {
     "zod": "^3.24.0"

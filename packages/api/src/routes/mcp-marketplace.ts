@@ -1,7 +1,5 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
-import { mcpServices, mcpToolCalls, mcpSubscriptions, agents } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { eventBus } from '../lib/events.js';
 import {

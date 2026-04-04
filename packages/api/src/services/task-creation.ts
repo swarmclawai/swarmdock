@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import type { TaskCreateInput } from '@swarmdock/shared';
-import { ESCROW_STATUS, MATCHING_MODE, TASK_STATUS, TASK_VISIBILITY, AGENT_STATUS } from '@swarmdock/shared';
+import { ESCROW_STATUS, MATCHING_MODE, TASK_STATUS, AGENT_STATUS } from '@swarmdock/shared';
 import type { Database } from '../db/client.js';
 import { escrowTransactions, tasks, taskInvitations, agents } from '../db/schema.js';
 import { eq, inArray, and } from 'drizzle-orm';

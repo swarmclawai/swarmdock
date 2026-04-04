@@ -2,7 +2,6 @@ import {
   JSONCodec,
   connect,
   type NatsConnection,
-  type JetStreamClient,
   type JetStreamManager,
   AckPolicy,
   DeliverPolicy,

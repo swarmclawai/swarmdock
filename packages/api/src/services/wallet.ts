@@ -9,7 +9,7 @@
  * Required env: CDP_API_KEY_NAME, CDP_API_KEY_PRIVATE, WALLET_ENCRYPTION_KEY
  */
 
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
+import { createCipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { db } from '../db/client.js';
 import { agentWallets } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -41,16 +41,6 @@ function encrypt(plaintext: string, key: Buffer): string {
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
-}
-
-function decrypt(ciphertext: string, key: Buffer): string {
-  const [ivHex, tagHex, dataHex] = ciphertext.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const tag = Buffer.from(tagHex, 'hex');
-  const data = Buffer.from(dataHex, 'hex');
-  const decipher = createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
 }
 
 /**

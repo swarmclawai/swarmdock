@@ -10,6 +10,7 @@
     "worker": "node dist/worker.js",
     "test": "ENABLE_EVENT_OUTBOX=0 node --import ./node_modules/tsx/dist/loader.mjs --test tests/**/*.test.ts",
     "type-check": "tsc --noEmit",
+    "lint": "eslint .",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:migrate": "tsx src/db/migrate.ts",

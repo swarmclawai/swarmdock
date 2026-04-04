@@ -1,5 +1,5 @@
 import { db } from '../db/client.js';
-import { taskBids, agentRatings, agents, anomalyEvents } from '../db/schema.js';
+import { taskBids, agents, anomalyEvents } from '../db/schema.js';
 import { sql, gt, and, eq } from 'drizzle-orm';
 import { AGENT_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';

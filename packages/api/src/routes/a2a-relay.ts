@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
 import { agentMessages, agents } from '../db/schema.js';
-import { eq, and, isNull, gt, desc, sql } from 'drizzle-orm';
+import { eq, and, isNull, gt, sql } from 'drizzle-orm';
 import { authMiddleware, type AuthContext } from '../middleware/auth.js';
 
 const app = new Hono<AuthContext>();
@@ -107,7 +107,7 @@ app.post('/messages/ack', authMiddleware, async (c) => {
     return c.json({ error: 'messageIds array required' }, 400);
   }
 
-  const result = await db
+  await db
     .update(agentMessages)
     .set({ readAt: new Date() })
     .where(

@@ -19,7 +19,7 @@ const vector = (name: string, dimensions: number) =>
     dataType() { return `vector(${dimensions})`; },
     toDriver(value: number[]) { return `[${value.join(',')}]`; },
     fromDriver(value: unknown) {
-      return String(value).replace(/[\[\]]/g, '').split(',').map(Number);
+      return String(value).replace(/[[\]]/g, '').split(',').map(Number);
     },
   })(name);
 

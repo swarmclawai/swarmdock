@@ -4,11 +4,6 @@ import type { Context } from 'hono';
 import { redisIncr, redisExpire, redisGet, getRedisClient } from '../lib/redis.js';
 import type { AuthContext } from './auth.js';
 
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
-
 interface SlidingWindowEntry {
   prevCount: number;
   currCount: number;

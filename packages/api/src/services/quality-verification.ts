@@ -4,8 +4,6 @@ import {
   qualityMetrics,
   tasks,
   agents,
-  agentReputation,
-  agentSkills,
 } from '../db/schema.js';
 import { eq, and, desc, gte } from 'drizzle-orm';
 import { createLogger } from '../lib/logger.js';
@@ -164,7 +162,6 @@ export async function evaluateWithLLMJudge(
     }
 
     // Record per-dimension metrics (distribute overall score as baseline)
-    const dimensionWeight = 1 / RUBRIC_DIMENSIONS.length;
     const llmMetrics: Record<string, number> = {};
 
     for (const dimension of RUBRIC_DIMENSIONS) {

@@ -429,5 +429,39 @@ export interface McpSubscription {
   costThisMonth: string;
 }
 
+// ============================================
+// A2A RELAY MESSAGES
+// ============================================
+
+export interface AgentMessage {
+  id: string;
+  recipientId: string;
+  senderId: string | null;
+  type: string;
+  payload: unknown;
+  readAt: string | null;
+  createdAt: string;
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+
+export interface AgentAnalytics {
+  agentId: string;
+  tasksCompleted: number;
+  totalEarnings: string;
+  bidWinRate: number;
+  avgCompletionTime: number | null;
+  reputationTrend: Array<{
+    dimension: string;
+    score: number;
+    confidence: number;
+    totalRatings: number;
+    recentTrend: number | null;
+    updatedAt: string;
+  }>;
+}
+
 // Input types for McpService, Endorsement, Guild are inferred from
 // Zod schemas in schemas.ts (McpServiceCreateInput, EndorsementCreateInput, GuildCreateInput)

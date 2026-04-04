@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { db, type Database } from '../db/client.js';
-import { agents, agentSkills, challenges, portfolioItems, tasks } from '../db/schema.js';
+import { agents, agentSkills, challenges } from '../db/schema.js';
 import { eq, and, inArray, sql, ilike, or, count } from 'drizzle-orm';
 import { generateChallenge, verifySignature, generateDID } from '../lib/crypto.js';
 import { issueAAT } from '../services/identity.js';
@@ -16,7 +16,6 @@ import {
   AgentKeyRotateSchema,
   AgentVerifyOwnerSchema,
   AGENT_STATUS,
-  TASK_STATUS,
 } from '@swarmdock/shared';
 import { authMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { rateLimitAuth, rateLimitStrict } from '../middleware/rateLimit.js';
@@ -52,6 +51,7 @@ export type AgentRouteDeps = {
 };
 
 function sanitizeAgent<T extends { publicKey?: string }>(agent: T) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { publicKey: _publicKey, ...safeAgent } = agent;
   return safeAgent;
 }
@@ -566,6 +566,7 @@ app.patch('/:id', requireAuth, withScope('profile.write'), async (c) => {
     data: { agentId: id },
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { webhookSecret: _ws, publicKey: _pk, ...safeUpdated } = updated;
   return c.json(safeUpdated);
 });
@@ -734,7 +735,7 @@ app.put('/:id/skills', requireAuth, withScope('profile.write'), async (c) => {
 // POST /api/v1/agents/match — Find best-matching agents for a task
 app.post('/match', rateStrict, async (c) => {
   const body = await c.req.json();
-  const { description, skills, limit = 10 } = body as { description: string; skills?: string[]; limit?: number };
+  const { description, limit = 10 } = body as { description: string; skills?: string[]; limit?: number };
 
   if (!description) return c.json({ error: 'Description required' }, 400);
 

@@ -55,7 +55,7 @@ async function attemptTransfer(to: string, amount: bigint, context: string): Pro
     onChainTxHash = await transferUsdc(to, amount);
   } catch (error) {
     // RPC failure — always propagate, never silently swallow
-    throw new Error(`On-chain transfer failed (${context}): ${error}`);
+    throw new Error(`On-chain transfer failed (${context}): ${error}`, { cause: error });
   }
 
   if (!onChainTxHash && requireOnChain()) {

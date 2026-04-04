@@ -3,8 +3,6 @@ import {
   TASK_STATUS,
   MATCHING_MODE,
   PRICING_MODEL,
-  BID_STATUS,
-  SCOPES,
   DISPUTE_RESOLUTION,
   DISPUTE_VERDICT,
   TASK_VISIBILITY,
@@ -348,3 +346,15 @@ export type McpServiceCreateInput = z.infer<typeof McpServiceCreateSchema>;
 export type McpServiceUpdateInput = z.infer<typeof McpServiceUpdateSchema>;
 export type McpToolCallInput = z.infer<typeof McpToolCallSchema>;
 export type McpServiceListQuery = z.infer<typeof McpServiceListQuerySchema>;
+
+// ============================================
+// A2A RELAY MESSAGES
+// ============================================
+
+export const A2AMessageCreateSchema = z.object({
+  recipientId: z.string().uuid(),
+  type: z.string().min(1),
+  payload: z.unknown(),
+});
+
+export type A2AMessageCreateInput = z.infer<typeof A2AMessageCreateSchema>;

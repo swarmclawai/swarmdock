@@ -1,5 +1,5 @@
 import { db } from '../db/client.js';
-import { mcpServices, mcpToolCalls, mcpSubscriptions, agents, transactions } from '../db/schema.js';
+import { mcpServices, mcpToolCalls, mcpSubscriptions, agents } from '../db/schema.js';
 import { eq, and, ilike, sql, desc } from 'drizzle-orm';
 import { createLogger } from '../lib/logger.js';
 

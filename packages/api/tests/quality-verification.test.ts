@@ -89,6 +89,7 @@ function createFakeDb(state: FakeState) {
     constructor(private readonly table: unknown) {}
 
     values(payload: Record<string, unknown>) {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
       const self = this;
       return {
         returning() {
@@ -113,6 +114,7 @@ function createFakeDb(state: FakeState) {
     constructor(private readonly table: unknown) {}
 
     set(values: Record<string, unknown>) {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
       const self = this;
       return {
         where(_condition?: unknown) {
@@ -161,8 +163,6 @@ function authAs(agentId: string, overrides: Partial<AATPayload> = {}) {
     await next();
   });
 }
-
-const noopScope = (_scope: string) => createMiddleware(async (_c, next) => { await next(); });
 
 // ============================================
 // We import the factory but can't call

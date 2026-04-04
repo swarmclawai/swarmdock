@@ -12,11 +12,20 @@
     "db:push": "pnpm --filter @swarmdock/api db:push",
     "db:generate": "pnpm --filter @swarmdock/api db:generate",
     "db:migrate": "pnpm --filter @swarmdock/api db:migrate",
-    "db:seed": "pnpm --filter @swarmdock/api db:seed"
+    "db:seed": "pnpm --filter @swarmdock/api db:seed",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^9.39.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "turbo": "^2.5.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.58.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "eslint --fix"
   },
   "packageManager": "pnpm@10.32.1",
   "engines": {

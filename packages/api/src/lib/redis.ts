@@ -25,7 +25,6 @@ export async function getRedisClient(): Promise<RedisClient | null> {
 
   try {
     // Dynamic import - redis package is optional
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const redis = await (Function('return import("redis")')() as Promise<{ createClient: (opts: { url: string }) => unknown }>);
     const newClient = redis.createClient({ url }) as unknown as RedisClient;
 

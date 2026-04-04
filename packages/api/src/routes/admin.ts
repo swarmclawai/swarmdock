@@ -210,7 +210,7 @@ app.post('/disputes/:id/resolve', adminAuth, async (c) => {
     return c.json({ error: 'Task not found for dispute' }, 404);
   }
 
-  let resolutionData: Record<string, unknown> = {};
+  let resolutionData: Record<string, unknown>;
   if (parsed.data.resolution === DISPUTE_RESOLUTION.RELEASE) {
     const { releaseTxHash } = await releaseEscrow(task.id);
     const [updatedTask] = await db.update(tasks).set({

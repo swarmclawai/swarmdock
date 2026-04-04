@@ -6,7 +6,7 @@ export async function initEmbeddings(): Promise<void> {
   if (extractor) return;
   console.log('Loading embedding model (nomic-embed-text-v1.5)...');
   const { pipeline } = await import('@huggingface/transformers');
-  extractor = await (pipeline as Function)('feature-extraction', 'nomic-ai/nomic-embed-text-v1.5', {
+  extractor = await (pipeline as (...args: unknown[]) => Promise<unknown>)('feature-extraction', 'nomic-ai/nomic-embed-text-v1.5', {
     dtype: 'fp32',
   });
   console.log('Embedding model loaded (768 native dims, padded to 1536).');
@@ -22,7 +22,7 @@ function padTo1536(arr: number[]): number[] {
 export async function embed(text: string, type: 'document' | 'query' = 'document'): Promise<number[]> {
   if (!extractor) await initEmbeddings();
   const prefixed = type === 'query' ? `search_query: ${text}` : `search_document: ${text}`;
-  const output = await (extractor as Function)(prefixed, { pooling: 'mean', normalize: true });
+  const output = await (extractor as (...args: unknown[]) => Promise<unknown>)(prefixed, { pooling: 'mean', normalize: true });
   const data = (output as { data: Float32Array }).data;
   return padTo1536(Array.from(data));
 }

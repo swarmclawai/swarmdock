@@ -73,19 +73,6 @@ function createFakeDb(state: FakeState) {
     throw new Error(`Unsupported table: ${String(table)}`);
   };
 
-  type FilterFn = (row: Record<string, unknown>) => boolean;
-
-  function matchWhere(
-    table: unknown,
-    rows: Array<Record<string, unknown>>,
-    _whereArg?: unknown,
-  ): { rows: Array<Record<string, unknown>>; filter: FilterFn } {
-    // The fake DB can't interpret drizzle `where()` expressions, so we use
-    // a stored filter that the chain builder attaches based on the table +
-    // context.  For queries that don't filter we return all rows.
-    return { rows, filter: () => true };
-  }
-
   class SelectQuery {
     private rows: Array<Record<string, unknown>> = [];
     private _table: unknown = null;
@@ -146,6 +133,7 @@ function createFakeDb(state: FakeState) {
     constructor(private readonly table: unknown) {}
 
     values(payload: Record<string, unknown>) {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
       const self = this;
       const doInsert = () => {
         const id = `row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -179,6 +167,7 @@ function createFakeDb(state: FakeState) {
     constructor(private readonly table: unknown) {}
 
     set(values: Record<string, unknown>) {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
       const self = this;
       return {
         where(_condition?: unknown) {
@@ -250,6 +239,7 @@ function createMountedSocialApp(
           emitted.push({ agentId, event });
         },
       },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       db: createFakeDb(state) as any,
     }),
   );

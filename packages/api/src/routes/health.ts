@@ -16,7 +16,7 @@ app.get('/', async (c) => {
     dbStatus = 'error';
   }
 
-  let pendingOutbox = 0;
+  let pendingOutbox: number;
   try {
     pendingOutbox = await getPendingOutboxCount();
   } catch {

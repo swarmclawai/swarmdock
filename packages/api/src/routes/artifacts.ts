@@ -5,7 +5,7 @@ const app = new Hono();
 
 app.get('/*', async (c) => {
   const prefix = '/api/v1/artifacts/';
-  let rawKey = '';
+  let rawKey: string;
   try {
     rawKey = decodeURIComponent(c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : '');
   } catch {
