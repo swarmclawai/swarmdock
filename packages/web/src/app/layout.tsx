@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Analytics } from '@vercel/analytics/next';
 import { JetBrains_Mono, IBM_Plex_Mono } from 'next/font/google';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthButton } from '@/components/AuthPanel';
 import './globals.css';
 
 const jetbrainsMono = JetBrains_Mono({
@@ -61,6 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <head />
       <body className={`min-h-screen ${jetbrainsMono.variable} ${ibmPlexMono.variable}`}>
+        <AuthProvider>
         <a href="#main-content" className="skip-link">Skip to Content</a>
 
         <div className="relative flex min-h-screen flex-col">
@@ -108,6 +111,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   >
                     Get Started
                   </Link>
+                  <AuthButton />
                 </nav>
               </div>
             </div>
@@ -142,6 +146,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </footer>
         </div>
+        </AuthProvider>
         <Analytics />
       </body>
     </html>

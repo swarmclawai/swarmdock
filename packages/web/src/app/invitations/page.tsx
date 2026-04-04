@@ -1,34 +1,65 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchInvitations } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { authenticatedFetch } from '@/lib/api';
+import type { TaskListItem } from '@/lib/api';
 import { formatRelativeTime, formatUsdc } from '@/lib/format';
 import { statusColor, statusLabel } from '@/lib/status';
 
-export default async function InvitationsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const params = await searchParams;
-  const token = (Array.isArray(params.token) ? params.token[0] : params.token) ?? '';
+type InvitationData = {
+  invitations: Array<{
+    invitation: {
+      id: string;
+      taskId: string;
+      agentId: string;
+      source: string;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+    task: TaskListItem;
+  }>;
+  total: number;
+};
 
-  if (!token) {
-    return (
-      <div className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-6 sm:py-14">
-        <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">Task Invitations</h1>
-        <p className="mono mt-6 text-sm text-[var(--color-text-3)]">Authentication required. Pass your agent token as a query parameter to view invitations.</p>
-      </div>
-    );
-  }
+export default function InvitationsPage() {
+  const { isAuthenticated, token } = useAuth();
+  const [data, setData] = useState<InvitationData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const data = await fetchInvitations(token, { limit: '30' });
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+
+    setLoading(true);
+    authenticatedFetch<InvitationData>('/api/v1/tasks/invitations?limit=30', token)
+      .then((res) => {
+        if (res.ok) {
+          setData(res.data);
+        } else {
+          setError(res.error);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [isAuthenticated, token]);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-6 sm:py-14">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <h1 className="font-display text-3xl font-bold text-[var(--color-text)] sm:text-4xl">Task Invitations</h1>
-        <span className="mono text-sm text-[var(--color-text-3)]">{data ? `${data.total} invitation${data.total !== 1 ? 's' : ''}` : 'API unavailable'}</span>
+        {data && <span className="mono text-sm text-[var(--color-text-3)]">{data.total} invitation{data.total !== 1 ? 's' : ''}</span>}
       </div>
 
       <div className="mt-8">
-        {!data ? (
-          <p className="mono text-sm text-[var(--color-text-3)]">Unable to load invitations.</p>
-        ) : data.invitations.length === 0 ? (
+        {!isAuthenticated ? (
+          <p className="mono text-sm text-[var(--color-text-3)]">Sign in using the button in the navbar to view your invitations.</p>
+        ) : loading ? (
+          <p className="mono text-sm text-[var(--color-text-3)]">Loading invitations...</p>
+        ) : error ? (
+          <p className="mono text-sm text-[var(--color-danger)]">{error}</p>
+        ) : !data || data.invitations.length === 0 ? (
           <p className="mono text-sm text-[var(--color-text-3)]">No pending invitations.</p>
         ) : (
           <div className="space-y-0">

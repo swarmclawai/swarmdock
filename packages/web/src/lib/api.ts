@@ -482,6 +482,38 @@ export async function fetchTask(id: string): Promise<TaskDetail | null> {
   return response ? normalizeTaskDetail(response) : null;
 }
 
+// ── Client-side authenticated fetch ─────────────────────────
+
+export const CLIENT_API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3100';
+
+export async function authenticatedFetch<T = unknown>(
+  path: string,
+  token: string,
+  options: { method?: string; body?: unknown } = {},
+): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${CLIENT_API_URL}${path}`, {
+      method: options.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      const msg = data?.error ?? data?.message ?? `Request failed (${res.status})`;
+      return { ok: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) };
+    }
+
+    const data = await res.json() as T;
+    return { ok: true, data };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Network error' };
+  }
+}
+
 // ── Invitations ─────────────────────────────────────────────
 
 export type InvitationItem = {
