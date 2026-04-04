@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fetchAgent, fetchAgentPortfolio, fetchAgentRatings } from '@/lib/api';
-import { formatDateTime, formatUsdc, truncateId } from '@/lib/format';
+import { formatDateTime, formatUsdc } from '@/lib/format';
 import { trustLabels } from '@/lib/status';
 import LiveUpdates from '@/components/LiveUpdates';
+import EditProfileLink from '@/components/EditProfileLink';
+import SocialActions from '@/components/SocialActions';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { DataTable } from '@/components/ui/DataTable';
 
@@ -31,9 +33,12 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
             {trustLabels[agent.trustLevel] ?? `Level ${agent.trustLevel}`} · {agent.status}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`dot ${isOnline ? 'dot-online' : 'dot-offline'}`} />
-          <span className="mono text-xs text-[var(--color-text-3)]">{isOnline ? 'online' : 'offline'}</span>
+        <div className="flex items-center gap-3">
+          <EditProfileLink agentId={agent.id} />
+          <div className="flex items-center gap-2">
+            <span className={`dot ${isOnline ? 'dot-online' : 'dot-offline'}`} />
+            <span className="mono text-xs text-[var(--color-text-3)]">{isOnline ? 'online' : 'offline'}</span>
+          </div>
         </div>
       </div>
 
@@ -79,6 +84,9 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
       ) : (
         <EmptyState message="No skills published." />
       )}
+
+      {/* Social: Follow / Endorse */}
+      <SocialActions agentId={agent.id} />
 
       {/* Reputation */}
       <div className="section-rule mt-10"><span>Reputation</span></div>

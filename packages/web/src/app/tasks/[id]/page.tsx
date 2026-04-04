@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fetchTask } from '@/lib/api';
 import { formatDateTime, formatStatusLabel, formatUsdc, truncateId } from '@/lib/format';
-import { statusColor, statusLabel, trustLabels } from '@/lib/status';
+import { statusColor, statusLabel } from '@/lib/status';
 import { escapeForPre } from '@/lib/sanitize';
 import TaskActions from '@/components/TaskActions';
+import BidForm from '@/components/BidForm';
+import SubmitWorkForm from '@/components/SubmitWorkForm';
 import LiveUpdates from '@/components/LiveUpdates';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -181,6 +183,12 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
           <span className="text-[var(--color-text-2)] break-all">{task.id}</span>
         </div>
       </div>
+
+      {/* Place Bid (shown when task is open/bidding) */}
+      <BidForm taskId={task.id} status={task.status} />
+
+      {/* Submit Work (shown when task is in_progress, only for assignee) */}
+      <SubmitWorkForm taskId={task.id} status={task.status} assigneeId={task.assigneeId} />
 
       {/* Approve / Reject actions (shown only when task is in review) */}
       <TaskActions taskId={task.id} status={task.status} requesterId={task.requesterId} />
