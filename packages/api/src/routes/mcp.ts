@@ -10,8 +10,14 @@
 
 import { Hono } from 'hono';
 import { db } from '../db/client.js';
-import { agents, agentSkills } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { agents, agentSkills, mcpServices, mcpToolCalls, tasks } from '../db/schema.js';
+import { eq, and } from 'drizzle-orm';
+import { MATCHING_MODE, TASK_VISIBILITY } from '@swarmdock/shared';
+import { createTaskWithOptionalFunding } from '../services/task-creation.js';
+import { updateServiceStats } from '../services/mcp-marketplace.js';
+import { eventBus } from '../lib/events.js';
+
+const TOOL_CALL_TIMEOUT_MS = 30_000;
 
 const app = new Hono();
 
@@ -85,13 +91,149 @@ app.post('/', async (c) => {
         return c.json(mcpError(body.id, -32602, `Tool not found: ${toolName}`));
       }
 
-      // For now, return tool acknowledgment. Full task routing comes in v2.1.
-      return c.json(mcpResult(body.id, {
-        content: [{
-          type: 'text',
-          text: `Tool "${toolName}" invoked on agent "${agent.displayName}". Task-based execution will be available in a future update. Arguments received: ${JSON.stringify(toolArgs)}`,
-        }],
-      }));
+      // Look up agent's registered MCP service for pricing
+      const [service] = await db
+        .select()
+        .from(mcpServices)
+        .where(and(eq(mcpServices.agentId, agentId), eq(mcpServices.status, 'active')))
+        .limit(1);
+
+      if (!service) {
+        return c.json(mcpError(body.id, -32002, 'Agent has no active MCP service registered'));
+      }
+
+      const costUSDC = service.pricePerCall ?? 0n;
+      const budgetStr = costUSDC > 0n ? costUSDC.toString() : '1000000'; // default $1 if no price
+
+      // Record the pending tool call
+      const startTime = Date.now();
+      const [callRecord] = await db
+        .insert(mcpToolCalls)
+        .values({
+          mcpServiceId: service.id,
+          callerId: agentId, // MCP endpoint is unauthenticated; caller is the agent itself
+          toolName: toolName!,
+          arguments: toolArgs,
+          status: 'pending',
+          costUSDC,
+        })
+        .returning();
+
+      try {
+        // Create a task for the tool invocation via direct assignment
+        const creation = await createTaskWithOptionalFunding(
+          c,
+          agentId, // requester (platform creates on behalf of MCP client)
+          {
+            title: `MCP: ${toolName}`,
+            description: `MCP tool call: ${toolName}\n\nArguments:\n${JSON.stringify(toolArgs, null, 2)}`,
+            skillRequirements: [toolName!],
+            inputData: toolArgs,
+            matchingMode: MATCHING_MODE.DIRECT,
+            budgetMax: budgetStr,
+            directAssigneeId: agentId,
+            visibility: TASK_VISIBILITY.PRIVATE,
+            revealIdentity: true,
+            inputFiles: [],
+            invitedAgentIds: [],
+          },
+          { db },
+        );
+
+        if (creation.response) {
+          // Payment gateway redirect — cannot complete synchronously
+          await db
+            .update(mcpToolCalls)
+            .set({ status: 'error', error: 'Payment required for task escrow', completedAt: new Date(), durationMs: Date.now() - startTime })
+            .where(eq(mcpToolCalls.id, callRecord.id));
+          return c.json(mcpError(body.id, -32003, 'Payment required to fund task escrow'));
+        }
+
+        const taskId = (creation.task as { id: string }).id;
+
+        // Wait up to 30s for the agent to submit task results
+        const result = await Promise.race([
+          new Promise<{ taskId: string; artifacts: unknown }>((resolve) => {
+            const unsubscribe = eventBus.subscribe(agentId, (event) => {
+              if (event.type === 'task.submitted' && event.data.taskId === taskId) {
+                unsubscribe();
+                resolve({ taskId, artifacts: event.data.artifacts });
+              }
+            });
+          }),
+          new Promise<null>((_, reject) => {
+            setTimeout(() => reject(new Error('timeout')), TOOL_CALL_TIMEOUT_MS);
+          }),
+        ]).catch((err: Error) => {
+          if (err.message === 'timeout') return null;
+          throw err;
+        });
+
+        const durationMs = Date.now() - startTime;
+
+        if (result) {
+          // Task completed within timeout — fetch result artifacts
+          const [completedTask] = await db
+            .select({ resultArtifacts: tasks.resultArtifacts })
+            .from(tasks)
+            .where(eq(tasks.id, taskId))
+            .limit(1);
+
+          const artifacts = Array.isArray(completedTask?.resultArtifacts)
+            ? completedTask.resultArtifacts
+            : [];
+
+          // Build MCP content from artifacts
+          const content = artifacts.length > 0
+            ? artifacts.map((a: { type?: string; content?: unknown }) => ({
+                type: 'text' as const,
+                text: typeof a.content === 'string' ? a.content : JSON.stringify(a.content),
+              }))
+            : [{ type: 'text' as const, text: JSON.stringify(result.artifacts) }];
+
+          // Update call record with success
+          await db
+            .update(mcpToolCalls)
+            .set({
+              result: { content },
+              completedAt: new Date(),
+              durationMs,
+              status: 'success',
+              paid: true,
+            })
+            .where(eq(mcpToolCalls.id, callRecord.id));
+
+          await updateServiceStats(service.id, durationMs);
+
+          return c.json(mcpResult(body.id, { content }));
+        }
+
+        // Timeout — return task ID so client can poll
+        await db
+          .update(mcpToolCalls)
+          .set({ status: 'pending', durationMs })
+          .where(eq(mcpToolCalls.id, callRecord.id));
+
+        return c.json(mcpResult(body.id, {
+          content: [{
+            type: 'text',
+            text: `Task created but not yet completed. Poll task ${taskId} for results.`,
+          }],
+          isComplete: false,
+          taskId,
+        }));
+      } catch (err) {
+        const durationMs = Date.now() - startTime;
+        const errorMessage = err instanceof Error ? err.message : String(err);
+
+        // Update call record with error
+        await db
+          .update(mcpToolCalls)
+          .set({ status: 'error', error: errorMessage, completedAt: new Date(), durationMs })
+          .where(eq(mcpToolCalls.id, callRecord.id));
+
+        return c.json(mcpError(body.id, -32603, `Tool execution failed: ${errorMessage}`));
+      }
     }
 
     case 'resources/list': {
