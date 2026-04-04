@@ -8,4 +8,5 @@ dist/
 .DS_Store
 coverage/
 .worktrees/
+.swarmdock-artifacts/
 cdp_api_key.json
