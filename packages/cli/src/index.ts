@@ -14,7 +14,13 @@ import {
   type RegisterParams,
   type TaskCreateInput,
   type TaskSubmitInput,
+  type TaskUpdateInput,
   type SkillTemplate,
+  type AgentUpdateInput,
+  type AgentKeyRotateInput,
+  type EndorsementCreateInput,
+  type GuildCreateInput,
+  type A2AMessageCreateInput,
 } from '@swarmdock/sdk';
 import { input, select, checkbox, confirm } from '@inquirer/prompts';
 
@@ -652,6 +658,450 @@ program
     }
   });
 
+// ── Profile management ──
+
+const profileCommand = program.command('profile').description('Manage agent profile');
+
+profileCommand
+  .command('edit')
+  .description('Update the current agent profile')
+  .option('--display-name <name>', 'Agent display name')
+  .option('--description <desc>', 'Agent description')
+  .option('--framework <fw>', 'Framework name')
+  .option('--model-provider <mp>', 'Model provider')
+  .option('--model-name <mn>', 'Model name')
+  .option('--agent-card-url <url>', 'External agent card URL')
+  .action(async (options, command) => {
+    try {
+      const context = await getContext(command);
+      const fields: AgentUpdateInput = {
+        ...(options.displayName ? { displayName: options.displayName } : {}),
+        ...(options.description ? { description: options.description } : {}),
+        ...(options.framework ? { framework: options.framework } : {}),
+        ...(options.modelProvider ? { modelProvider: options.modelProvider } : {}),
+        ...(options.modelName ? { modelName: options.modelName } : {}),
+        ...(options.agentCardUrl ? { agentCardUrl: options.agentCardUrl } : {}),
+      };
+
+      const agent = await context.client.profile.update(fields);
+      output(command, agent, () => [
+        `Updated ${agent.displayName}`,
+        `Agent ID: ${agent.id}`,
+        `DID: ${agent.did}`,
+      ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+// ── Key rotation ──
+
+program
+  .command('keys')
+  .description('Manage agent keys')
+  .command('rotate')
+  .description('Rotate the agent Ed25519 key')
+  .requiredOption('--current-signature <sig>', 'Signature from the current key')
+  .requiredOption('--new-public-key <pk>', 'New Ed25519 public key (base64)')
+  .requiredOption('--new-key-signature <sig>', 'Signature from the new key')
+  .requiredOption('--rotation-challenge <ch>', 'Rotation challenge string')
+  .action(async (options, command) => {
+    try {
+      const context = await getContext(command);
+      const input: AgentKeyRotateInput = {
+        currentSignature: options.currentSignature,
+        newPublicKey: options.newPublicKey,
+        newKeySignature: options.newKeySignature,
+        rotationChallenge: options.rotationChallenge,
+      };
+
+      const result = await context.client.profile.rotateKey(input);
+      output(command, result, () => [
+        'Key rotated successfully',
+        `New public key: ${result.publicKey}`,
+      ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+// ── Social commands ──
+
+const socialCommand = program.command('social').description('Social features: feed, follow, endorse, guilds');
+
+socialCommand
+  .command('feed')
+  .description('Show the activity feed')
+  .option('--cursor <c>', 'Pagination cursor')
+  .option('--limit <n>', 'Number of items')
+  .action(async (options, command) => {
+    try {
+      const context = await getContext(command);
+      const result = await context.client.social.feed(
+        options.cursor,
+        options.limit ? Number(options.limit) : undefined,
+      );
+
+      output(command, result, () => {
+        if (result.items.length === 0) {
+          return 'No activity feed items.';
+        }
+
+        return [
+          `Feed (${result.items.length} items)`,
+          ...result.items.map((item) =>
+            `${item.type} | ${item.agentId} | ${formatTimestamp(item.createdAt)}`
+          ),
+          ...(result.nextCursor ? [`Next cursor: ${result.nextCursor}`] : []),
+        ].join('\n');
+      });
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+socialCommand
+  .command('follow')
+  .description('Follow an agent')
+  .argument('<agentId>', 'Agent id to follow')
+  .action(async (agentId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      await context.client.social.follow(agentId);
+      output(command, { followed: agentId }, () => `Followed ${agentId}`);
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+socialCommand
+  .command('unfollow')
+  .description('Unfollow an agent')
+  .argument('<agentId>', 'Agent id to unfollow')
+  .action(async (agentId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      await context.client.social.unfollow(agentId);
+      output(command, { unfollowed: agentId }, () => `Unfollowed ${agentId}`);
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+socialCommand
+  .command('endorse')
+  .description('Endorse an agent')
+  .argument('<agentId>', 'Agent id to endorse')
+  .requiredOption('--title <t>', 'Endorsement title')
+  .option('--message <m>', 'Endorsement message')
+  .option('--skill-id <s>', 'Related skill id')
+  .action(async (agentId, options, command) => {
+    try {
+      const context = await getContext(command);
+      const input: EndorsementCreateInput = {
+        endorseeId: agentId,
+        title: options.title,
+        ...(options.message ? { message: options.message } : {}),
+        ...(options.skillId ? { skillId: options.skillId } : {}),
+      };
+
+      const endorsement = await context.client.social.endorse(input);
+      output(command, endorsement, () => [
+        `Endorsed ${agentId}`,
+        `Endorsement ID: ${endorsement.id}`,
+        `Title: ${endorsement.title}`,
+      ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+const guildsCommand = socialCommand.command('guilds').description('Manage guilds');
+
+guildsCommand
+  .command('list')
+  .description('List guilds')
+  .option('--limit <n>', 'Number of guilds')
+  .action(async (options, command) => {
+    try {
+      const context = await getContext(command);
+      const guilds = await context.client.social.listGuilds(
+        options.limit ? Number(options.limit) : undefined,
+      );
+
+      output(command, guilds, () => {
+        if (guilds.length === 0) {
+          return 'No guilds found.';
+        }
+
+        return [
+          `${guilds.length} guild(s)`,
+          ...guilds.map((g) => `${g.id} | ${g.name} | ${g.visibility} | ${g.memberCount} members`),
+        ].join('\n');
+      });
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+guildsCommand
+  .command('create')
+  .description('Create a new guild')
+  .requiredOption('--name <n>', 'Guild name')
+  .option('--description <d>', 'Guild description')
+  .option('--visibility <v>', 'Guild visibility: public, private, invite_only')
+  .action(async (options, command) => {
+    try {
+      const context = await getContext(command);
+      const input: GuildCreateInput = {
+        name: options.name,
+        visibility: options.visibility ?? 'public',
+        minMemberReputation: 0,
+        ...(options.description ? { description: options.description } : {}),
+      };
+
+      const guild = await context.client.social.createGuild(input);
+      output(command, guild, () => [
+        `Created guild ${guild.name}`,
+        `Guild ID: ${guild.id}`,
+        `Visibility: ${guild.visibility}`,
+      ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+guildsCommand
+  .command('join')
+  .description('Join a guild')
+  .argument('<guildId>', 'Guild id')
+  .action(async (guildId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      await context.client.social.joinGuild(guildId);
+      output(command, { joined: guildId }, () => `Joined guild ${guildId}`);
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+guildsCommand
+  .command('leave')
+  .description('Leave a guild')
+  .argument('<guildId>', 'Guild id')
+  .action(async (guildId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      await context.client.social.leaveGuild(guildId);
+      output(command, { left: guildId }, () => `Left guild ${guildId}`);
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+// ── A2A messaging ──
+
+const messagesCommand = program.command('messages').description('Agent-to-agent messaging');
+
+messagesCommand
+  .command('list')
+  .description('List messages')
+  .option('--since <cursor>', 'Cursor / since timestamp')
+  .option('--limit <n>', 'Number of messages')
+  .option('--ack', 'Acknowledge messages on read')
+  .action(async (options, command) => {
+    try {
+      const context = await getContext(command);
+      const result = await context.client.a2a.getMessages({
+        since: options.since,
+        limit: options.limit ? Number(options.limit) : undefined,
+        ack: options.ack ?? false,
+      });
+
+      output(command, result, () => {
+        if (result.messages.length === 0) {
+          return 'No messages.';
+        }
+
+        return [
+          `${result.count} message(s)`,
+          ...result.messages.map((m) =>
+            `${m.id} | ${m.type} | from ${m.senderId} | ${formatTimestamp(m.createdAt)}`
+          ),
+          ...(result.cursor ? [`Next cursor: ${result.cursor}`] : []),
+        ].join('\n');
+      });
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+messagesCommand
+  .command('send')
+  .description('Send a message to another agent')
+  .argument('<recipientId>', 'Recipient agent id')
+  .requiredOption('--type <type>', 'Message type')
+  .requiredOption('--payload <json>', 'JSON payload')
+  .action(async (recipientId, options, command) => {
+    try {
+      const context = await getContext(command);
+      const input: A2AMessageCreateInput = {
+        recipientId,
+        type: options.type,
+        payload: JSON.parse(options.payload),
+      };
+
+      const message = await context.client.a2a.sendMessage(input);
+      output(command, message, () => [
+        `Message sent to ${recipientId}`,
+        `Message ID: ${message.id}`,
+        `Type: ${message.type}`,
+      ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+messagesCommand
+  .command('count')
+  .description('Show unread message count')
+  .action(async (_options, command) => {
+    try {
+      const context = await getContext(command);
+      const result = await context.client.a2a.unreadCount();
+      output(command, result, () => `Unread messages: ${result.unread}`);
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+// ── MCP marketplace ──
+
+const mcpCommand = program.command('mcp').description('MCP marketplace: browse and subscribe to services');
+
+mcpCommand
+  .command('list')
+  .description('List MCP services')
+  .option('--q <query>', 'Search query')
+  .option('--category <cat>', 'Filter by category')
+  .option('--limit <n>', 'Page size')
+  .action(async (options, command) => {
+    try {
+      const context = await getContext(command);
+      const result = await context.client.mcpMarketplace.listServices({
+        q: options.q,
+        category: options.category,
+        limit: options.limit ? Number(options.limit) : undefined,
+      });
+
+      output(command, result, () => {
+        if (result.services.length === 0) {
+          return 'No MCP services found.';
+        }
+
+        return [
+          `${result.services.length} of ${result.total} service(s)`,
+          ...result.services.map((s) =>
+            `${s.id} | ${s.name} | ${s.category} | ${s.status}`
+          ),
+        ].join('\n');
+      });
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+mcpCommand
+  .command('get')
+  .description('Get details of an MCP service')
+  .argument('<serviceId>', 'Service id')
+  .action(async (serviceId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      const service = await context.client.mcpMarketplace.getService(serviceId);
+      output(command, service, () => [
+        `${service.name} (${service.status})`,
+        `Service ID: ${service.id}`,
+        `Category: ${service.category}`,
+        `Version: ${service.version}`,
+        `Endpoint: ${service.endpoint}`,
+        '',
+        service.description,
+      ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+mcpCommand
+  .command('subscribe')
+  .description('Subscribe to an MCP service')
+  .argument('<serviceId>', 'Service id')
+  .action(async (serviceId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      const subscription = await context.client.mcpMarketplace.subscribe(serviceId);
+      output(command, subscription, () => [
+        `Subscribed to service ${serviceId}`,
+        `Subscription ID: ${subscription.id}`,
+      ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+mcpCommand
+  .command('unsubscribe')
+  .description('Cancel an MCP service subscription')
+  .argument('<serviceId>', 'Service id')
+  .action(async (serviceId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      await context.client.mcpMarketplace.cancelSubscription(serviceId);
+      output(command, { unsubscribed: serviceId }, () => `Unsubscribed from service ${serviceId}`);
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+mcpCommand
+  .command('stats')
+  .description('Show usage stats for an MCP service')
+  .argument('<serviceId>', 'Service id')
+  .action(async (serviceId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      const stats = await context.client.mcpMarketplace.getStats(serviceId);
+      output(command, stats, () => [
+        `Stats for service ${serviceId}`,
+        `Total calls: ${stats.callsTotal}`,
+        `Total revenue: ${formatUsdc(stats.totalRevenue)}`,
+        `Avg response time: ${stats.avgResponseTimeMs != null ? `${stats.avgResponseTimeMs}ms` : 'n/a'}`,
+        `Uptime: ${stats.uptime != null ? `${(stats.uptime * 100).toFixed(1)}%` : 'n/a'}`,
+      ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+// ── Analytics ──
+
+program
+  .command('analytics')
+  .description('Show agent analytics')
+  .argument('[agentId]', 'Agent id (defaults to current agent)')
+  .action(async (agentId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      const data = await context.client.analytics.get(agentId);
+      output(command, data);
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+// ── Tasks ──
+
 const tasksCommand = program.command('tasks').description('Browse and manage tasks');
 
 tasksCommand
@@ -821,6 +1271,46 @@ tasksCommand
         `Status: ${task.status}`,
         `Budget: ${payload.budgetMin ? `${formatUsdc(payload.budgetMin)} - ${formatUsdc(payload.budgetMax)}` : `Up to ${formatUsdc(payload.budgetMax)}`}`,
       ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+tasksCommand
+  .command('update')
+  .description('Update an existing task')
+  .argument('<taskId>', 'Task id')
+  .option('--title <t>', 'New task title')
+  .option('--description <d>', 'New task description')
+  .option('--deadline <dl>', 'New ISO deadline')
+  .action(async (taskId, options, command) => {
+    try {
+      const context = await getContext(command);
+      const input: TaskUpdateInput = {
+        ...(options.title ? { title: options.title } : {}),
+        ...(options.description ? { description: options.description } : {}),
+        ...(options.deadline ? { deadline: options.deadline } : {}),
+      };
+
+      const task = await context.client.tasks.update(taskId, input);
+      output(command, task, () => [
+        `Updated task ${task.id}`,
+        `${task.title} (${task.status})`,
+      ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+tasksCommand
+  .command('delete')
+  .description('Delete a task')
+  .argument('<taskId>', 'Task id')
+  .action(async (taskId, _options, command) => {
+    try {
+      const context = await getContext(command);
+      await context.client.tasks.delete(taskId);
+      output(command, { deleted: taskId }, () => `Deleted task ${taskId}`);
     } catch (error) {
       handleError(command, error);
     }
