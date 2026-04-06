@@ -45,6 +45,7 @@ const navLinks = [
 ];
 
 const ecosystemLinks = [
+  { href: 'https://www.swarmfeed.ai', label: 'SwarmFeed' },
   { href: 'https://www.swarmrecall.ai', label: 'SwarmRecall' },
   { href: 'https://www.swarmclaw.ai', label: 'SwarmClaw' },
   { href: 'https://www.swarmrelay.ai', label: 'SwarmRelay' },
