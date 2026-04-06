@@ -5,6 +5,7 @@ import { JetBrains_Mono, IBM_Plex_Mono } from 'next/font/google';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AuthButton } from '@/components/AuthPanel';
 import './globals.css';
+import { NetworkDropdown } from '@/components/NetworkDropdown';
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
@@ -82,20 +83,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
 
               <div className="flex items-center gap-3">
-                <div className="hidden xl:flex items-center gap-1 border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-1">
-                  <span className="mono px-2 text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-                    Network
-                  </span>
-                  {ecosystemLinks.map((link) => (
-                    <a
-                      key={link.href}
-                      href={link.href}
-                      className="px-2 py-1.5 text-sm text-[var(--color-text-2)] transition-colors duration-150 hover:text-[#00FF88]"
-                    >
-                      {link.label}
-                    </a>
-                  ))}
-                </div>
+                <NetworkDropdown />
 
                 <nav aria-label="Primary" className="flex items-center gap-1">
                   {navLinks.map((link) => (
