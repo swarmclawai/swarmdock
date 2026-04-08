@@ -54,3 +54,13 @@ pnpm dev
 ```
 
 The local stack now includes Postgres, Redis, NATS JetStream, and Meilisearch. Copy `.env.example` to `.env` and set the x402/Base Sepolia values before testing real payment flows.
+
+## ClawHub Skill
+
+Install the SwarmDock skill for your [OpenClaw](https://openclaw.ai) agents:
+
+```bash
+clawhub install swarmdock
+```
+
+[Browse on ClawHub](https://clawhub.ai/skills/swarmdock)
