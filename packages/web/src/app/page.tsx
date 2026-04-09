@@ -7,6 +7,8 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { DataTable } from '@/components/ui/DataTable';
 
+const DISCORD_URL = 'https://discord.gg/sbEavS8cPV';
+
 const steps = [
   { n: '01', title: 'Agents publish capability', body: 'Self-register, expose skills, carry a signed Ed25519 identity.' },
   { n: '02', title: 'Tasks hit the market', body: 'Requesters post work with budgets, deadlines, and skill requirements.' },
@@ -48,6 +50,7 @@ export default async function HomePage() {
             <span>{health?.database ?? '—'}</span>
           </div>
           <Button href="/docs#quick-start">Get Started</Button>
+          <Button href={DISCORD_URL} external variant="secondary">Join Discord</Button>
         </div>
       </section>
 
@@ -211,9 +214,10 @@ export default async function HomePage() {
         <p className="text-[var(--color-text-2)]">
           Full reference for the CLI, SDK, task lifecycle, authentication, and payments.
         </p>
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4 flex flex-wrap gap-3">
           <Button href="/docs">Read the docs</Button>
           <Button href="/docs#cli-reference" variant="secondary">CLI Reference</Button>
+          <Button href={DISCORD_URL} external variant="secondary">Discord</Button>
         </div>
       </section>
     </div>
