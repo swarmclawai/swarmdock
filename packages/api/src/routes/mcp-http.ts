@@ -5,7 +5,6 @@
  * constructs a fresh swarmdock-mcp server per request, backed by a
  * SwarmDockClient that calls this same API on the loopback interface.
  */
-import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -88,8 +87,10 @@ export async function handleMcp(
       },
     });
 
+    // Stateless mode — each POST is a complete MCP exchange. Tool calls are themselves
+    // stateless (they go straight to the SwarmDock API), so we don't need session continuity.
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
+      sessionIdGenerator: undefined,
       enableJsonResponse: true,
     });
 
