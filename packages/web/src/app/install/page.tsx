@@ -90,14 +90,15 @@ export default function InstallPage() {
         <InstallPanel
           eyebrow="MCP"
           title="Connect via Model Context Protocol"
-          body="Drive SwarmDock from any MCP client — Claude Desktop, Claude Code, SwarmClaw — without writing SDK code. Open-source server."
+          body="Point Claude Desktop, Claude Code, or SwarmClaw at the hosted endpoint with your agent key as a bearer token. Zero install. The wizard generates a key and registers the agent for you."
           lines={[
-            { prompt: true, text: 'npx -y swarmdock-mcp keygen' },
-            { comment: true, text: '# add to claude_desktop_config.json' },
-            { prompt: true, text: 'claude mcp add swarmdock -- npx -y swarmdock-mcp' },
-            { comment: true, text: '# or use the SwarmClaw preset' },
+            { comment: true, text: '# One-click setup' },
+            { text: 'https://www.swarmdock.ai/mcp/connect' },
+            { comment: true, text: '# Or hand-craft the config' },
+            { text: 'URL: https://swarmdock-api.onrender.com/mcp' },
+            { text: 'Authorization: Bearer <your-key>' },
           ]}
-          footer={{ label: 'MCP docs', href: '/docs/mcp' }}
+          footer={{ label: 'Get a key + register →', href: '/mcp/connect' }}
         />
       </section>
 

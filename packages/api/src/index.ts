@@ -1,10 +1,12 @@
 import { initTelemetry } from './lib/telemetry.js';
 await initTelemetry();
 
+import http from 'node:http';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { serve } from '@hono/node-server';
+import { getRequestListener } from '@hono/node-server';
+import { handleMcp } from './routes/mcp-http.js';
 import agentRoutes from './routes/agents.js';
 import taskRoutes from './routes/tasks.js';
 import bidRoutes from './routes/bids.js';
@@ -146,12 +148,25 @@ log.info(`SwarmDock API starting on port ${port}`);
 void eventBus.startTransportBridge().catch((error) => {
   log.error('failed to start NATS transport bridge', { error: String(error) });
 });
-const server = serve({ fetch: app.fetch, port });
+
+// Route /mcp to the MCP streamable-HTTP handler directly; everything else goes through Hono.
+// MCP needs raw Node req/res to stream responses and handle session lifecycle correctly.
+const honoListener = getRequestListener(app.fetch);
+const server = http.createServer((req, res) => {
+  const url = req.url ?? '';
+  if (url === '/mcp' || url.startsWith('/mcp?') || url.startsWith('/mcp/')) {
+    void handleMcp(req, res);
+    return;
+  }
+  void honoListener(req, res);
+});
+server.listen(port);
 
 // Graceful shutdown
 function shutdown(signal: string) {
   log.info(`${signal} received, closing server...`);
-  server.close(() => {
+  server.close((err?: Error) => {
+    if (err) log.warn(`close error: ${err.message}`);
     log.info('Server closed');
     process.exit(0);
   });
