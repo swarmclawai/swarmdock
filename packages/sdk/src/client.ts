@@ -31,14 +31,11 @@ import type {
   GuildMember,
   AgentMessage,
   AgentAnalytics,
-  McpService,
-  McpSubscription,
-  McpServiceCreateInput,
   EndorsementCreateInput,
   GuildCreateInput,
   A2AMessageCreateInput,
 } from '@swarmdock/shared';
-import { SkillTemplates, USDC_DECIMALS } from '@swarmdock/shared';
+import { PRICING_MODEL, SkillTemplates, USDC_DECIMALS } from '@swarmdock/shared';
 import { SwarmDockError, TimeoutError } from './errors.js';
 
 export interface SwarmDockClientOptions {
@@ -204,7 +201,6 @@ export class SwarmDockClient {
   readonly payments: PaymentOperations;
   readonly quality: QualityOperations;
   readonly social: SocialOperations;
-  readonly mcpMarketplace: McpMarketplaceOperations;
   readonly a2a: A2AOperations;
   readonly analytics: AnalyticsOperations;
 
@@ -258,7 +254,6 @@ export class SwarmDockClient {
     this.payments = new PaymentOperations(this);
     this.quality = new QualityOperations(this);
     this.social = new SocialOperations(this);
-    this.mcpMarketplace = new McpMarketplaceOperations(this);
     this.a2a = new A2AOperations(this);
     this.analytics = new AnalyticsOperations(this);
   }
@@ -925,63 +920,6 @@ class SocialOperations {
   }
 }
 
-class McpMarketplaceOperations {
-  constructor(private readonly client: SwarmDockClient) {}
-
-  async publishService(input: McpServiceCreateInput): Promise<McpService> {
-    return this.client.fetch('/api/v1/mcp-marketplace/services', {
-      method: 'POST',
-      body: input,
-    });
-  }
-
-  async listServices(filters?: { q?: string; category?: string; limit?: number; offset?: number }): Promise<{ services: McpService[]; total: number }> {
-    return this.client.fetch('/api/v1/mcp-marketplace/services', {
-      query: {
-        q: filters?.q ?? undefined,
-        category: filters?.category ?? undefined,
-        limit: filters?.limit ?? undefined,
-        offset: filters?.offset ?? undefined,
-      },
-      auth: false,
-    });
-  }
-
-  async getService(serviceId: string): Promise<McpService> {
-    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}`, { auth: false });
-  }
-
-  async updateService(serviceId: string, updates: Record<string, unknown>): Promise<McpService> {
-    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}`, {
-      method: 'PATCH',
-      body: updates,
-    });
-  }
-
-  async callTool(serviceId: string, toolName: string, args: Record<string, unknown> = {}): Promise<{ id: string; result: unknown; durationMs: number }> {
-    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}/call`, {
-      method: 'POST',
-      body: { toolName, arguments: args },
-    });
-  }
-
-  async subscribe(serviceId: string): Promise<McpSubscription> {
-    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}/subscribe`, {
-      method: 'POST',
-    });
-  }
-
-  async cancelSubscription(serviceId: string): Promise<void> {
-    await this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}/subscribe`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getStats(serviceId: string): Promise<{ callsTotal: number; totalRevenue: string; avgResponseTimeMs: number | null; uptime: number | null }> {
-    return this.client.fetch(`/api/v1/mcp-marketplace/services/${serviceId}/stats`);
-  }
-}
-
 class A2AOperations {
   constructor(private readonly client: SwarmDockClient) {}
 
@@ -1062,10 +1000,14 @@ export interface TaskListing {
 export interface QuickStartConfig {
   name: string;
   description?: string;
+  syncProfileOnStart?: boolean;
   /** Skill template IDs (e.g. 'data-analysis') or full skill definitions */
   skills: Array<string | {
     id: string; name: string; description: string; category: string;
     pricing?: { model?: string; basePrice: number }; examples?: string[];
+    tags?: string[];
+    inputModes?: string[];
+    outputModes?: string[];
   }>;
   baseUrl?: string;
   privateKey?: string;
@@ -1095,6 +1037,8 @@ export interface AutoBidConfig {
 export interface SwarmDockAgentOptions {
   baseUrl?: string;
   name: string;
+  description?: string;
+  syncProfileOnStart?: boolean;
   skills: Array<{
     id: string;
     name: string;
@@ -1102,6 +1046,7 @@ export interface SwarmDockAgentOptions {
     category: string;
     pricing?: { model?: string; basePrice: number };
     examples?: string[];
+    tags?: string[];
     inputModes?: string[];
     outputModes?: string[];
   }>;
@@ -1117,6 +1062,19 @@ export interface SwarmDockAgentOptions {
 
 type TaskHandler = (task: TaskContext) => Promise<TaskResult>;
 type TaskAvailableHandler = (listing: TaskListing) => Promise<void>;
+
+type ManagedSkillPayload = {
+  skillId: string;
+  skillName: string;
+  description: string;
+  category: string;
+  tags: string[];
+  inputModes: string[];
+  outputModes: string[];
+  pricingModel: string;
+  basePrice: string;
+  examplePrompts: string[];
+};
 
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -1152,6 +1110,9 @@ export class SwarmDockAgent {
           category: template.category,
           pricing: { model: template.pricingModel, basePrice: Number(template.basePrice) },
           examples: template.examplePrompts,
+          tags: template.tags,
+          inputModes: ['text'],
+          outputModes: ['text'],
         };
       }
       return skill;
@@ -1160,6 +1121,8 @@ export class SwarmDockAgent {
     const agent = new SwarmDockAgent({
       baseUrl: config.baseUrl,
       name: config.name,
+      description: config.description,
+      syncProfileOnStart: config.syncProfileOnStart,
       skills: resolvedSkills,
       framework: config.framework,
       modelProvider: config.modelProvider,
@@ -1176,7 +1139,7 @@ export class SwarmDockAgent {
   constructor(options: SwarmDockAgentOptions) {
     this.options = options;
     this.client = new SwarmDockClient({
-      baseUrl: options.baseUrl ?? 'https://api.swarmdock.ai',
+      baseUrl: options.baseUrl ?? 'https://swarmdock-api.onrender.com',
       privateKey: options.privateKey,
       paymentPrivateKey: options.paymentPrivateKey,
     });
@@ -1210,20 +1173,12 @@ export class SwarmDockAgent {
     try {
       await this.client.register({
         displayName: this.options.name,
+        description: this.options.description,
         framework: this.options.framework,
         modelProvider: this.options.modelProvider,
         modelName: this.options.modelName,
         walletAddress: this.options.walletAddress,
-        skills: this.options.skills.map((s) => ({
-          skillId: s.id,
-          skillName: s.name,
-          description: s.description,
-          category: s.category,
-          tags: [],
-          pricingModel: s.pricing?.model ?? 'per-task',
-          basePrice: String(s.pricing?.basePrice ?? 0),
-          examplePrompts: s.examples ?? [],
-        })),
+        skills: this.buildManagedSkills(),
       });
     } catch (err) {
       if (err instanceof SwarmDockError && err.status === 409) {
@@ -1232,6 +1187,10 @@ export class SwarmDockAgent {
       } else {
         throw err;
       }
+    }
+
+    if (this.options.syncProfileOnStart) {
+      await this.syncManagedProfile();
     }
 
     this.running = true;
@@ -1304,6 +1263,81 @@ export class SwarmDockAgent {
   }
 
   // -- Private helpers --
+
+  private buildManagedSkills(): ManagedSkillPayload[] {
+    return this.options.skills.map((s) => ({
+      skillId: s.id,
+      skillName: s.name,
+      description: s.description,
+      category: s.category,
+      tags: [...(s.tags ?? [])],
+      inputModes: [...(s.inputModes ?? ['text'])],
+      outputModes: [...(s.outputModes ?? ['text'])],
+      pricingModel: s.pricing?.model ?? PRICING_MODEL.PER_TASK,
+      basePrice: String(s.pricing?.basePrice ?? 0),
+      examplePrompts: [...(s.examples ?? [])],
+    }));
+  }
+
+  private async syncManagedProfile(): Promise<void> {
+    const liveProfile = await this.client.profile.get();
+    const desiredProfile: AgentUpdateInput = {};
+
+    if (liveProfile.displayName !== this.options.name) {
+      desiredProfile.displayName = this.options.name;
+    }
+    if (this.options.description !== undefined && liveProfile.description !== this.options.description) {
+      desiredProfile.description = this.options.description;
+    }
+    if (this.options.framework !== undefined && liveProfile.framework !== this.options.framework) {
+      desiredProfile.framework = this.options.framework;
+    }
+    if (this.options.modelProvider !== undefined && liveProfile.modelProvider !== this.options.modelProvider) {
+      desiredProfile.modelProvider = this.options.modelProvider;
+    }
+    if (this.options.modelName !== undefined && liveProfile.modelName !== this.options.modelName) {
+      desiredProfile.modelName = this.options.modelName;
+    }
+
+    if (Object.keys(desiredProfile).length > 0) {
+      await this.client.profile.update(desiredProfile);
+      this.options.logger?.('Profile metadata synced.');
+    }
+
+    const desiredSkills = this.buildManagedSkills();
+    if (!this.skillsMatch(liveProfile.skills ?? [], desiredSkills)) {
+      await this.client.profile.updateSkills(desiredSkills);
+      this.options.logger?.('Skill catalog synced.');
+    }
+  }
+
+  private skillsMatch(
+    liveSkills: AgentSkill[],
+    desiredSkills: ManagedSkillPayload[],
+  ): boolean {
+    const normalize = (
+      skills: Array<AgentSkill | ManagedSkillPayload>,
+    ) => JSON.stringify(
+      skills
+        .map((skill) => ({
+          skillId: skill.skillId,
+          skillName: skill.skillName,
+          description: skill.description,
+          category: skill.category,
+          tags: [...(skill.tags ?? [])],
+          inputModes: [...('inputModes' in skill && Array.isArray(skill.inputModes) ? skill.inputModes : ['text'])],
+          outputModes: [...('outputModes' in skill && Array.isArray(skill.outputModes) ? skill.outputModes : ['text'])],
+          pricingModel: 'pricingModel' in skill && typeof skill.pricingModel === 'string'
+            ? skill.pricingModel
+            : PRICING_MODEL.PER_TASK,
+          basePrice: String(skill.basePrice),
+          examplePrompts: [...skill.examplePrompts],
+        }))
+        .sort((a, b) => a.skillId.localeCompare(b.skillId)),
+    );
+
+    return normalize(liveSkills) === normalize(desiredSkills);
+  }
 
   private async handleEvent(event: SSEEvent, agentId: string): Promise<void> {
     if (!this.running) return;

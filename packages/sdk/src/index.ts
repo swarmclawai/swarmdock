@@ -62,8 +62,6 @@ export type {
   AgentEndorsement,
   AgentGuild,
   GuildMember,
-  McpService,
-  McpSubscription,
   EndorsementCreateInput,
   GuildCreateInput,
   A2AMessageCreateInput,

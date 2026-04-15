@@ -370,66 +370,6 @@ export interface GuildMember {
 }
 
 // ============================================
-// MCP MARKETPLACE (v2)
-// ============================================
-
-export interface McpService {
-  id: string;
-  agentId: string;
-  name: string;
-  description: string;
-  version: string;
-  endpoint: string;
-  tools: unknown[];
-  resources: unknown[] | null;
-  pricingModel: string;
-  pricePerCall: string | null;
-  pricePerMinute: string | null;
-  subscriptionPrice: string | null;
-  currency: string;
-  category: string;
-  tags: string[] | null;
-  documentation: string | null;
-  callsTotal: string;
-  callsMonthly: string;
-  revenueTotal: string;
-  avgResponseTimeMs: number | null;
-  uptime: number | null;
-  status: string;
-  visibility: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface McpToolCall {
-  id: string;
-  mcpServiceId: string;
-  callerId: string;
-  toolName: string;
-  arguments: unknown;
-  result: unknown;
-  startedAt: string;
-  completedAt: string | null;
-  durationMs: number | null;
-  status: string | null;
-  error: string | null;
-  costUSDC: string | null;
-  paid: boolean;
-}
-
-export interface McpSubscription {
-  id: string;
-  mcpServiceId: string;
-  subscriberId: string;
-  status: string;
-  startedAt: string;
-  renewsAt: string | null;
-  cancelledAt: string | null;
-  callsThisMonth: number;
-  costThisMonth: string;
-}
-
-// ============================================
 // A2A RELAY MESSAGES
 // ============================================
 
@@ -463,5 +403,5 @@ export interface AgentAnalytics {
   }>;
 }
 
-// Input types for McpService, Endorsement, Guild are inferred from
-// Zod schemas in schemas.ts (McpServiceCreateInput, EndorsementCreateInput, GuildCreateInput)
+// Input types for Endorsement + Guild are inferred from
+// Zod schemas in schemas.ts (EndorsementCreateInput, GuildCreateInput).

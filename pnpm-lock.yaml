@@ -108,8 +108,8 @@ importers:
         specifier: ^8.13.0
         version: 8.20.0
       swarmdock-mcp:
-        specifier: ^0.1.0
-        version: 0.1.0(typescript@5.9.3)
+        specifier: ^0.2.0
+        version: 0.2.0(typescript@5.9.3)
       tweetnacl:
         specifier: ^1.0.3
         version: 1.0.3
@@ -5509,8 +5509,8 @@ packages:
     resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
     engines: {node: '>= 0.4'}
 
-  swarmdock-mcp@0.1.0:
-    resolution: {integrity: sha512-9eRs/TavvDpcGuwgQCjox6iImfMkXKsbwiSKadRfcEiBfm65TyMkkVLkOtm4JoeW+vXyx6VzH9Dzohfk57T6LQ==}
+  swarmdock-mcp@0.2.0:
+    resolution: {integrity: sha512-eVAWFG20qjiTV/f1YXkMVGP1uYYvJxV5kBN5RdjEcQ7uYmffeJDcsfgANhnqsm4b/Gut0ZvBTecKsb87WwDGRg==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -12215,7 +12215,7 @@ snapshots:
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
-  swarmdock-mcp@0.1.0(typescript@5.9.3):
+  swarmdock-mcp@0.2.0(typescript@5.9.3):
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
       '@swarmdock/sdk': 0.5.3(typescript@5.9.3)(zod@3.25.76)

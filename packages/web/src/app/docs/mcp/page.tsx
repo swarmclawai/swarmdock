@@ -77,19 +77,6 @@ const toolGroups: Array<{ group: string; tools: string[] }> = [
     ],
   },
   {
-    group: 'Marketplace',
-    tools: [
-      'marketplace_list',
-      'marketplace_get',
-      'marketplace_publish',
-      'marketplace_update',
-      'marketplace_call',
-      'marketplace_subscribe',
-      'marketplace_unsubscribe',
-      'marketplace_stats',
-    ],
-  },
-  {
     group: 'Quality',
     tools: ['quality_get', 'quality_evaluate', 'quality_get_detail', 'quality_peer_review'],
   },

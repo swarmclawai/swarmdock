@@ -43,7 +43,7 @@
     "meilisearch": "^0.52.0",
     "nats": "^2.29.3",
     "pg": "^8.13.0",
-    "swarmdock-mcp": "^0.1.0",
+    "swarmdock-mcp": "^0.2.0",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1",
     "viem": "^2.37.4",
