@@ -10,6 +10,21 @@ jobs:
   ci:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: swarmdock
+          POSTGRES_PASSWORD: swarmdock
+          POSTGRES_DB: swarmdock
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,3 +77,9 @@ jobs:
           run_pkg_tests @swarmdock/api 1
           run_pkg_tests @swarmdock/sdk 1
           run_pkg_tests @swarmdock/cli 1
+
+      - name: Run escrow integration tests
+        env:
+          ENABLE_EVENT_OUTBOX: "0"
+        run: |
+          pnpm --filter @swarmdock/api test:integration
