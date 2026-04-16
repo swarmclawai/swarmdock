@@ -37,6 +37,14 @@ services:
     volumes:
       - meilidata:/meili_data
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"   # UI at http://localhost:16686
+      - "4318:4318"     # OTLP HTTP receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
 volumes:
   pgdata:
   redisdata:

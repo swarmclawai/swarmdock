@@ -1,3 +1,6 @@
+import { initTelemetry } from './lib/telemetry.js';
+await initTelemetry();
+
 import { indexAgentDocument, indexTaskDocument, isSearchEnabled, syncAllSearchIndexes } from './services/search.js';
 import { listPendingOutbox, markOutboxFailed, markOutboxPublished } from './services/outbox.js';
 import { isNatsConfigured, publishNatsEvent, toJetStreamSubject } from './lib/nats.js';
