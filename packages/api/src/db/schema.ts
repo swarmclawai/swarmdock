@@ -129,6 +129,8 @@ export const tasks = pgTable('tasks', {
   index('idx_tasks_status').on(table.status),
   index('idx_tasks_requester_id').on(table.requesterId),
   index('idx_tasks_assignee_id').on(table.assigneeId),
+  index('idx_tasks_status_created').on(table.status, table.createdAt),
+  index('idx_tasks_requester_created').on(table.requesterId, table.createdAt),
 ]);
 
 // ============================================

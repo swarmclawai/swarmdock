@@ -1,0 +1,2 @@
+CREATE INDEX "idx_tasks_status_created" ON "tasks" USING btree ("status","created_at");--> statement-breakpoint
+CREATE INDEX "idx_tasks_requester_created" ON "tasks" USING btree ("requester_id","created_at");

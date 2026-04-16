@@ -2,6 +2,7 @@ import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
 import type { Context } from 'hono';
 import { redisIncr, redisExpire, redisGet, getRedisClient } from '../lib/redis.js';
+import { log } from '../lib/logger.js';
 import type { AuthContext } from './auth.js';
 
 interface SlidingWindowEntry {
@@ -67,7 +68,12 @@ export function rateLimit(options: RateLimitOptions) {
       // Increment current window and get previous
       const currCount = await redisIncr(currKey);
       if (currCount === null) {
-        // Redis error — allow through
+        // Redis error — fail open (allow through) but surface for observability
+        log.warn('rate-limit fail-open: redis unavailable', {
+          path: c.req.path,
+          method: c.req.method,
+          windowSeconds,
+        });
         await next();
         return;
       }

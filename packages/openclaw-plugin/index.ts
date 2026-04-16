@@ -6,7 +6,7 @@
  */
 
 import { SwarmDockClient, SkillTemplates } from '@swarmdock/sdk';
-import type { SkillTemplate } from '@swarmdock/sdk';
+import type { SkillTemplate, RegisterParams, TaskListing } from '@swarmdock/sdk';
 import nacl from 'tweetnacl';
 import tweetnaclUtil from 'tweetnacl-util';
 
@@ -18,12 +18,55 @@ interface PluginConfig {
   autoHeartbeat?: boolean;
 }
 
+interface PluginContext {
+  config?: {
+    plugins?: {
+      entries?: Record<string, { config?: PluginConfig }>;
+    };
+  };
+}
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  call: (args: Record<string, unknown>) => Promise<string> | string;
+}
+
+interface CommandHandlerCtx {
+  args?: string;
+}
+
+interface CommandDefinition {
+  name: string;
+  description: string;
+  acceptsArgs?: boolean;
+  handler: (ctx: CommandHandlerCtx) => { text: string } | Promise<{ text: string }>;
+}
+
+interface CliCommand {
+  description(text: string): CliCommand;
+  action(handler: () => Promise<void> | void): CliCommand;
+  command(name: string): CliCommand;
+}
+
+interface CliProgram {
+  command(name: string): CliCommand;
+}
+
 interface PluginApi {
-  registerTool: (factory: (ctx: any) => any, opts: { names: string[] }) => void;
+  registerTool: (
+    factory: (ctx: PluginContext) => ToolDefinition[],
+    opts: { names: string[] },
+  ) => void;
   registerService: (service: { id: string; start: () => void; stop: () => void }) => void;
-  registerCli: (factory: (opts: { program: any }) => void, opts: { commands: string[] }) => void;
-  registerCommand: (cmd: { name: string; description: string; acceptsArgs?: boolean; handler: (ctx: any) => { text: string } | Promise<{ text: string }> }) => void;
-  logger: { info: (...args: any[]) => void; error: (...args: any[]) => void; warn: (...args: any[]) => void };
+  registerCli: (factory: (opts: { program: CliProgram }) => void, opts: { commands: string[] }) => void;
+  registerCommand: (cmd: CommandDefinition) => void;
+  logger: {
+    info: (...args: unknown[]) => void;
+    error: (...args: unknown[]) => void;
+    warn: (...args: unknown[]) => void;
+  };
 }
 
 // Module-level state
@@ -31,7 +74,7 @@ let cachedClient: SwarmDockClient | null = null;
 let cachedPrivateKey: string | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
-function getConfig(ctx: any): PluginConfig {
+function getConfig(ctx: PluginContext): PluginConfig {
   return ctx.config?.plugins?.entries?.swarmdock?.config ?? {};
 }
 
@@ -55,10 +98,51 @@ function getClient(config: PluginConfig, privateKey?: string): SwarmDockClient {
   return cachedClient;
 }
 
+// Reserved for future tooling that needs to expose the public key.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getPublicKey(privateKeyBase64: string): string {
   const secretKey = decodeBase64(privateKeyBase64);
   const keyPair = nacl.sign.keyPair.fromSecretKey(secretKey);
   return encodeBase64(keyPair.publicKey);
+}
+
+type RegisterSkill = NonNullable<RegisterParams['skills']>[number];
+
+function templateToSkill(t: SkillTemplate): RegisterSkill {
+  return {
+    skillId: t.skillId,
+    skillName: t.skillName,
+    description: t.description,
+    category: t.category,
+    tags: t.tags,
+    pricingModel: t.pricingModel,
+    basePrice: t.basePrice,
+    examplePrompts: t.examplePrompts,
+  };
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function asSkillArray(value: unknown): RegisterSkill[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is RegisterSkill => {
+    return (
+      v !== null &&
+      typeof v === 'object' &&
+      typeof (v as RegisterSkill).skillId === 'string' &&
+      typeof (v as RegisterSkill).skillName === 'string'
+    );
+  });
 }
 
 const swarmdockPlugin = {
@@ -70,7 +154,7 @@ const swarmdockPlugin = {
     // ── Agent Tools ──
 
     api.registerTool(
-      (ctx: any) => {
+      (ctx) => {
         const config = getConfig(ctx);
 
         return [
@@ -91,31 +175,22 @@ const swarmdockPlugin = {
               },
               required: ['displayName'],
             },
-            async call(args: any) {
-              // Resolve skill templates
-              const templateIds: string[] = args.skillTemplates ?? ['coding'];
-              const skills = templateIds.map((id: string) => {
-                const t = SkillTemplates.get(id);
-                if (!t) return null;
-                return {
-                  skillId: t.skillId,
-                  skillName: t.skillName,
-                  description: t.description,
-                  category: t.category,
-                  tags: t.tags,
-                  pricingModel: t.pricingModel,
-                  basePrice: t.basePrice,
-                  examplePrompts: t.examplePrompts,
-                };
-              }).filter(Boolean);
+            async call(args) {
+              const templateIds = asStringArray(args.skillTemplates).length > 0
+                ? asStringArray(args.skillTemplates)
+                : ['coding'];
+              const skills = templateIds
+                .map((id) => SkillTemplates.get(id))
+                .filter((t): t is SkillTemplate => t !== undefined)
+                .map(templateToSkill);
 
               const client = getClient(config);
               const result = await client.register({
-                displayName: args.displayName,
-                description: args.description,
+                displayName: asString(args.displayName),
+                description: asString(args.description) || undefined,
                 framework: 'openclaw',
-                walletAddress: args.walletAddress ?? config.walletAddress ?? '',
-                skills: skills as any[],
+                walletAddress: asString(args.walletAddress) || config.walletAddress || '',
+                skills,
               });
 
               return JSON.stringify({
@@ -137,10 +212,9 @@ const swarmdockPlugin = {
                 search: { type: 'string', description: 'Optional search query to filter templates' },
               },
             },
-            async call(args: any) {
-              const results = args.search
-                ? SkillTemplates.search(args.search)
-                : SkillTemplates.list();
+            async call(args) {
+              const search = asString(args.search);
+              const results = search ? SkillTemplates.search(search) : SkillTemplates.list();
               return JSON.stringify(results.map((t: SkillTemplate) => ({
                 id: t.skillId,
                 name: t.skillName,
@@ -182,26 +256,20 @@ const swarmdockPlugin = {
               },
               required: ['displayName'],
             },
-            async call(args: any) {
-              // Resolve template IDs to full skill definitions
-              const templateSkills = (args.skillTemplates ?? []).map((id: string) => {
-                const t = SkillTemplates.get(id);
-                if (!t) return null;
-                return {
-                  skillId: t.skillId, skillName: t.skillName, description: t.description,
-                  category: t.category, tags: t.tags, pricingModel: t.pricingModel,
-                  basePrice: t.basePrice, examplePrompts: t.examplePrompts,
-                };
-              }).filter(Boolean);
+            async call(args) {
+              const templateSkills = asStringArray(args.skillTemplates)
+                .map((id) => SkillTemplates.get(id))
+                .filter((t): t is SkillTemplate => t !== undefined)
+                .map(templateToSkill);
 
-              const allSkills = [...templateSkills, ...(args.skills ?? [])];
+              const allSkills: RegisterSkill[] = [...templateSkills, ...asSkillArray(args.skills)];
 
               const client = getClient(config);
               const result = await client.register({
-                displayName: args.displayName,
-                description: args.description,
+                displayName: asString(args.displayName),
+                description: asString(args.description) || undefined,
                 framework: 'openclaw',
-                walletAddress: args.walletAddress ?? config.walletAddress ?? '0x0000000000000000000000000000000000000001',
+                walletAddress: asString(args.walletAddress) || config.walletAddress || '0x0000000000000000000000000000000000000001',
                 skills: allSkills,
               });
               return JSON.stringify({ agentId: result.agent.id, did: result.agent.did, status: result.agent.status, trustLevel: result.agent.trustLevel });
@@ -218,14 +286,23 @@ const swarmdockPlugin = {
                 limit: { type: 'number', default: 10 },
               },
             },
-            async call(args: any) {
+            async call(args) {
               const client = getClient(config);
               const result = await client.tasks.list({
-                status: args.status ?? 'open',
-                skills: args.skills,
-                limit: String(args.limit ?? 10),
+                status: asString(args.status, 'open'),
+                skills: typeof args.skills === 'string' ? args.skills : undefined,
+                limit: String(asNumber(args.limit, 10)),
               });
-              return JSON.stringify({ total: result.total, tasks: result.tasks.map((t: any) => ({ id: t.id, title: t.title, budgetMax: t.budgetMax, skills: t.skillRequirements, status: t.status })) });
+              return JSON.stringify({
+                total: result.total,
+                tasks: result.tasks.map((t: TaskListing) => ({
+                  id: t.id,
+                  title: t.title,
+                  budgetMax: t.budgetMax,
+                  skills: t.skillRequirements,
+                  status: t.status,
+                })),
+              });
             },
           },
           {
@@ -241,13 +318,13 @@ const swarmdockPlugin = {
               },
               required: ['taskId', 'proposedPrice'],
             },
-            async call(args: any) {
+            async call(args) {
               const client = getClient(config);
               await client.authenticate();
-              const result = await client.tasks.bid(args.taskId, {
-                proposedPrice: args.proposedPrice,
-                confidenceScore: args.confidenceScore ?? 0.8,
-                proposal: args.proposal,
+              const result = await client.tasks.bid(asString(args.taskId), {
+                proposedPrice: asString(args.proposedPrice),
+                confidenceScore: asNumber(args.confidenceScore, 0.8),
+                proposal: typeof args.proposal === 'string' ? args.proposal : undefined,
               });
               return JSON.stringify(result);
             },
@@ -265,11 +342,62 @@ const swarmdockPlugin = {
               ]);
               return JSON.stringify({
                 displayName: profile.displayName,
+                description: profile.description,
                 did: profile.did,
                 trustLevel: profile.trustLevel,
                 status: profile.status,
                 skillCount: profile.skills?.length ?? 0,
                 balance: balance ?? 'unavailable',
+              });
+            },
+          },
+          {
+            name: 'swarmdock_update_profile',
+            description: 'Update your SwarmDock marketplace profile fields such as description, display name, framework, or model metadata.',
+            parameters: {
+              type: 'object',
+              properties: {
+                displayName: { type: 'string', description: 'New public display name' },
+                description: { type: 'string', description: 'New public description' },
+                framework: { type: 'string', description: 'Framework name' },
+                frameworkVersion: { type: 'string', description: 'Framework version' },
+                modelProvider: { type: 'string', description: 'Model provider name' },
+                modelName: { type: 'string', description: 'Model name' },
+                agentCardUrl: { type: 'string', description: 'External agent card URL' },
+              },
+            },
+            async call(args) {
+              const client = getClient(config);
+              await client.authenticate();
+
+              const candidate = {
+                displayName: args.displayName,
+                description: args.description,
+                framework: args.framework,
+                frameworkVersion: args.frameworkVersion,
+                modelProvider: args.modelProvider,
+                modelName: args.modelName,
+                agentCardUrl: args.agentCardUrl,
+              };
+              const fields = Object.fromEntries(
+                Object.entries(candidate).filter(([, value]) => typeof value === 'string'),
+              ) as Record<string, string>;
+
+              if (Object.keys(fields).length === 0) {
+                throw new Error('At least one profile field is required.');
+              }
+
+              const result = await client.profile.update(fields);
+              return JSON.stringify({
+                id: result.id,
+                displayName: result.displayName,
+                description: result.description,
+                framework: result.framework,
+                frameworkVersion: result.frameworkVersion,
+                modelProvider: result.modelProvider,
+                modelName: result.modelName,
+                agentCardUrl: result.agentCardUrl,
+                updatedAt: result.updatedAt,
               });
             },
           },
@@ -297,16 +425,16 @@ const swarmdockPlugin = {
               },
               required: ['skills'],
             },
-            async call(args: any) {
+            async call(args) {
               const client = getClient(config);
               await client.authenticate();
-              const result = await client.profile.updateSkills(args.skills);
+              const result = await client.profile.updateSkills(asSkillArray(args.skills));
               return JSON.stringify(result);
             },
           },
         ];
       },
-      { names: ['swarmdock_quickstart', 'swarmdock_skill_templates', 'swarmdock_register', 'swarmdock_tasks', 'swarmdock_bid', 'swarmdock_status', 'swarmdock_update_skills'] },
+      { names: ['swarmdock_quickstart', 'swarmdock_skill_templates', 'swarmdock_register', 'swarmdock_tasks', 'swarmdock_bid', 'swarmdock_status', 'swarmdock_update_profile', 'swarmdock_update_skills'] },
     );
 
     // ── Auto-reply Command ──

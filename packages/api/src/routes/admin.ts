@@ -1,10 +1,11 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { db } from '../db/client.js';
 import { agents, tasks, escrowTransactions, transactions, agentRatings, disputes, anomalyEvents, agentReputation } from '../db/schema.js';
 import { eq, sql, count, desc, and } from 'drizzle-orm';
 import { timingSafeEqual } from 'node:crypto';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
+import { z } from 'zod';
 import {
   AGENT_STATUS,
   TASK_STATUS,
@@ -19,6 +20,7 @@ import { releaseEscrow, refundEscrow } from '../services/escrow.js';
 import { selectTribunalJudges } from '../services/tribunal.js';
 import { unsuspendAgent } from '../services/anomaly.js';
 import { eventBus } from '../lib/events.js';
+import { sanitizeFreeText } from '../lib/sanitize.js';
 
 const adminAuth = createMiddleware(async (c, next) => {
   const key = c.req.header('X-Admin-Key');
@@ -29,6 +31,53 @@ const adminAuth = createMiddleware(async (c, next) => {
   }
   await next();
 });
+
+const ADMIN_LIST_MAX_LIMIT = 200;
+const ADMIN_LIST_DEFAULT_LIMIT = 50;
+
+function parseListLimit(raw: string | undefined): number {
+  const parsed = parseInt(raw ?? String(ADMIN_LIST_DEFAULT_LIMIT), 10);
+  const value = Number.isFinite(parsed) && parsed > 0 ? parsed : ADMIN_LIST_DEFAULT_LIMIT;
+  return Math.min(value, ADMIN_LIST_MAX_LIMIT);
+}
+
+function parseListOffset(raw: string | undefined): number {
+  const parsed = parseInt(raw ?? '0', 10);
+  return Math.max(0, Number.isFinite(parsed) ? parsed : 0);
+}
+
+const UnsuspendBodySchema = z.object({
+  note: z.string().min(1).max(1000).optional(),
+});
+
+const PremiumBodySchema = z.object({
+  tier: z.union([z.string().min(1).max(64), z.null()]).optional(),
+  badge: z.boolean().optional(),
+});
+
+/**
+ * Parse and validate a JSON body against a Zod schema.
+ * Returns either the parsed data or a 400 Response describing the failure.
+ * Empty bodies are accepted as `{}` only if the schema allows them.
+ */
+async function parseJsonBody<T>(
+  c: Context,
+  schema: z.ZodType<T>,
+): Promise<{ data: T } | { response: Response }> {
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    raw = {};
+  }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      response: c.json({ error: 'Invalid request body', details: parsed.error.flatten() }, 400),
+    };
+  }
+  return { data: parsed.data };
+}
 
 const app = new Hono();
 
@@ -103,8 +152,8 @@ app.get('/revenue', adminAuth, async (c) => {
 
 // GET /api/v1/admin/transactions — Full transaction history
 app.get('/transactions', adminAuth, async (c) => {
-  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '50', 10) || 50, 200));
-  const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
+  const limit = parseListLimit(c.req.query('limit'));
+  const offset = parseListOffset(c.req.query('offset'));
 
   const rows = await db
     .select()
@@ -127,8 +176,8 @@ app.get('/transactions', adminAuth, async (c) => {
 // GET /api/v1/admin/disputes — List disputes, newest first
 app.get('/disputes', adminAuth, async (c) => {
   const status = c.req.query('status');
-  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '50', 10) || 50, 200));
-  const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
+  const limit = parseListLimit(c.req.query('limit'));
+  const offset = parseListOffset(c.req.query('offset'));
 
   const whereClause = status ? eq(disputes.status, status) : undefined;
   const rows = await db
@@ -231,7 +280,7 @@ app.post('/disputes/:id/resolve', adminAuth, async (c) => {
   const [updatedDispute] = await db.update(disputes).set({
     status: DISPUTE_STATUS.RESOLVED,
     resolution: parsed.data.resolution,
-    resolutionNotes: parsed.data.notes ?? null,
+    resolutionNotes: parsed.data.notes ? sanitizeFreeText(parsed.data.notes) : null,
     resolvedAt: new Date(),
     updatedAt: new Date(),
   }).where(eq(disputes.id, dispute.id)).returning();
@@ -258,8 +307,8 @@ app.get('/anomalies', adminAuth, async (c) => {
   const type = c.req.query('type');
   const severity = c.req.query('severity');
   const agentId = c.req.query('agentId');
-  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '50', 10) || 50, 200));
-  const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
+  const limit = parseListLimit(c.req.query('limit'));
+  const offset = parseListOffset(c.req.query('offset'));
 
   const conditions = [];
   if (type) conditions.push(eq(anomalyEvents.type, type));
@@ -331,8 +380,10 @@ app.post('/agents/:id/unsuspend', adminAuth, async (c) => {
     return c.json({ error: 'Agent is not suspended' }, 400);
   }
 
-  const body = await c.req.json().catch(() => ({})) as { note?: string };
-  await unsuspendAgent(id, body.note ?? 'Admin unsuspend');
+  const parsed = await parseJsonBody(c, UnsuspendBodySchema);
+  if ('response' in parsed) return parsed.response;
+  const note = parsed.data.note ? sanitizeFreeText(parsed.data.note) : 'Admin unsuspend';
+  await unsuspendAgent(id, note);
 
   return c.json({ unsuspended: true, agentId: id });
 });
@@ -340,7 +391,9 @@ app.post('/agents/:id/unsuspend', adminAuth, async (c) => {
 // POST /api/v1/admin/agents/:id/premium — Set premium tier
 app.post('/agents/:id/premium', adminAuth, async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json().catch(() => ({})) as { tier?: string | null; badge?: boolean };
+  const parsed = await parseJsonBody(c, PremiumBodySchema);
+  if ('response' in parsed) return parsed.response;
+  const body = parsed.data;
 
   const [agent] = await db
     .select({ id: agents.id })

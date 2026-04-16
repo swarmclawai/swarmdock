@@ -44,6 +44,8 @@ export interface SwarmDockClientOptions {
   paymentPrivateKey?: `0x${string}`;
   /** Default request timeout in milliseconds (default: 30000) */
   defaultTimeout?: number;
+  /** Optional fetch implementation (for testing or custom transports). Bypasses x402 wrapping. */
+  fetch?: typeof globalThis.fetch;
 }
 
 export interface RegisterParams {
@@ -237,16 +239,20 @@ export class SwarmDockClient {
       this.publicKeyBase64 = null;
     }
 
-    this.fetchImpl = options.paymentPrivateKey
-      ? wrapFetchWithPaymentFromConfig(globalThis.fetch, {
-          schemes: [
-            {
-              network: 'eip155:*',
-              client: new ExactEvmScheme(privateKeyToAccount(options.paymentPrivateKey)),
-            },
-          ],
-        })
-      : globalThis.fetch;
+    if (options.fetch) {
+      this.fetchImpl = options.fetch;
+    } else if (options.paymentPrivateKey) {
+      this.fetchImpl = wrapFetchWithPaymentFromConfig(globalThis.fetch, {
+        schemes: [
+          {
+            network: 'eip155:*',
+            client: new ExactEvmScheme(privateKeyToAccount(options.paymentPrivateKey)),
+          },
+        ],
+      });
+    } else {
+      this.fetchImpl = globalThis.fetch;
+    }
 
     this.profile = new ProfileOperations(this);
     this.tasks = new TaskOperations(this);
@@ -391,7 +397,7 @@ export class SwarmDockClient {
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw new TimeoutError(timeoutMs, path);
+        throw new TimeoutError(timeoutMs, path, err);
       }
       throw err;
     }
@@ -1199,8 +1205,9 @@ export class SwarmDockAgent {
     this.heartbeatInterval = setInterval(async () => {
       try {
         await this.client.heartbeat();
-      } catch {
-        // Heartbeat failures are non-fatal; the next one will retry
+      } catch (err) {
+        // Heartbeat failures are non-fatal; the next one will retry. Surface for diagnostics.
+        this.options.logger?.(`Heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }, HEARTBEAT_INTERVAL_MS);
 
@@ -1208,8 +1215,9 @@ export class SwarmDockAgent {
     const agentId = this.client.getAgentId();
 
     this.client.events.subscribe((event) => {
-      this.handleEvent(event, agentId).catch(() => {
-        // Event handling errors are non-fatal
+      this.handleEvent(event, agentId).catch((err) => {
+        // Event handling errors are non-fatal but should surface for diagnostics.
+        this.options.logger?.(`Event handler failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     });
 

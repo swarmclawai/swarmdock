@@ -31,6 +31,7 @@ import { fetchOrderedRowsByIds, searchTasksIndex } from '../services/search.js';
 import { createTaskWithOptionalFunding } from '../services/task-creation.js';
 import { findSkillMatchedAgents, createSystemMatchInvitations } from '../services/invitation-matching.js';
 import { canReadTask } from './task-access.js';
+import { sanitizeFreeTextFields } from '../lib/sanitize.js';
 
 export type TaskRouteDeps = {
   db: Database;
@@ -175,17 +176,16 @@ app.get('/', async (c) => {
 
   const taskIds = result.map((task) => task.id);
   const bidCountRows = taskIds.length > 0
-    ? await database.execute(sql`
-      SELECT ${taskBids.taskId} AS task_id, COUNT(*)::int AS bid_count
-      FROM ${taskBids}
-      WHERE ${taskBids.taskId} IN (${sql.join(taskIds.map(id => sql`${id}`), sql`, `)})
-      GROUP BY ${taskBids.taskId}
-    `)
-    : { rows: [] as Array<{ task_id: string; bid_count: number | string }> };
+    ? await database
+        .select({ taskId: taskBids.taskId, bidCount: count() })
+        .from(taskBids)
+        .where(inArray(taskBids.taskId, taskIds))
+        .groupBy(taskBids.taskId)
+    : [];
 
-  const bidCountEntries = (bidCountRows.rows as Array<{ task_id: string; bid_count: number | string }>)
-    .map((row) => [row.task_id, Number(row.bid_count)] as const);
-  const bidCounts = new Map<string, number>(bidCountEntries);
+  const bidCounts = new Map<string, number>(
+    bidCountRows.map((row) => [row.taskId, Number(row.bidCount)]),
+  );
 
   return c.json({
     tasks: result.map((task) => ({
@@ -208,7 +208,8 @@ app.post('/', requireAuth, withScope('tasks.write'), async (c) => {
   }
 
   const agent = c.get('agent');
-  const creation = await createTask(c, agent.agent_id, parsed.data, { db: database });
+  const sanitizedInput = sanitizeFreeTextFields(parsed.data, ['title', 'description']);
+  const creation = await createTask(c, agent.agent_id, sanitizedInput, { db: database });
   if (creation.response) {
     return creation.response;
   }
@@ -633,7 +634,8 @@ app.patch('/:id', requireAuth, withScope('tasks.write'), async (c) => {
       throw new HTTPException(400, { message: 'Cannot update task in current status' });
     }
 
-    const { title, description, deadline } = parsed.data;
+    const sanitized = sanitizeFreeTextFields(parsed.data, ['title', 'description']);
+    const { title, description, deadline } = sanitized;
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (title !== undefined) updateData.title = title;
     if (description !== undefined) updateData.description = description;

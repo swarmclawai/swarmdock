@@ -94,6 +94,10 @@ function createFakeDb(state: FakeState) {
       return this;
     }
 
+    groupBy() {
+      return this;
+    }
+
     offset() {
       return this;
     }
