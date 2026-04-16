@@ -22,6 +22,14 @@ import {
   type GuildCreateInput,
   type A2AMessageCreateInput,
 } from '@swarmdock/sdk';
+import {
+  AGENT_HOSTS,
+  install as installAgent,
+  isAgentHost,
+  listHosts,
+  uninstall as uninstallAgent,
+  type AgentHost,
+} from '@swarmdock/installer';
 import { input, select, checkbox, confirm } from '@inquirer/prompts';
 
 type RegisterSkill = NonNullable<RegisterParams['skills']>[number];
@@ -561,6 +569,125 @@ program
         `DID: ${result.agent.did}`,
         `Trust Level: ${result.agent.trustLevel}`,
       ].join('\n'));
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+// ── Installer ──
+
+program
+  .command('install')
+  .description('Install SwarmDock into an AI agent host (claude, cursor, codex, etc.)')
+  .option('--agent <host>', `Target host. One of: ${AGENT_HOSTS.join(', ')}`)
+  .option('--name <name>', 'Agent profile name (default: current default agent)')
+  .option('--repo <path>', 'Repository directory to install into (default: cwd)')
+  .option('--no-mcp', 'Skip writing MCP server config even if the host supports it')
+  .option('--hook', 'Install optional session hook script where supported')
+  .option('--force', 'Overwrite files not authored by the installer')
+  .option('--list-hosts', 'Print the list of supported hosts and exit')
+  .action(async (options, command) => {
+    try {
+      if (options.listHosts) {
+        const rows = listHosts();
+        const globalOpts = command.optsWithGlobals() as GlobalOptions;
+        const outputJson = Boolean(globalOpts.json) || !process.stdout.isTTY;
+        if (outputJson) {
+          console.log(JSON.stringify(rows, null, 2));
+        } else {
+          console.log('Supported hosts:');
+          for (const row of rows) {
+            console.log(`  ${row.host.padEnd(14)} ${row.displayName}${row.mcp ? ' (MCP)' : ''}`);
+          }
+        }
+        return;
+      }
+
+      if (!options.agent) {
+        throw new Error('--agent is required. Use `swarmdock install --list-hosts` to see options.');
+      }
+      if (!isAgentHost(options.agent)) {
+        throw new Error(`Unknown host "${options.agent}". Supported: ${AGENT_HOSTS.join(', ')}`);
+      }
+
+      const globalOpts = command.optsWithGlobals() as GlobalOptions;
+      const result = await installAgent({
+        host: options.agent as AgentHost,
+        repoDir: options.repo ?? process.cwd(),
+        agentName: options.name,
+        apiUrl: globalOpts.apiUrl ?? process.env.SWARMDOCK_API_URL,
+        noMcp: options.mcp === false,
+        hook: Boolean(options.hook),
+        force: Boolean(options.force),
+      });
+
+      output(command, result, () => {
+        const lines: string[] = [];
+        lines.push(`Installed SwarmDock agent "${result.agentName}" for ${options.agent}.`);
+        lines.push(`  DID: ${result.did}`);
+        lines.push('');
+        lines.push('Wrote:');
+        for (const f of result.writtenFiles) {
+          lines.push(`  ${f}`);
+        }
+        if (result.gitignored.length > 0) {
+          lines.push('');
+          lines.push('Added to .gitignore:');
+          for (const f of result.gitignored) lines.push(`  ${f}`);
+        }
+        if (result.warnings.length > 0) {
+          lines.push('');
+          lines.push('Warnings:');
+          for (const w of result.warnings) lines.push(`  ${w}`);
+        }
+        lines.push('');
+        lines.push('Next steps:');
+        for (const s of result.nextSteps) lines.push(`  • ${s}`);
+        return lines.join('\n');
+      });
+    } catch (error) {
+      handleError(command, error);
+    }
+  });
+
+program
+  .command('uninstall')
+  .description('Remove SwarmDock wiring from an AI agent host')
+  .requiredOption('--agent <host>', `Target host. One of: ${AGENT_HOSTS.join(', ')}`)
+  .option('--name <name>', 'Agent profile name (default: current default agent)')
+  .option('--repo <path>', 'Repository directory (default: cwd)')
+  .action(async (options, command) => {
+    try {
+      if (!isAgentHost(options.agent)) {
+        throw new Error(`Unknown host "${options.agent}". Supported: ${AGENT_HOSTS.join(', ')}`);
+      }
+
+      const result = await uninstallAgent({
+        host: options.agent as AgentHost,
+        repoDir: options.repo ?? process.cwd(),
+        agentName: options.name,
+      });
+
+      output(command, result, () => {
+        const lines: string[] = [];
+        lines.push(`Uninstalled SwarmDock from ${options.agent}.`);
+        if (result.removedFiles.length > 0) {
+          lines.push('');
+          lines.push('Removed:');
+          for (const f of result.removedFiles) lines.push(`  ${f}`);
+        }
+        if (result.mutatedFiles.length > 0) {
+          lines.push('');
+          lines.push('Updated:');
+          for (const f of result.mutatedFiles) lines.push(`  ${f}`);
+        }
+        if (result.warnings.length > 0) {
+          lines.push('');
+          lines.push('Warnings:');
+          for (const w of result.warnings) lines.push(`  ${w}`);
+        }
+        return lines.join('\n');
+      });
     } catch (error) {
       handleError(command, error);
     }

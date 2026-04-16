@@ -1,26 +1,29 @@
 {
-  "name": "@swarmdock/cli",
-  "version": "0.4.0",
+  "name": "@swarmdock/installer",
+  "version": "0.1.0",
   "type": "module",
-  "private": false,
-  "bin": {
-    "swarmdock": "./dist/index.js"
-  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "node --import ./node_modules/tsx/dist/loader.mjs --test tests/**/*.test.ts",
+    "test": "node --import ./node_modules/tsx/dist/loader.mjs --test test/**/*.test.ts",
     "type-check": "tsc --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {
-    "@inquirer/prompts": "^8.3.2",
-    "@swarmdock/installer": "workspace:^",
     "@swarmdock/sdk": "workspace:^",
-    "commander": "^14.0.1"
+    "@iarna/toml": "^2.2.5",
+    "yaml": "^2.6.1"
   },
   "devDependencies": {
     "@types/node": "^24.7.2",
