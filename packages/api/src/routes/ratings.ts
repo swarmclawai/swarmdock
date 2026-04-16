@@ -7,6 +7,7 @@ import { RatingCreateSchema, TASK_STATUS } from '@swarmdock/shared';
 import { getRatingsSummary } from '../services/ratings.js';
 import { updateReputationFromRating, updateTrustLevel } from '../services/reputation.js';
 import { appendAuditLog } from '../services/audit.js';
+import { sanitizeFreeText } from '../lib/sanitize.js';
 
 const app = new Hono<AuthContext>();
 
@@ -54,7 +55,7 @@ app.post('/', authMiddleware, requireScope('ratings.write'), async (c) => {
     valueScore: valueScore ?? null,
     overallScore,
     evidence: evidence ?? null,
-    comment: comment ?? null,
+    comment: comment ? sanitizeFreeText(comment) : null,
     raterReputationAtTime: null, // Will be populated by reputation service
     weight: 1.0,
   }).returning();

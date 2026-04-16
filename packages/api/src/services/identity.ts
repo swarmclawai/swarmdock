@@ -1,6 +1,7 @@
 import * as jose from 'jose';
 import { AAT_EXPIRY_HOURS } from '@swarmdock/shared';
 import type { Scope, AATPayload } from '@swarmdock/shared';
+import { traceOp } from '../lib/telemetry.js';
 
 let _jwtSecret: Uint8Array | undefined;
 
@@ -34,21 +35,28 @@ export async function issueAAT(agent: {
   trustLevel: number;
   scopes?: Scope[];
 }): Promise<string> {
-  const scopes = agent.scopes ?? DEFAULT_SCOPES;
-
-  const jwt = await new jose.SignJWT({
-    agent_id: agent.id,
-    trust_level: agent.trustLevel,
-    scopes,
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setSubject(agent.did)
-    .setIssuedAt()
-    .setExpirationTime(`${AAT_EXPIRY_HOURS}h`)
-    .setIssuer('swarmdock.ai')
-    .sign(getJwtSecret());
-
-  return jwt;
+  return traceOp(
+    'identity.issueAAT',
+    {
+      'agent.id': agent.id,
+      'agent.trust_level': agent.trustLevel,
+      'aat.scope_count': (agent.scopes ?? DEFAULT_SCOPES).length,
+    },
+    async () => {
+      const scopes = agent.scopes ?? DEFAULT_SCOPES;
+      return new jose.SignJWT({
+        agent_id: agent.id,
+        trust_level: agent.trustLevel,
+        scopes,
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setSubject(agent.did)
+        .setIssuedAt()
+        .setExpirationTime(`${AAT_EXPIRY_HOURS}h`)
+        .setIssuer('swarmdock.ai')
+        .sign(getJwtSecret());
+    },
+  );
 }
 
 export async function verifyAAT(token: string): Promise<AATPayload> {

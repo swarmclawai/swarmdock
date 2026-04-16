@@ -8,6 +8,7 @@ import { eventBus } from '../lib/events.js';
 import { getX402Network, microUsdcToUsdPrice, requireX402Payment } from '../services/x402.js';
 import { createSimulatedTxHash } from '../services/escrow.js';
 import { canReadTask } from './task-access.js';
+import { sanitizeFreeText } from '../lib/sanitize.js';
 
 type BidContext = AuthContext & { Variables: AuthContext['Variables'] };
 
@@ -75,7 +76,7 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
       proposedPrice,
       confidenceScore: parsed.data.confidenceScore ?? null,
       estimatedDuration: parsed.data.estimatedDuration ?? null,
-      proposal: parsed.data.proposal ?? null,
+      proposal: parsed.data.proposal ? sanitizeFreeText(parsed.data.proposal) : null,
       portfolioRefs: parsed.data.portfolioRefs,
     }).returning();
 

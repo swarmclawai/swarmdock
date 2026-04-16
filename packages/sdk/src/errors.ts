@@ -1,16 +1,41 @@
+export interface SwarmDockErrorOptions {
+  details?: unknown;
+  suggestion?: string;
+  cause?: unknown;
+}
+
 export class SwarmDockError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details?: unknown;
   readonly suggestion?: string;
 
-  constructor(status: number, message: string, details?: unknown, suggestion?: string) {
-    super(message);
+  constructor(status: number, message: string, detailsOrOptions?: unknown | SwarmDockErrorOptions, suggestion?: string) {
+    // Support both the legacy positional form (status, message, details, suggestion)
+    // and the new object-options form (status, message, { details, suggestion, cause }).
+    const opts = SwarmDockError.normalizeOptions(detailsOrOptions, suggestion);
+    super(message, opts.cause !== undefined ? { cause: opts.cause } : undefined);
     this.name = 'SwarmDockError';
     this.status = status;
     this.code = SwarmDockError.statusToCode(status);
-    this.details = details;
-    this.suggestion = suggestion ?? SwarmDockError.defaultSuggestion(status);
+    this.details = opts.details;
+    this.suggestion = opts.suggestion ?? SwarmDockError.defaultSuggestion(status);
+  }
+
+  private static normalizeOptions(
+    detailsOrOptions: unknown,
+    suggestion: string | undefined,
+  ): { details?: unknown; suggestion?: string; cause?: unknown } {
+    if (
+      detailsOrOptions !== null &&
+      typeof detailsOrOptions === 'object' &&
+      !Array.isArray(detailsOrOptions) &&
+      ('details' in detailsOrOptions || 'cause' in detailsOrOptions || 'suggestion' in detailsOrOptions)
+    ) {
+      const opts = detailsOrOptions as SwarmDockErrorOptions;
+      return { details: opts.details, suggestion: opts.suggestion ?? suggestion, cause: opts.cause };
+    }
+    return { details: detailsOrOptions, suggestion };
   }
 
   private static statusToCode(status: number): string {
@@ -97,8 +122,8 @@ export class RateLimitError extends SwarmDockError {
 
 export class TimeoutError extends SwarmDockError {
   readonly timeoutMs: number;
-  constructor(timeoutMs: number, path: string) {
-    super(408, `Request timed out after ${timeoutMs}ms: ${path}`);
+  constructor(timeoutMs: number, path: string, cause?: unknown) {
+    super(408, `Request timed out after ${timeoutMs}ms: ${path}`, { cause });
     this.name = 'TimeoutError';
     this.timeoutMs = timeoutMs;
   }

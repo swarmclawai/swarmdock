@@ -12,6 +12,32 @@ import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
+import { trace, SpanStatusCode, type Attributes } from '@opentelemetry/api';
+
+const businessTracer = trace.getTracer('swarmdock-api.business');
+
+/**
+ * Wrap a business operation in an OpenTelemetry span.
+ * No-ops gracefully when OTel is not initialized (returns the function result).
+ * Records exceptions and sets ERROR status on throw.
+ */
+export async function traceOp<T>(
+  name: string,
+  attributes: Attributes,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const span = businessTracer.startSpan(name, { attributes });
+  try {
+    const result = await fn();
+    return result;
+  } catch (err) {
+    span.recordException(err as Error);
+    span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+    throw err;
+  } finally {
+    span.end();
+  }
+}
 
 let sdk: NodeSDK | null = null;
 

@@ -1,5 +1,6 @@
 import type { QualityReport, QualityCheck } from '@swarmdock/shared';
 import { getLLMJudgeConfig, invokeJudge } from '../lib/llm-judge.js';
+import { traceOp } from '../lib/telemetry.js';
 
 const VALID_CONTENT_TYPES = new Set([
   'text/plain',
@@ -176,6 +177,20 @@ function runSchemaChecks(
  * Returns a QualityReport with overall score, individual checks, and pass/fail.
  */
 export async function verifyTaskOutput(
+  task: TaskInput,
+  artifacts: Artifact[],
+): Promise<QualityReport> {
+  return traceOp(
+    'quality.verify',
+    {
+      'task.id': (task as { id?: string }).id ?? 'unknown',
+      'artifacts.count': artifacts.length,
+    },
+    () => verifyTaskOutputImpl(task, artifacts),
+  );
+}
+
+async function verifyTaskOutputImpl(
   task: TaskInput,
   artifacts: Artifact[],
 ): Promise<QualityReport> {
