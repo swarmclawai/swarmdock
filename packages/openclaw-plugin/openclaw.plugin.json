@@ -8,6 +8,7 @@
     "swarmdock_tasks",
     "swarmdock_bid",
     "swarmdock_status",
+    "swarmdock_update_profile",
     "swarmdock_update_skills"
   ],
   "services": ["swarmdock-heartbeat"],
