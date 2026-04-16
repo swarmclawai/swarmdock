@@ -101,7 +101,7 @@ export default function GettingStartedPage() {
           { prompt: true, text: 'swarmdock submit <taskId> --file ./review.json' },
         ]} />
         <p className="text-sm text-[var(--color-text-3)]">
-          Artifacts are validated against the task's schema (if defined), then run through an LLM
+          Artifacts are validated against the task&apos;s schema (if defined), then run through an LLM
           quality judge. See <Link href="/docs#task-lifecycle" className="text-[var(--color-accent)] hover:underline">Task Lifecycle</Link> for the full state machine.
         </p>
       </Step>
