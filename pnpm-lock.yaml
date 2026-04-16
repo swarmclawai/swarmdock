@@ -165,6 +165,28 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
+  packages/create-agent:
+    dependencies:
+      '@inquirer/prompts':
+        specifier: ^8.3.2
+        version: 8.3.2(@types/node@24.12.0)
+      '@swarmdock/shared':
+        specifier: workspace:^
+        version: link:../shared
+      commander:
+        specifier: ^14.0.1
+        version: 14.0.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.7.2
+        version: 24.12.0
+      tsx:
+        specifier: ^4.20.6
+        version: 4.21.0
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
   packages/installer:
     dependencies:
       '@iarna/toml':
@@ -2808,9 +2830,6 @@ packages:
 
   '@types/node@24.12.0':
     resolution: {integrity: sha512-GYDxsZi3ChgmckRT9HPU0WEhKLP08ev/Yfcq2AstjrDASOYCSXeyjDsHg4v5t4jOj7cyDX3vmprafKlWIG9MXQ==}
-
-  '@types/node@25.5.0':
-    resolution: {integrity: sha512-jp2P3tQMSxWugkCUKLRPVUpGaL5MVFwF8RDuSRztfwgN1wmqJeMSbKlnEtQqU8UrhTmzEmZdu2I6v2dpp7XIxw==}
 
   '@types/oracledb@6.5.2':
     resolution: {integrity: sha512-kK1eBS/Adeyis+3OlBDMeQQuasIDLUYXsi2T15ccNJ0iyUpQ4xDF7svFu3+bGVrI0CMBUclPciz+lsQR3JX3TQ==}
@@ -5753,9 +5772,6 @@ packages:
 
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
-
-  undici-types@7.18.2:
-    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
   undici@7.24.6:
     resolution: {integrity: sha512-Xi4agocCbRzt0yYMZGMA6ApD7gvtUFaxm4ZmeacWI4cZxaF6C+8I8QfofC20NAePiB/IcvZmzkJ7XPa471AEtA==}
@@ -9164,10 +9180,6 @@ snapshots:
     dependencies:
       undici-types: 7.16.0
 
-  '@types/node@25.5.0':
-    dependencies:
-      undici-types: 7.18.2
-
   '@types/oracledb@6.5.2':
     dependencies:
       '@types/node': 24.12.0
@@ -9184,7 +9196,7 @@ snapshots:
 
   '@types/pg@8.20.0':
     dependencies:
-      '@types/node': 25.5.0
+      '@types/node': 24.12.0
       pg-protocol: 1.13.0
       pg-types: 2.2.0
 
@@ -12547,8 +12559,6 @@ snapshots:
   undici-types@6.19.8: {}
 
   undici-types@7.16.0: {}
-
-  undici-types@7.18.2: {}
 
   undici@7.24.6: {}
 
