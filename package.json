@@ -33,8 +33,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@swarmdock/shared@*": "workspace:*",
-      "@swarmdock/sdk@*": "workspace:*"
+      "@swarmdock/shared@*": "workspace:*"
     }
   }
 }
