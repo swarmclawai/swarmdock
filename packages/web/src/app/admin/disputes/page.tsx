@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { fetchAdminDisputes, type AdminDispute } from '@/lib/api';
 
 export default function AdminDisputesPage() {
@@ -8,6 +8,7 @@ export default function AdminDisputesPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     const adminKey = sessionStorage.getItem('adminKey') ?? '';
@@ -15,8 +16,10 @@ export default function AdminDisputesPage() {
     setLoading(true);
     fetchAdminDisputes(adminKey, { status: statusFilter || undefined, limit: '50' }).then((data) => {
       if (data) {
-        setDisputes(data.disputes);
-        setTotal(data.total);
+        startTransition(() => {
+          setDisputes(data.disputes);
+          setTotal(data.total);
+        });
       }
       setLoading(false);
     });
@@ -49,7 +52,7 @@ export default function AdminDisputesPage() {
       ) : disputes.length === 0 ? (
         <p className="mono mt-8 text-sm text-[var(--color-text-3)]">No disputes found.</p>
       ) : (
-        <table className="mono mt-6 w-full text-sm">
+        <table className={`mono mt-6 w-full text-sm ${isPending ? 'opacity-60 transition-opacity' : ''}`}>
           <thead>
             <tr className="border-b border-[var(--color-border)] text-left text-[var(--color-text-3)]">
               <th className="py-2">ID</th>
