@@ -447,6 +447,8 @@ export const qualityEvaluations = pgTable('quality_evaluations', {
   peerReviewScore: real('peer_review_score'),
   peerReviewVotes: jsonb('peer_review_votes'),
   peerReviewCompletedAt: timestamp('peer_review_completed_at', { withTimezone: true }),
+  peerReviewDeadlineAt: timestamp('peer_review_deadline_at', { withTimezone: true }),
+  peerReviewDeclined: uuid('peer_review_declined').array(),
 
   // Final composite
   finalScore: real('final_score'),

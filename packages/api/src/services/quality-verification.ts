@@ -9,6 +9,7 @@ import { eq, and, desc, gte } from 'drizzle-orm';
 import { createLogger } from '../lib/logger.js';
 import { getLLMJudgeConfig, invokeJudge } from '../lib/llm-judge.js';
 import Ajv from 'ajv';
+import { PEER_REVIEW_DEADLINE_MS, QUALITY_VERDICT } from '@swarmdock/shared';
 
 const log = createLogger({ service: 'quality-verification' });
 
@@ -357,12 +358,16 @@ export async function requestPeerReview(
     return [];
   }
 
+  const deadlineAt = new Date(Date.now() + PEER_REVIEW_DEADLINE_MS);
+
   await database
     .update(qualityEvaluations)
     .set({
       peerReviewRequested: true,
       peerReviewers: reviewerIds,
       peerReviewVotes: {},
+      peerReviewDeclined: [],
+      peerReviewDeadlineAt: deadlineAt,
       updatedAt: new Date(),
     })
     .where(eq(qualityEvaluations.id, evaluationId));
@@ -371,9 +376,69 @@ export async function requestPeerReview(
     evaluationId,
     taskId,
     reviewerCount: String(reviewerIds.length),
+    deadline: deadlineAt.toISOString(),
   });
 
   return reviewerIds;
+}
+
+/**
+ * A reviewer opts out explicitly. Their slot no longer blocks finalization
+ * and the reduced quorum (majority of *remaining* reviewers) applies.
+ */
+export async function declinePeerReview(
+  evaluationId: string,
+  reviewerId: string,
+  database: Database = db,
+): Promise<void> {
+  const [evaluation] = await database
+    .select()
+    .from(qualityEvaluations)
+    .where(eq(qualityEvaluations.id, evaluationId))
+    .limit(1);
+  if (!evaluation) throw new Error('Evaluation not found');
+  if (!evaluation.peerReviewers?.includes(reviewerId)) {
+    throw new Error('Agent is not a designated peer reviewer');
+  }
+  const declined = new Set(evaluation.peerReviewDeclined ?? []);
+  declined.add(reviewerId);
+
+  await database
+    .update(qualityEvaluations)
+    .set({
+      peerReviewDeclined: Array.from(declined),
+      updatedAt: new Date(),
+    })
+    .where(eq(qualityEvaluations.id, evaluationId));
+
+  // Attempt to finalize in case the decline just closed the voting window.
+  await maybeFinalizeAfterReviewChange(evaluationId, database);
+}
+
+/**
+ * Force-finalize any evaluation whose peer-review deadline has passed with
+ * at least one submitted vote. Intended to be called from a worker/cron.
+ */
+export async function finalizeOverduePeerReviews(
+  now: Date = new Date(),
+  database: Database = db,
+): Promise<number> {
+  const overdue = await database
+    .select()
+    .from(qualityEvaluations)
+    .where(
+      and(
+        eq(qualityEvaluations.peerReviewRequested, true),
+      ),
+    );
+  let finalized = 0;
+  for (const e of overdue) {
+    if (e.finalVerdict) continue;
+    if (!e.peerReviewDeadlineAt || e.peerReviewDeadlineAt > now) continue;
+    await finalizeEvaluation(e.id, database);
+    finalized++;
+  }
+  return finalized;
 }
 
 export async function submitPeerReview(
@@ -426,12 +491,76 @@ export async function submitPeerReview(
     })
     .where(eq(qualityEvaluations.id, evaluationId));
 
-  // Check if all reviewers have voted
-  const allVoted =
-    evaluation.peerReviewers!.every((id) => id === reviewerId || existingVotes[id]);
+  await maybeFinalizeAfterReviewChange(evaluationId, database);
+}
 
-  if (allVoted) {
-    log.info('All peer reviewers voted, finalizing', { evaluationId });
+/** Inputs for the peer-review quorum decision. Pure, no DB. */
+export interface PeerReviewState {
+  reviewerIds: readonly string[];
+  votedIds: readonly string[];
+  declinedIds: readonly string[];
+  deadlineAt: Date | null;
+  now?: Date;
+}
+
+/**
+ * Decide whether a peer-review-pending evaluation can finalize.
+ * Rules:
+ * - If every reviewer has voted, finalize.
+ * - Otherwise apply reduced quorum = ceil(reviewers/2). Finalize when
+ *   voteCount >= reducedQuorum AND either (a) every non-voter declined
+ *   or (b) the deadline has passed.
+ */
+export function shouldFinalizePeerReview(state: PeerReviewState): boolean {
+  const reviewers = state.reviewerIds;
+  const votes = new Set(state.votedIds);
+  const declined = new Set(state.declinedIds);
+  const now = state.now ?? new Date();
+
+  if (reviewers.length === 0) return false;
+  if (reviewers.every((id) => votes.has(id))) return true;
+
+  const voteCount = Array.from(votes).filter((id) => reviewers.includes(id)).length;
+  const pending = reviewers.filter((id) => !votes.has(id) && !declined.has(id));
+  const deadlinePassed = Boolean(state.deadlineAt && state.deadlineAt <= now);
+  const reducedQuorum = Math.ceil(reviewers.length / 2);
+
+  return voteCount >= reducedQuorum && (pending.length === 0 || deadlinePassed);
+}
+
+/**
+ * Check whether the evaluation has collected enough peer-review responses
+ * (votes + declines) to finalize, optionally with reduced quorum past the
+ * deadline. Called from submitPeerReview and declinePeerReview so the
+ * pipeline never hangs on a ghosting reviewer.
+ */
+async function maybeFinalizeAfterReviewChange(
+  evaluationId: string,
+  database: Database,
+): Promise<void> {
+  const [evaluation] = await database
+    .select()
+    .from(qualityEvaluations)
+    .where(eq(qualityEvaluations.id, evaluationId))
+    .limit(1);
+  if (!evaluation || evaluation.finalVerdict) return;
+
+  const reviewers = evaluation.peerReviewers ?? [];
+  const votes = (evaluation.peerReviewVotes as Record<string, unknown>) ?? {};
+
+  const ready = shouldFinalizePeerReview({
+    reviewerIds: reviewers,
+    votedIds: Object.keys(votes),
+    declinedIds: evaluation.peerReviewDeclined ?? [],
+    deadlineAt: evaluation.peerReviewDeadlineAt ?? null,
+  });
+
+  if (ready) {
+    log.info('Peer review complete, finalizing', {
+      evaluationId,
+      voteCount: String(Object.keys(votes).length),
+      declinedCount: String((evaluation.peerReviewDeclined ?? []).length),
+    });
     await finalizeEvaluation(evaluationId, database);
   }
 }
@@ -492,17 +621,45 @@ export async function finalizeEvaluation(
     }
   }
 
-  // Normalize if not all stages contributed
-  const finalScore = totalWeight > 0 ? weightedSum / totalWeight : 0;
+  // Guard: if no stage contributed, route to human review instead of
+  // silently failing with a score of 0.
+  if (totalWeight === 0) {
+    log.warn('No stages contributed to evaluation, routing to pending_review', { evaluationId });
+    await database
+      .update(qualityEvaluations)
+      .set({
+        finalScore: null,
+        finalVerdict: QUALITY_VERDICT.PENDING_REVIEW,
+        qualityReport: {
+          finalScore: null,
+          finalVerdict: QUALITY_VERDICT.PENDING_REVIEW,
+          stages: {
+            schemaValidation: evaluation.schemaValidationPassed,
+            llmScore: evaluation.llmScore,
+            llmConfidence: evaluation.llmConfidence,
+            faithfulnessScore: evaluation.faithfulnessScore,
+            peerReviewScore: evaluation.peerReviewScore,
+          },
+          weights,
+          evaluatedAt: new Date().toISOString(),
+          reason: 'no_stages_contributed',
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(qualityEvaluations.id, evaluationId));
+    return;
+  }
+
+  const finalScore = weightedSum / totalWeight;
 
   // Determine verdict
   let finalVerdict: string;
   if (finalScore >= 0.7) {
-    finalVerdict = 'passed';
+    finalVerdict = QUALITY_VERDICT.PASSED;
   } else if (finalScore >= 0.5) {
-    finalVerdict = 'needs_revision';
+    finalVerdict = QUALITY_VERDICT.NEEDS_REVISION;
   } else {
-    finalVerdict = 'failed';
+    finalVerdict = QUALITY_VERDICT.FAILED;
   }
 
   const qualityReport = {

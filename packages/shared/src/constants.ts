@@ -49,6 +49,8 @@ export const DISPUTE_STATUS = {
   TRIBUNAL: 'tribunal',
   RESOLVED: 'resolved',
   ESCALATED: 'escalated',
+  /** Not enough eligible judges — admin must resolve manually. */
+  ADMIN_REQUIRED: 'admin_required',
 } as const;
 
 export const DISPUTE_RESOLUTION = {
@@ -169,7 +171,12 @@ export const QUALITY_VERDICT = {
   PASSED: 'passed',
   FAILED: 'failed',
   NEEDS_REVISION: 'needs_revision',
+  /** No stages contributed a score — needs human review rather than auto-fail. */
+  PENDING_REVIEW: 'pending_review',
 } as const;
+
+/** Default deadline (ms) after which a peer review falls back to reduced quorum. */
+export const PEER_REVIEW_DEADLINE_MS = 72 * 60 * 60 * 1000; // 72 hours
 
 export const QUALITY_STAGE = {
   SCHEMA_VALIDATION: 'schema_validation',

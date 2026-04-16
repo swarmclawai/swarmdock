@@ -44,8 +44,15 @@ export function tallyTribunalVotes(verdicts: string[]): string {
  * - Not involved in the dispute (not raisedBy or against)
  * - trust_level >= 2
  * - quality reputation score > 0.6
+ *
+ * When fewer than 3 eligible judges exist, the dispute is marked
+ * `admin_required` instead of throwing — a human admin can resolve it
+ * via the admin dispute-resolution endpoint.
  */
-export async function selectTribunalJudges(disputeId: string): Promise<string[]> {
+export async function selectTribunalJudges(
+  disputeId: string,
+  options: { exclude?: readonly string[] } = {},
+): Promise<string[]> {
   // Get the dispute to know which agents to exclude
   const [dispute] = await db
     .select()
@@ -58,11 +65,12 @@ export async function selectTribunalJudges(disputeId: string): Promise<string[]>
   }
 
   // Find eligible agents: trust_level >= 2, quality score > 0.6, not involved
-  const excludedIds = [dispute.raisedByAgentId, dispute.againstAgentId].filter(
-    (id): id is string => id != null,
-  );
+  const excludedIds = new Set<string>([
+    ...[dispute.raisedByAgentId, dispute.againstAgentId].filter((id): id is string => id != null),
+    ...(options.exclude ?? []),
+  ]);
 
-  const eligible = await db
+  const eligibleRows = await db
     .select({ agentId: agents.id })
     .from(agents)
     .innerJoin(
@@ -77,19 +85,42 @@ export async function selectTribunalJudges(disputeId: string): Promise<string[]>
         sql`${agents.trustLevel} >= 2`,
         sql`${agentReputation.score} > 0.6`,
         sql`${agents.status} = 'active'`,
-        ...excludedIds.map((id) => ne(agents.id, id)),
+        ...Array.from(excludedIds).map((id) => ne(agents.id, id)),
       ),
     );
 
+  const eligible = eligibleRows
+    .map((row) => row.agentId)
+    .filter((id): id is string => typeof id === 'string');
+
   if (eligible.length < 3) {
-    throw new Error(
-      `Not enough eligible tribunal judges: found ${eligible.length}, need 3`,
-    );
+    // Graceful fallback: mark admin_required and emit an event so the
+    // admin surface can pick this up. Callers who set --force strict
+    // behavior can still throw; defaults route to human review.
+    await db
+      .update(disputes)
+      .set({
+        status: DISPUTE_STATUS.ADMIN_REQUIRED,
+        updatedAt: new Date(),
+      })
+      .where(eq(disputes.id, disputeId));
+
+    eventBus.broadcast({
+      type: 'dispute.admin_required',
+      data: {
+        disputeId,
+        taskId: dispute.taskId,
+        eligibleJudges: eligible.length,
+        reason: 'insufficient_judges',
+      },
+    });
+
+    return [];
   }
 
   // Random selection of 3 judges
-  const shuffled = eligible.sort(() => Math.random() - 0.5);
-  const selectedIds = shuffled.slice(0, 3).map((row) => row.agentId);
+  const shuffled = [...eligible].sort(() => Math.random() - 0.5);
+  const selectedIds = shuffled.slice(0, 3);
 
   // Update dispute with selected judges and set status to tribunal
   await db
@@ -114,6 +145,93 @@ export async function selectTribunalJudges(disputeId: string): Promise<string[]>
   }
 
   return selectedIds;
+}
+
+/**
+ * Judge-initiated decline. Removes the judge from the tribunal roster and
+ * attempts to recruit a replacement. If no replacement is available, the
+ * dispute flips to admin_required.
+ */
+export async function declineTribunal(
+  disputeId: string,
+  judgeAgentId: string,
+  notes: string | null = null,
+): Promise<{ replaced: string | null; adminRequired: boolean }> {
+  const [dispute] = await db
+    .select()
+    .from(disputes)
+    .where(eq(disputes.id, disputeId))
+    .limit(1);
+
+  if (!dispute) throw new Error(`Dispute ${disputeId} not found`);
+
+  const roster = dispute.tribunalAgents ?? [];
+  if (!roster.includes(judgeAgentId)) {
+    throw new Error(`Agent ${judgeAgentId} is not a tribunal judge for dispute ${disputeId}`);
+  }
+
+  const existingVotes = (dispute.tribunalVotes as TribunalVoteRecord) ?? {};
+  if (existingVotes[judgeAgentId]) {
+    throw new Error(`Agent ${judgeAgentId} has already voted on dispute ${disputeId}`);
+  }
+
+  // Pick a replacement excluding the current roster (including the decliner).
+  const replacements = await db
+    .select({ agentId: agents.id })
+    .from(agents)
+    .innerJoin(
+      agentReputation,
+      and(
+        eq(agentReputation.agentId, agents.id),
+        eq(agentReputation.dimension, 'quality'),
+      ),
+    )
+    .where(
+      and(
+        sql`${agents.trustLevel} >= 2`,
+        sql`${agentReputation.score} > 0.6`,
+        sql`${agents.status} = 'active'`,
+        ne(agents.id, judgeAgentId),
+        ...roster
+          .filter((id): id is string => typeof id === 'string' && id !== judgeAgentId)
+          .map((id) => ne(agents.id, id)),
+        ...[dispute.raisedByAgentId, dispute.againstAgentId]
+          .filter((id): id is string => typeof id === 'string')
+          .map((id) => ne(agents.id, id)),
+      ),
+    )
+    .limit(1);
+
+  const replacement = replacements[0]?.agentId ?? null;
+  const nextRoster = roster.filter((id) => id !== judgeAgentId);
+  if (replacement) nextRoster.push(replacement);
+
+  await db
+    .update(disputes)
+    .set({
+      tribunalAgents: nextRoster,
+      status: replacement ? DISPUTE_STATUS.TRIBUNAL : DISPUTE_STATUS.ADMIN_REQUIRED,
+      updatedAt: new Date(),
+    })
+    .where(eq(disputes.id, disputeId));
+
+  eventBus.broadcast({
+    type: 'tribunal.declined',
+    data: { disputeId, taskId: dispute.taskId, declinedBy: judgeAgentId, replacement, notes },
+  });
+
+  if (replacement) {
+    eventBus.emit(replacement, {
+      type: 'tribunal.selected',
+      data: {
+        disputeId,
+        taskId: dispute.taskId,
+        message: 'You have been selected as a tribunal judge (replacement)',
+      },
+    });
+  }
+
+  return { replaced: replacement, adminRequired: !replacement };
 }
 
 /**
@@ -142,6 +260,15 @@ export async function submitTribunalVote(
   const tribunalAgents = dispute.tribunalAgents ?? [];
   if (!tribunalAgents.includes(judgeAgentId)) {
     throw new Error(`Agent ${judgeAgentId} is not a tribunal judge for dispute ${disputeId}`);
+  }
+
+  // Defense-in-depth: reject self-votes even if the selection pool somehow
+  // leaked an involved party (e.g. replacement pool drift, admin manual add).
+  if (
+    judgeAgentId === dispute.raisedByAgentId ||
+    judgeAgentId === dispute.againstAgentId
+  ) {
+    throw new Error(`Agent ${judgeAgentId} is a party to dispute ${disputeId} and cannot vote`);
   }
 
   // Record the vote
