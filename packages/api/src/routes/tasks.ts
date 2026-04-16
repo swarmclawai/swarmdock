@@ -1,7 +1,16 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { db, type Database } from '../db/client.js';
-import { tasks, taskBids, agents, disputes, taskInvitations } from '../db/schema.js';
+import {
+  tasks,
+  taskBids,
+  agents,
+  disputes,
+  taskInvitations,
+  escrowTransactions,
+  qualityEvaluations,
+  qualityMetrics,
+} from '../db/schema.js';
 import { eq, and, ne, inArray, sql, count, gte, lte, ilike, or, desc } from 'drizzle-orm';
 import { authMiddleware, optionalAuthMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import {
@@ -217,6 +226,16 @@ app.post('/', requireAuth, withScope('tasks.write'), async (c) => {
   const directAssigneeId = parsed.data.directAssigneeId ?? null;
   const isPrivate = parsed.data.visibility === TASK_VISIBILITY.PRIVATE;
 
+  // Compute description embedding once. We use it both for matching (for
+  // private open/auto tasks) and to persist on the task row. Errors are swallowed
+  // so matching falls back to skill-overlap only and persistence is skipped.
+  let descriptionEmbedding: number[] | null = null;
+  try {
+    descriptionEmbedding = await embedText(parsed.data.description);
+  } catch (err) {
+    console.error('[tasks] embedText failed:', err);
+  }
+
   if (isPrivate) {
     // Run skill matching for private tasks with open/auto matching
     let allInvitedIds = creation.invitedAgentIds ?? [];
@@ -225,7 +244,13 @@ app.post('/', requireAuth, withScope('tasks.write'), async (c) => {
       (parsed.data.matchingMode === MATCHING_MODE.OPEN || parsed.data.matchingMode === MATCHING_MODE.AUTO)
     ) {
       const excludeIds = [agent.agent_id, ...allInvitedIds];
-      const matchedIds = await findMatched(database, parsed.data.skillRequirements, excludeIds);
+      const matchedIds = await findMatched(
+        database,
+        parsed.data.skillRequirements,
+        excludeIds,
+        undefined,
+        descriptionEmbedding,
+      );
       if (matchedIds.length > 0) {
         await createInvitations(database, task.id, matchedIds);
         allInvitedIds = [...allInvitedIds, ...matchedIds];
@@ -281,10 +306,17 @@ app.post('/', requireAuth, withScope('tasks.write'), async (c) => {
     });
   }
 
-  // Async embed (don't block response)
-  embedText(parsed.data.description).then(async (vec) => {
-    await database.update(tasks).set({ descriptionEmbedding: vec }).where(eq(tasks.id, task.id));
-  }).catch(console.error);
+  // Persist the embedding we computed above (if any) — don't block the response
+  // on a failed write.
+  if (descriptionEmbedding) {
+    void (async () => {
+      try {
+        await database.update(tasks).set({ descriptionEmbedding }).where(eq(tasks.id, task.id));
+      } catch (err) {
+        console.error('[tasks] persist embedding failed:', err);
+      }
+    })();
+  }
 
   return c.json(task, 201, creation.settlementHeaders);
 });
@@ -453,6 +485,35 @@ app.get('/:id', maybeAuth, async (c) => {
     .where(eq(disputes.taskId, id))
     .orderBy(desc(disputes.createdAt))
     .limit(1);
+  const [escrow] = await database
+    .select({
+      id: escrowTransactions.id,
+      status: escrowTransactions.status,
+      amount: escrowTransactions.amount,
+      platformFee: escrowTransactions.platformFee,
+      escrowTxHash: escrowTransactions.escrowTxHash,
+      releaseTxHash: escrowTransactions.releaseTxHash,
+      network: escrowTransactions.network,
+      createdAt: escrowTransactions.createdAt,
+      updatedAt: escrowTransactions.updatedAt,
+    })
+    .from(escrowTransactions)
+    .where(eq(escrowTransactions.taskId, id))
+    .orderBy(desc(escrowTransactions.createdAt))
+    .limit(1);
+  const [qualityEval] = await database
+    .select()
+    .from(qualityEvaluations)
+    .where(eq(qualityEvaluations.taskId, id))
+    .orderBy(desc(qualityEvaluations.createdAt))
+    .limit(1);
+  const qualityMetricRows = qualityEval
+    ? await database
+      .select()
+      .from(qualityMetrics)
+      .where(eq(qualityMetrics.evaluationId, qualityEval.id))
+    : [];
+
   const relatedAgentIds = Array.from(new Set([
     task.requesterId,
     task.assigneeId,
@@ -482,6 +543,55 @@ app.get('/:id', maybeAuth, async (c) => {
     && !isOwner
     && !isDisputed;
 
+  const qualityEvaluation = qualityEval
+    ? {
+        id: qualityEval.id,
+        finalScore: qualityEval.finalScore,
+        finalVerdict: qualityEval.finalVerdict,
+        createdAt: qualityEval.createdAt,
+        updatedAt: qualityEval.updatedAt,
+        stages: {
+          schema: {
+            status: qualityEval.schemaValidatedAt
+              ? qualityEval.schemaValidationPassed
+                ? 'passed'
+                : 'failed'
+              : 'pending',
+            errors: qualityEval.schemaValidationErrors,
+            evaluatedAt: qualityEval.schemaValidatedAt,
+          },
+          llm: {
+            status: qualityEval.llmEvaluatedAt ? 'completed' : 'pending',
+            score: qualityEval.llmScore,
+            reasoning: qualityEval.llmReasoning,
+            confidence: qualityEval.llmConfidence,
+            evaluatedAt: qualityEval.llmEvaluatedAt,
+          },
+          faithfulness: {
+            status: qualityEval.faithfulnessEvaluatedAt ? 'completed' : 'pending',
+            score: qualityEval.faithfulnessScore,
+            evaluatedAt: qualityEval.faithfulnessEvaluatedAt,
+          },
+          peerReview: {
+            status: qualityEval.peerReviewCompletedAt
+              ? 'completed'
+              : qualityEval.peerReviewRequested
+                ? 'pending'
+                : 'skipped',
+            score: qualityEval.peerReviewScore,
+            reviewerCount: qualityEval.peerReviewers?.length ?? 0,
+            completedAt: qualityEval.peerReviewCompletedAt,
+          },
+        },
+        metrics: qualityMetricRows.map((m) => ({
+          stage: m.stage,
+          metric: m.metric,
+          score: m.score,
+          reasoning: m.reasoning,
+        })),
+      }
+    : null;
+
   return c.json({
     ...task,
     requesterId: shouldMaskIdentity ? null : task.requesterId,
@@ -494,6 +604,14 @@ app.get('/:id', maybeAuth, async (c) => {
     })),
     bidCount: bids.length,
     dispute: dispute ?? null,
+    escrow: escrow
+      ? {
+          ...escrow,
+          amount: escrow.amount.toString(),
+          platformFee: escrow.platformFee?.toString() ?? null,
+        }
+      : null,
+    qualityEvaluation,
   });
 });
 

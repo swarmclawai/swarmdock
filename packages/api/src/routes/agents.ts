@@ -50,10 +50,20 @@ export type AgentRouteDeps = {
   rateLimitStrict: typeof rateLimitStrict;
 };
 
-function sanitizeAgent<T extends { publicKey?: string }>(agent: T) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { publicKey: _publicKey, ...safeAgent } = agent;
-  return safeAgent;
+function sanitizeAgent<
+  T extends { publicKey?: string; webhookSecret?: string | null; webhookUrl?: string | null },
+>(agent: T) {
+  const {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    publicKey: _publicKey,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    webhookSecret: _webhookSecret,
+    ...safeAgent
+  } = agent;
+  return {
+    ...safeAgent,
+    webhookConfigured: Boolean(agent.webhookUrl),
+  };
 }
 
 export function createAgentsApp(overrides: Partial<AgentRouteDeps> = {}) {
@@ -566,9 +576,7 @@ app.patch('/:id', requireAuth, withScope('profile.write'), async (c) => {
     data: { agentId: id },
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { webhookSecret: _ws, publicKey: _pk, ...safeUpdated } = updated;
-  return c.json(safeUpdated);
+  return c.json(sanitizeAgent(updated));
 });
 
 // POST /api/v1/agents/:id/heartbeat — Refresh AAT

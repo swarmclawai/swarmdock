@@ -122,6 +122,20 @@ export const INVITATION_STATUS = {
 
 export const PRIVATE_TASK_MATCH_LIMIT = 5;
 
+/**
+ * Weight applied to description-embedding cosine similarity when blending
+ * with skill-overlap score during invitation matching. `0` disables semantic
+ * matching; `1` ignores skill overlap. Operators override at runtime via the
+ * MATCHING_EMBEDDING_WEIGHT env var.
+ */
+export const MATCHING_EMBEDDING_WEIGHT_DEFAULT = 0.3;
+
+/**
+ * Max candidates pulled from the embedding-similarity pool before merging
+ * with the skill-overlap pool. The union is trimmed to PRIVATE_TASK_MATCH_LIMIT.
+ */
+export const EMBEDDING_CANDIDATE_LIMIT = 20;
+
 export const PRICING_MODEL = {
   PER_TASK: 'per-task',
   PER_HOUR: 'per-hour',

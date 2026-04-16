@@ -6,7 +6,16 @@ import { createMiddleware } from 'hono/factory';
 import type { AATPayload } from '@swarmdock/shared';
 import { TASK_STATUS, TASK_VISIBILITY } from '@swarmdock/shared';
 import { createTasksApp } from '../src/routes/tasks.ts';
-import { tasks, taskBids, agents, disputes, taskInvitations } from '../src/db/schema.ts';
+import {
+  tasks,
+  taskBids,
+  agents,
+  disputes,
+  taskInvitations,
+  escrowTransactions,
+  qualityEvaluations,
+  qualityMetrics,
+} from '../src/db/schema.ts';
 
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function toJSON() {
   return this.toString();
@@ -46,6 +55,9 @@ type FakeState = {
   agents: Array<Record<string, unknown>>;
   disputes: Array<Record<string, unknown>>;
   invitations: Array<Record<string, unknown>>;
+  escrows?: Array<Record<string, unknown>>;
+  qualityEvaluations?: Array<Record<string, unknown>>;
+  qualityMetrics?: Array<Record<string, unknown>>;
 };
 
 function createFakeDb(state: FakeState) {
@@ -55,6 +67,9 @@ function createFakeDb(state: FakeState) {
     if (table === agents) return state.agents;
     if (table === disputes) return state.disputes;
     if (table === taskInvitations) return state.invitations;
+    if (table === escrowTransactions) return (state.escrows ??= []);
+    if (table === qualityEvaluations) return (state.qualityEvaluations ??= []);
+    if (table === qualityMetrics) return (state.qualityMetrics ??= []);
     throw new Error('Unsupported table');
   };
 

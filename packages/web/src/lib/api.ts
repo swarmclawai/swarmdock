@@ -32,6 +32,9 @@ export type AgentSummary = {
   updatedAt: string;
   skillCount: number;
   topSkills: AgentTopSkill[];
+  webhookUrl: string | null;
+  webhookEvents: string[] | null;
+  webhookConfigured: boolean;
 };
 
 export type AgentSkill = {
@@ -149,6 +152,54 @@ export type TaskListItem = {
   bidCount: number;
 };
 
+export type TaskEscrow = {
+  id: string;
+  status: string;
+  amount: string;
+  platformFee: string | null;
+  escrowTxHash: string | null;
+  releaseTxHash: string | null;
+  network: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type QualityStageStatus = 'pending' | 'completed' | 'passed' | 'failed' | 'skipped';
+
+export type TaskQualityEvaluation = {
+  id: string;
+  finalScore: number | null;
+  finalVerdict: string | null;
+  createdAt: string;
+  updatedAt: string;
+  stages: {
+    schema: {
+      status: QualityStageStatus;
+      errors: unknown;
+      evaluatedAt: string | null;
+    };
+    llm: {
+      status: QualityStageStatus;
+      score: number | null;
+      reasoning: string | null;
+      confidence: number | null;
+      evaluatedAt: string | null;
+    };
+    faithfulness: {
+      status: QualityStageStatus;
+      score: number | null;
+      evaluatedAt: string | null;
+    };
+    peerReview: {
+      status: QualityStageStatus;
+      score: number | null;
+      reviewerCount: number;
+      completedAt: string | null;
+    };
+  };
+  metrics: Array<{ stage: string; metric: string; score: number; reasoning: string | null }>;
+};
+
 export type TaskDetail = TaskListItem & {
   requester: TaskParty | null;
   assignee: TaskParty | null;
@@ -167,6 +218,8 @@ export type TaskDetail = TaskListItem & {
     bidder: TaskParty | null;
   }>;
   dispute: TaskDispute | null;
+  escrow: TaskEscrow | null;
+  qualityEvaluation: TaskQualityEvaluation | null;
 };
 
 export type TaskListResponse = {
@@ -191,6 +244,8 @@ type TaskDetailInput = TaskListItemInput & {
   assignee?: TaskParty | null;
   bids?: TaskDetail['bids'];
   dispute?: TaskDispute | null;
+  escrow?: Partial<TaskEscrow> | null;
+  qualityEvaluation?: Partial<TaskQualityEvaluation> | null;
 };
 
 async function fetchJson<T>(path: string, revalidate: number): Promise<T | null> {
@@ -286,6 +341,9 @@ function normalizeAgentSummary(agent: AgentSummaryInput): AgentSummary {
     updatedAt: String(agent.updatedAt ?? new Date(0).toISOString()),
     skillCount: typeof agent.skillCount === 'number' ? agent.skillCount : normalizedSkills.length,
     topSkills,
+    webhookUrl: typeof agent.webhookUrl === 'string' ? agent.webhookUrl : null,
+    webhookEvents: Array.isArray(agent.webhookEvents) ? agent.webhookEvents.map(String) : null,
+    webhookConfigured: Boolean(agent.webhookConfigured),
   };
 }
 
@@ -364,6 +422,22 @@ function normalizeTaskDetail(task: TaskDetailInput): TaskDetail {
           resolvedAt: task.dispute.resolvedAt ?? null,
           updatedAt: String(task.dispute.updatedAt ?? new Date(0).toISOString()),
         }
+      : null,
+    escrow: task.escrow && task.escrow.id
+      ? {
+          id: String(task.escrow.id),
+          status: String(task.escrow.status ?? 'pending'),
+          amount: String(task.escrow.amount ?? '0'),
+          platformFee: task.escrow.platformFee == null ? null : String(task.escrow.platformFee),
+          escrowTxHash: task.escrow.escrowTxHash ?? null,
+          releaseTxHash: task.escrow.releaseTxHash ?? null,
+          network: String(task.escrow.network ?? 'base-sepolia'),
+          createdAt: String(task.escrow.createdAt ?? new Date(0).toISOString()),
+          updatedAt: String(task.escrow.updatedAt ?? new Date(0).toISOString()),
+        }
+      : null,
+    qualityEvaluation: task.qualityEvaluation && task.qualityEvaluation.id
+      ? (task.qualityEvaluation as TaskQualityEvaluation)
       : null,
   };
 }
