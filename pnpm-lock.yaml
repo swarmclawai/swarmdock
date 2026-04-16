@@ -4,6 +4,10 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@swarmdock/shared@*': workspace:*
+  '@swarmdock/sdk@*': workspace:*
+
 importers:
 
   .:
@@ -109,7 +113,7 @@ importers:
         version: 8.20.0
       swarmdock-mcp:
         specifier: ^0.2.0
-        version: 0.2.0(typescript@5.9.3)
+        version: 0.2.0
       tweetnacl:
         specifier: ^1.0.3
         version: 1.0.3
@@ -162,8 +166,8 @@ importers:
   packages/openclaw-plugin:
     dependencies:
       '@swarmdock/sdk':
-        specifier: ^0.5.0
-        version: 0.5.0(typescript@5.9.3)(zod@4.3.6)
+        specifier: workspace:*
+        version: link:../sdk
       openclaw:
         specifier: '>=2026.3.31'
         version: 2026.4.2(@napi-rs/canvas@0.1.97)
@@ -2584,15 +2588,6 @@ packages:
 
   '@stablelib/wipe@1.0.1':
     resolution: {integrity: sha512-WfqfX/eXGiAd3RJe4VU2snh/ZPwtSjLG4ynQ/vYzvghTh7dHFcI1wl+nrkWG6lGhukOxOsUHfv8dUXr58D0ayg==}
-
-  '@swarmdock/sdk@0.5.0':
-    resolution: {integrity: sha512-cwQfZ9GM9drg2Zr3V36xnAZpzo5BbAeuLyGidzFhDRimcNx4UyKil6xO4a4iMff4/Mcd6ZVxNYOzDy11qKj49w==}
-
-  '@swarmdock/sdk@0.5.3':
-    resolution: {integrity: sha512-R/nhMUeZGvSHPtwHyooAT10TIsNuWBA5ezXowcNI6PUL15iaXNjjeTXx/IbKdGebAor6IsXuZYWU51ERgEq5Qg==}
-
-  '@swarmdock/shared@0.4.0':
-    resolution: {integrity: sha512-nUxSWDFgi0GVU+AeqcAYXBZAAGKN7wJuwhKymeaY4IGT0XMvFiXTH7S/Q4gA/34T9qK2KwtWhA72R5aXu13FrQ==}
 
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
@@ -8881,38 +8876,6 @@ snapshots:
 
   '@stablelib/wipe@1.0.1': {}
 
-  '@swarmdock/sdk@0.5.0(typescript@5.9.3)(zod@4.3.6)':
-    dependencies:
-      '@swarmdock/shared': 0.4.0
-      '@x402/evm': 2.8.0(typescript@5.9.3)
-      '@x402/fetch': 2.8.0(typescript@5.9.3)
-      tweetnacl: 1.0.3
-      tweetnacl-util: 0.15.1
-      viem: 2.47.6(typescript@5.9.3)(zod@4.3.6)
-    transitivePeerDependencies:
-      - bufferutil
-      - typescript
-      - utf-8-validate
-      - zod
-
-  '@swarmdock/sdk@0.5.3(typescript@5.9.3)(zod@3.25.76)':
-    dependencies:
-      '@swarmdock/shared': 0.4.0
-      '@x402/evm': 2.8.0(typescript@5.9.3)
-      '@x402/fetch': 2.8.0(typescript@5.9.3)
-      tweetnacl: 1.0.3
-      tweetnacl-util: 0.15.1
-      viem: 2.47.6(typescript@5.9.3)(zod@3.25.76)
-    transitivePeerDependencies:
-      - bufferutil
-      - typescript
-      - utf-8-validate
-      - zod
-
-  '@swarmdock/shared@0.4.0':
-    dependencies:
-      zod: 3.25.76
-
   '@swc/helpers@0.5.15':
     dependencies:
       tslib: 2.8.1
@@ -12215,17 +12178,14 @@ snapshots:
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
-  swarmdock-mcp@0.2.0(typescript@5.9.3):
+  swarmdock-mcp@0.2.0:
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
-      '@swarmdock/sdk': 0.5.3(typescript@5.9.3)(zod@3.25.76)
+      '@swarmdock/sdk': link:packages/sdk
       zod: 3.25.76
     transitivePeerDependencies:
       - '@cfworker/json-schema'
-      - bufferutil
       - supports-color
-      - typescript
-      - utf-8-validate
 
   symbol-tree@3.2.4: {}
 
