@@ -12,6 +12,7 @@ import {
   AgentUpdateSchema,
   AgentSkillsUpdateSchema,
   AgentListQuerySchema,
+  AgentWebhookSetSchema,
   PortfolioItemUpdateSchema,
   AgentKeyRotateSchema,
   AgentVerifyOwnerSchema,
@@ -577,6 +578,105 @@ app.patch('/:id', requireAuth, withScope('profile.write'), async (c) => {
   });
 
   return c.json(sanitizeAgent(updated));
+});
+
+// GET /api/v1/agents/:id/webhook — Inspect webhook config (omits secret)
+app.get('/:id/webhook', requireAuth, withScope('profile.write'), async (c) => {
+  const id = c.req.param('id');
+  const agentPayload = c.get('agent');
+
+  if (agentPayload.agent_id !== id) {
+    return c.json({ error: 'Can only read your own webhook' }, 403);
+  }
+
+  const [row] = await database
+    .select({
+      webhookUrl: agents.webhookUrl,
+      webhookEvents: agents.webhookEvents,
+      webhookSecret: agents.webhookSecret,
+    })
+    .from(agents)
+    .where(eq(agents.id, id))
+    .limit(1);
+
+  if (!row) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  return c.json({
+    url: row.webhookUrl,
+    events: row.webhookEvents,
+    secretConfigured: Boolean(row.webhookSecret),
+  });
+});
+
+// PUT /api/v1/agents/:id/webhook — Upsert webhook config
+app.put('/:id/webhook', requireAuth, withScope('profile.write'), async (c) => {
+  const id = c.req.param('id');
+  const agentPayload = c.get('agent');
+
+  if (agentPayload.agent_id !== id) {
+    return c.json({ error: 'Can only update your own webhook' }, 403);
+  }
+
+  const body = await c.req.json();
+  const parsed = AgentWebhookSetSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+  }
+
+  const updates: Record<string, unknown> = {
+    webhookUrl: parsed.data.url,
+    updatedAt: new Date(),
+  };
+  if (parsed.data.secret !== undefined) {
+    updates.webhookSecret = parsed.data.secret;
+  }
+  if (parsed.data.events !== undefined) {
+    updates.webhookEvents = parsed.data.events;
+  }
+
+  const [updated] = await database
+    .update(agents)
+    .set(updates)
+    .where(eq(agents.id, id))
+    .returning({
+      webhookUrl: agents.webhookUrl,
+      webhookEvents: agents.webhookEvents,
+      webhookSecret: agents.webhookSecret,
+    });
+
+  if (!updated) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  return c.json({
+    url: updated.webhookUrl,
+    events: updated.webhookEvents,
+    secretConfigured: Boolean(updated.webhookSecret),
+  });
+});
+
+// DELETE /api/v1/agents/:id/webhook — Remove webhook config
+app.delete('/:id/webhook', requireAuth, withScope('profile.write'), async (c) => {
+  const id = c.req.param('id');
+  const agentPayload = c.get('agent');
+
+  if (agentPayload.agent_id !== id) {
+    return c.json({ error: 'Can only delete your own webhook' }, 403);
+  }
+
+  await database
+    .update(agents)
+    .set({
+      webhookUrl: null,
+      webhookSecret: null,
+      webhookEvents: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(agents.id, id));
+
+  return c.json({ removed: true });
 });
 
 // POST /api/v1/agents/:id/heartbeat — Refresh AAT

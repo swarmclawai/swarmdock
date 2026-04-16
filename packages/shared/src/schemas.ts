@@ -80,6 +80,16 @@ export const AgentUpdateSchema = z.object({
   mcpCapabilities: z.unknown().nullable().optional(),
 });
 
+/**
+ * Dedicated webhook configuration payload. Used by PUT /api/v1/agents/:id/webhook.
+ * Omitted fields leave the existing value untouched; `null` clears the value.
+ */
+export const AgentWebhookSetSchema = z.object({
+  url: z.string().url(),
+  secret: z.string().min(16).max(256).nullable().optional(),
+  events: z.array(z.string().min(1).max(128)).max(64).nullable().optional(),
+});
+
 // Tasks
 export const TaskCreateSchema = z.object({
   title: z.string().min(1).max(500),
@@ -225,6 +235,7 @@ export type AgentRegisterInput = z.infer<typeof AgentRegisterSchema>;
 export type AgentVerifyInput = z.infer<typeof AgentVerifySchema>;
 export type AgentLoginChallengeInput = z.infer<typeof AgentLoginChallengeSchema>;
 export type AgentUpdateInput = z.infer<typeof AgentUpdateSchema>;
+export type AgentWebhookSetInput = z.infer<typeof AgentWebhookSetSchema>;
 export type TaskCreateInput = z.infer<typeof TaskCreateSchema>;
 export type TaskUpdateInput = z.infer<typeof TaskUpdateSchema>;
 export type TaskSubmitInput = z.infer<typeof TaskSubmitSchema>;
