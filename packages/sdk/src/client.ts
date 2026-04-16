@@ -362,7 +362,7 @@ export class SwarmDockClient {
 
   /** @internal */
   async fetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
-    const { method = 'GET', body, query, auth = true, timeout, _retried } = options;
+    const { method = 'GET', body, query, auth = true, timeout, _retried, _backoffAttempt } = options;
     const timeoutMs = timeout ?? this.defaultTimeout;
 
     let url = `${this.baseUrl}${path}`;
@@ -406,6 +406,17 @@ export class SwarmDockClient {
     if (res.status === 401 && auth && !_retried && this.secretKey) {
       this.token = null;
       return this.fetch<T>(path, { ...options, _retried: true });
+    }
+
+    // Rate-limit / transient-unavailable backoff: retry up to RATE_LIMIT_MAX_RETRIES
+    // times, honoring Retry-After when present. Falls back to jittered
+    // exponential delay so concurrent clients stagger naturally.
+    if ((res.status === 429 || res.status === 503) && (_backoffAttempt ?? 0) < RATE_LIMIT_MAX_RETRIES) {
+      const attempt = (_backoffAttempt ?? 0) + 1;
+      const retryAfter = parseRetryAfter(res.headers.get('retry-after'));
+      const delay = retryAfter ?? expBackoffWithJitter(attempt);
+      await sleep(delay);
+      return this.fetch<T>(path, { ...options, _backoffAttempt: attempt });
     }
 
     if (!res.ok) {
@@ -486,6 +497,35 @@ interface FetchOptions {
   timeout?: number;
   /** @internal Used to prevent infinite retry loops on 401 */
   _retried?: boolean;
+  /** @internal Current attempt count for rate-limit backoff */
+  _backoffAttempt?: number;
+}
+
+const RATE_LIMIT_MAX_RETRIES = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Parse a Retry-After header (seconds or HTTP date) into milliseconds. */
+export function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null;
+  }
+  const ts = Date.parse(trimmed);
+  if (Number.isNaN(ts)) return null;
+  const delta = ts - Date.now();
+  return delta > 0 ? delta : 0;
+}
+
+/** Exponential backoff with ±20% jitter so concurrent clients stagger. */
+export function expBackoffWithJitter(attempt: number): number {
+  const base = Math.min(10_000, 250 * 2 ** (attempt - 1));
+  const jitter = base * 0.4 * (Math.random() - 0.5);
+  return Math.max(100, Math.round(base + jitter));
 }
 
 // -- Sub-operation classes --
@@ -596,6 +636,33 @@ class ProfileOperations {
       body: input,
     });
   }
+
+  readonly webhook = {
+    get: async (): Promise<WebhookConfig> => {
+      await this.client.authenticate();
+      const id = this.client.getAgentId();
+      return this.client.fetch<WebhookConfig>(`/api/v1/agents/${id}/webhook`);
+    },
+    set: async (input: { url: string; secret?: string | null; events?: string[] | null }): Promise<WebhookConfig> => {
+      await this.client.authenticate();
+      const id = this.client.getAgentId();
+      return this.client.fetch<WebhookConfig>(`/api/v1/agents/${id}/webhook`, {
+        method: 'PUT',
+        body: input,
+      });
+    },
+    remove: async (): Promise<void> => {
+      await this.client.authenticate();
+      const id = this.client.getAgentId();
+      await this.client.fetch(`/api/v1/agents/${id}/webhook`, { method: 'DELETE' });
+    },
+  };
+}
+
+export interface WebhookConfig {
+  url: string | null;
+  events: string[] | null;
+  secretConfigured: boolean;
 }
 
 class TaskOperations {
@@ -720,6 +787,67 @@ class TaskOperations {
       method: 'POST',
     });
   }
+
+  /**
+   * Poll a task until its status matches a predicate or a terminal status is
+   * reached. Honors the same rate-limit backoff as any other fetch, so running
+   * many `waitForTask` calls in parallel doesn't thunder the API.
+   *
+   * Examples:
+   *   waitForTask(id)                              // until completed | failed | cancelled
+   *   waitForTask(id, { until: ['review'] })       // until review (or terminal)
+   *   waitForTask(id, { until: s => s === 'completed', pollIntervalMs: 3000 })
+   */
+  async waitForTask(
+    taskId: string,
+    options: WaitForTaskOptions = {},
+  ): Promise<TaskDetailResult> {
+    const terminal = new Set(options.terminalStatuses ?? ['completed', 'failed', 'cancelled']);
+    const interval = options.pollIntervalMs ?? 2000;
+    const timeoutMs = options.timeoutMs ?? 10 * 60 * 1000;
+    const deadline = Date.now() + timeoutMs;
+
+    const until = options.until;
+    let matchesUntil: ((status: string) => boolean) | null;
+    if (typeof until === 'function') {
+      matchesUntil = until;
+    } else if (Array.isArray(until)) {
+      const allowed = new Set(until);
+      matchesUntil = (status: string) => allowed.has(status);
+    } else {
+      matchesUntil = null;
+    }
+
+    while (true) {
+      const task = await this.get(taskId);
+      options.onPoll?.(task);
+      if (matchesUntil ? matchesUntil(task.status) : terminal.has(task.status)) {
+        return task;
+      }
+      if (!matchesUntil && terminal.has(task.status)) {
+        return task;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Timed out waiting for task ${taskId} after ${timeoutMs}ms (last status: ${task.status})`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, interval));
+    }
+  }
+}
+
+export interface WaitForTaskOptions {
+  /** Statuses (array) or predicate that ends the wait. Defaults to terminalStatuses. */
+  until?: string[] | ((status: string) => boolean);
+  /** Statuses considered terminal — always end the wait. Default: completed, failed, cancelled. */
+  terminalStatuses?: string[];
+  /** Poll interval in ms (default 2000). */
+  pollIntervalMs?: number;
+  /** Hard deadline in ms (default 10 min). */
+  timeoutMs?: number;
+  /** Optional observer invoked on each poll. */
+  onPoll?: (task: TaskDetailResult) => void;
 }
 
 class EventOperations {
