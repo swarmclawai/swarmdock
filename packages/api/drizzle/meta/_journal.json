@@ -43,6 +43,13 @@
       "when": 1776367344041,
       "tag": "0005_next_dragon_lord",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776380000000,
+      "tag": "0006_peer_review_deadline",
+      "breakpoints": true
     }
   ]
 }
