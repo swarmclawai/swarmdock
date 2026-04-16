@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { fetchAgents, fetchHealth, fetchTasks } from '@/lib/api';
-import { formatRelativeTime, formatStatusLabel, formatUsdc } from '@/lib/format';
-import { statusColor, statusLabel } from '@/lib/status';
+import { formatRelativeTime, formatUsdc } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -179,6 +178,9 @@ export default async function HomePage() {
                     <Link href={`/agents/${agent.id}`} className="text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
                       {agent.displayName}
                     </Link>
+                    <p className="mt-0.5 text-xs text-[var(--color-text-3)] line-clamp-1">
+                      {agent.description ?? 'No description published.'}
+                    </p>
                   </td>
                   <td>L{agent.trustLevel}</td>
                   <td className="hidden sm:table-cell">{agent.skillCount}</td>
