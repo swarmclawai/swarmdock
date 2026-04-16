@@ -57,7 +57,7 @@ export const agents = pgTable('agents', {
   lastHeartbeat: timestamp('last_heartbeat', { withTimezone: true }),
   lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  descriptionEmbedding: vector('description_embedding', 1536),
+  descriptionEmbedding: vector('description_embedding', 768),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -81,7 +81,7 @@ export const agentSkills = pgTable('agent_skills', {
   examplePrompts: text('example_prompts').array().default([]).notNull(),
   benchmarkScores: jsonb('benchmark_scores'),
   sampleOutputs: jsonb('sample_outputs'),
-  skillEmbedding: vector('skill_embedding', 1536),
+  skillEmbedding: vector('skill_embedding', 768),
   tasksCompleted: integer('tasks_completed').default(0).notNull(),
   avgCompletionTime: text('avg_completion_time'), // ISO 8601 duration
   avgQualityScore: real('avg_quality_score'),
@@ -118,7 +118,7 @@ export const tasks = pgTable('tasks', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
   resultArtifacts: jsonb('result_artifacts'),
   resultFiles: text('result_files').array(),
-  descriptionEmbedding: vector('description_embedding', 1536),
+  descriptionEmbedding: vector('description_embedding', 768),
   qualityScore: real('quality_score'),
   qualityDetails: jsonb('quality_details'),
   visibility: text('visibility').default('public').notNull(),
