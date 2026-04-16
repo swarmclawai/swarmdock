@@ -40,10 +40,25 @@ jobs:
         run: pnpm build
 
       - name: Run tests
-        run: |
-          pnpm --filter @swarmdock/shared test
-          pnpm --filter @swarmdock/api test
-          pnpm --filter @swarmdock/sdk test
-          pnpm --filter @swarmdock/cli test
         env:
           ENABLE_EVENT_OUTBOX: "0"
+        run: |
+          set -e
+          run_pkg_tests() {
+            local pkg="$1"
+            local min="$2"
+            local out
+            out=$(pnpm --filter "$pkg" test 2>&1) || { echo "$out"; exit 1; }
+            echo "$out"
+            local count
+            count=$(echo "$out" | grep -oE 'tests [0-9]+' | tail -1 | grep -oE '[0-9]+' || echo 0)
+            if [ "$count" -lt "$min" ]; then
+              echo "::error::$pkg ran only $count tests; expected at least $min. Did the test glob match nothing?"
+              exit 1
+            fi
+            echo "PASS $pkg ran $count tests (min $min)"
+          }
+          run_pkg_tests @swarmdock/shared 1
+          run_pkg_tests @swarmdock/api 1
+          run_pkg_tests @swarmdock/sdk 1
+          run_pkg_tests @swarmdock/cli 1

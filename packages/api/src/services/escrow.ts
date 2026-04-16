@@ -6,6 +6,7 @@ import { eventBus } from '../lib/events.js';
 import { escrowFundedCounter, escrowReleasedCounter, escrowRefundedCounter } from '../lib/metrics.js';
 import { createPublicClient, createWalletClient, http, isAddress, getAddress, parseAbi } from 'viem';
 import { createLogger } from '../lib/logger.js';
+import { traceOp } from '../lib/telemetry.js';
 
 const logger = createLogger({ service: 'escrow' });
 import { privateKeyToAccount } from 'viem/accounts';
@@ -36,7 +37,7 @@ function requireOnChain(): boolean {
 }
 
 /** Validate and normalize an EVM wallet address. Throws if invalid or empty. */
-function validateWalletAddress(address: string, context: string): `0x${string}` {
+export function validateWalletAddress(address: string, context: string): `0x${string}` {
   if (!address) {
     throw new Error(`Empty wallet address (${context})`);
   }
@@ -44,6 +45,17 @@ function validateWalletAddress(address: string, context: string): `0x${string}` 
     throw new Error(`Invalid wallet address: ${address} (${context})`);
   }
   return getAddress(address);
+}
+
+/**
+ * Pure computation of release split: fee + payee payout.
+ * Extracted for unit testing — USDC math correctness is critical.
+ */
+export function computeReleaseAmounts(amount: bigint, feePercent: number): { fee: bigint; payout: bigint } {
+  if (amount < 0n) throw new Error(`Negative escrow amount: ${amount}`);
+  if (feePercent < 0 || feePercent > 100) throw new Error(`Invalid fee percent: ${feePercent}`);
+  const fee = (amount * BigInt(feePercent)) / 100n;
+  return { fee, payout: amount - fee };
 }
 
 /** Attempt on-chain transfer, handling failures according to REQUIRE_ON_CHAIN mode. */
@@ -119,6 +131,24 @@ export async function fundEscrow(params: {
   payeeId: string;
   amount: bigint;
 }): Promise<{ id: string; txHash: string | null }> {
+  return traceOp(
+    'escrow.fund',
+    {
+      'escrow.task_id': params.taskId,
+      'escrow.payer_id': params.payerId,
+      'escrow.payee_id': params.payeeId,
+      'escrow.amount': params.amount.toString(),
+    },
+    () => fundEscrowImpl(params),
+  );
+}
+
+async function fundEscrowImpl(params: {
+  taskId: string;
+  payerId: string;
+  payeeId: string;
+  amount: bigint;
+}): Promise<{ id: string; txHash: string | null }> {
   const finalTxHash = await attemptTransfer(
     process.env.PLATFORM_WALLET_ADDRESS ?? '',
     params.amount,
@@ -160,6 +190,10 @@ export async function fundEscrow(params: {
 }
 
 export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: string; fee: bigint }> {
+  return traceOp('escrow.release', { 'escrow.task_id': taskId }, () => releaseEscrowImpl(taskId));
+}
+
+async function releaseEscrowImpl(taskId: string): Promise<{ releaseTxHash: string; fee: bigint }> {
   // Phase 1: Lock escrow and compute amounts (DB only, no on-chain call)
   const phase1 = await db.transaction(async (tx) => {
     const lockResult = await tx.execute(
@@ -176,8 +210,7 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
       .where(eq(escrowTransactions.id, lockedId))
       .limit(1);
 
-    const fee = (escrow.amount * BigInt(PLATFORM_FEE_PERCENT)) / 100n;
-    const payout = escrow.amount - fee;
+    const { fee, payout } = computeReleaseAmounts(escrow.amount, PLATFORM_FEE_PERCENT);
 
     const [payee] = escrow.payeeId
       ? await tx.select({ walletAddress: agents.walletAddress }).from(agents).where(eq(agents.id, escrow.payeeId)).limit(1)
@@ -282,6 +315,10 @@ export async function releaseEscrow(taskId: string): Promise<{ releaseTxHash: st
 }
 
 export async function refundEscrow(taskId: string): Promise<void> {
+  return traceOp('escrow.refund', { 'escrow.task_id': taskId }, () => refundEscrowImpl(taskId));
+}
+
+async function refundEscrowImpl(taskId: string): Promise<void> {
   // Phase 1: Lock escrow and read payer wallet (DB only, no on-chain call)
   const phase1 = await db.transaction(async (tx) => {
     const lockResult = await tx.execute(

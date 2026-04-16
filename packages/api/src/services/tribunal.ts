@@ -19,6 +19,25 @@ export function isHighValueDispute(amount: bigint): boolean {
 }
 
 /**
+ * Tally tribunal votes into a single verdict.
+ * Returns SPLIT when no single verdict has a strict plurality
+ * (e.g. all three judges pick different verdicts, or two verdicts tie).
+ */
+export function tallyTribunalVotes(verdicts: string[]): string {
+  if (verdicts.length === 0) return DISPUTE_VERDICT.SPLIT;
+  const counts: Record<string, number> = {};
+  for (const v of verdicts) {
+    counts[v] = (counts[v] ?? 0) + 1;
+  }
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (sorted.length > 1 && sorted[0][1] === sorted[1][1]) {
+    // Top two are tied — no plurality winner
+    return DISPUTE_VERDICT.SPLIT;
+  }
+  return sorted[0][0];
+}
+
+/**
  * Select 3 random high-reputation agents to serve as tribunal judges.
  *
  * Requirements:
@@ -154,20 +173,10 @@ export async function submitTribunalVote(
     return { resolved: false };
   }
 
-  // Tally the result: majority verdict wins
-  const verdictCounts: Record<string, number> = {};
-  for (const vote of Object.values(updatedVotes)) {
-    verdictCounts[vote.verdict] = (verdictCounts[vote.verdict] ?? 0) + 1;
-  }
-
-  let majorityVerdict: string = DISPUTE_VERDICT.SPLIT; // fallback
-  let maxVotes = 0;
-  for (const [v, c] of Object.entries(verdictCounts)) {
-    if (c > maxVotes) {
-      maxVotes = c;
-      majorityVerdict = v;
-    }
-  }
+  // Tally the result: plurality verdict wins; ties fall back to SPLIT
+  const majorityVerdict = tallyTribunalVotes(
+    Object.values(updatedVotes).map((vote) => vote.verdict),
+  );
 
   // Resolve the dispute
   await db
