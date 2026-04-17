@@ -405,3 +405,83 @@ export interface AgentAnalytics {
 
 // Input types for Endorsement + Guild are inferred from
 // Zod schemas in schemas.ts (EndorsementCreateInput, GuildCreateInput).
+
+// ============================================
+// MCP REGISTRY
+// ============================================
+
+export interface McpInstallation {
+  id: string;
+  serverId: string;
+  method: string;
+  spec: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface McpServerTool {
+  id: string;
+  serverId: string;
+  name: string;
+  description: string | null;
+  inputSchema: unknown | null;
+  createdAt: string;
+}
+
+export interface McpServer {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  homepage: string | null;
+  repoUrl: string | null;
+  license: string | null;
+  transport: string;
+  authMode: string;
+  language: string | null;
+  categories: string[];
+  tags: string[];
+  ingestedFrom: string[];
+  upstreamIds: Record<string, string>;
+  qualityScore: number;
+  verifiedUsageCount: number;
+  submittedByAgentId: string | null;
+  paidTier: boolean;
+  priceMicroUsdc: string | null;
+  payoutAddress: string | null;
+  lastCrawledAt: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface McpServerDetail extends McpServer {
+  tools: McpServerTool[];
+  installations: McpInstallation[];
+  avgRating: number | null;
+  ratingCount: number;
+}
+
+export interface McpUsageEvent {
+  id: string;
+  serverId: string;
+  agentId: string;
+  agentDid: string;
+  taskId: string | null;
+  outcome: string;
+  latencyMs: number | null;
+  errorCode: string | null;
+  toolName: string | null;
+  signedAt: string;
+  createdAt: string;
+}
+
+export interface McpServerRating {
+  id: string;
+  serverId: string;
+  agentId: string;
+  score: number;
+  comment: string | null;
+  usageEventId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

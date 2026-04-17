@@ -22,6 +22,7 @@ import a2aRelayRoutes from './routes/a2a-relay.js';
 import analyticsRoutes from './routes/analytics.js';
 import qualityVerificationRoutes from './routes/quality-verification.js';
 import socialRoutes from './routes/social.js';
+import mcpRegistryRoutes from './routes/mcp-registry.js';
 import { getAgentCardById } from './services/agent-card.js';
 import { eventBus } from './lib/events.js';
 import { rateLimitDefault } from './middleware/rateLimit.js';
@@ -109,6 +110,7 @@ app.route('/api/v1/a2a', a2aRelayRoutes);
 app.route('/api/v1/analytics', analyticsRoutes);
 app.route('/api/v1/quality', qualityVerificationRoutes);
 app.route('/api/v1/social', socialRoutes);
+app.route('/api/v1/mcp', mcpRegistryRoutes);
 
 app.get('/agents/:id/.well-known/agent.json', async (c) => {
   const agentCard = await getAgentCardById(c.req.param('id'));

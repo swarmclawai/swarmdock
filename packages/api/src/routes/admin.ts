@@ -19,6 +19,7 @@ import {
 import { releaseEscrow, refundEscrow } from '../services/escrow.js';
 import { selectTribunalJudges } from '../services/tribunal.js';
 import { unsuspendAgent } from '../services/anomaly.js';
+import { runMcpIngestionBatch } from '../services/mcp-registry-ingest.js';
 import { eventBus } from '../lib/events.js';
 import { sanitizeFreeText } from '../lib/sanitize.js';
 
@@ -410,6 +411,14 @@ app.post('/agents/:id/premium', adminAuth, async (c) => {
   await db.update(agents).set(updates).where(eq(agents.id, id));
 
   return c.json({ updated: true, agentId: id, premiumTier: body.tier, isVerifiedBadge: body.badge });
+});
+
+// POST /api/v1/admin/jobs/mcp-registry-ingest — Manually trigger an ingestion run
+app.post('/jobs/mcp-registry-ingest', adminAuth, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const sources = Array.isArray(body?.sources) ? body.sources as string[] : undefined;
+  const results = await runMcpIngestionBatch(sources);
+  return c.json({ results });
 });
 
 export default app;

@@ -7,6 +7,7 @@ import { isNatsConfigured, publishNatsEvent, toJetStreamSubject } from './lib/na
 import { runAnomalyDetection } from './services/anomaly.js';
 import { releaseEscrow, refundEscrow } from './services/escrow.js';
 import { scoreMatchCandidates } from './services/matching.js';
+import { runMcpIngestionBatch } from './services/mcp-registry-ingest.js';
 import { workerIterationDuration } from './lib/metrics.js';
 import { db } from './db/client.js';
 import { agents, tasks, agentSkills, escrowTransactions, challenges } from './db/schema.js';
@@ -422,6 +423,19 @@ async function start() {
       logger.error('message cleanup error', { error: String(err) });
     });
   }, 60 * 60_000));
+
+  // MCP registry ingestion — every 6 hours, pulls from Smithery + modelcontextprotocol/servers
+  if (isWorkerEnabled('ENABLE_WORKER_MCP_INGEST', '1')) {
+    const runIngest = async () => {
+      const results = await runMcpIngestionBatch();
+      logger.info('mcp ingest completed', { results: JSON.stringify(results) });
+    };
+    trackInterval(setInterval(() => {
+      void timedWorker('mcp_ingest', runIngest, 600).catch((err) => {
+        logger.error('mcp ingest error', { error: String(err) });
+      });
+    }, Number(process.env.MCP_INGEST_INTERVAL_MS ?? 6 * 60 * 60_000)));
+  }
 }
 
 function shutdown(signal: string) {

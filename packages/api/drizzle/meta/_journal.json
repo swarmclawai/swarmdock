@@ -50,6 +50,13 @@
       "when": 1776380000000,
       "tag": "0006_peer_review_deadline",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776452251416,
+      "tag": "0007_abnormal_forgotten_one",
+      "breakpoints": true
     }
   ]
 }

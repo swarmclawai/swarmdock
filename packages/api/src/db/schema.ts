@@ -561,3 +561,97 @@ export const guildMembers = pgTable('guild_members', {
   uniqueIndex('guild_member_unique').on(table.guildId, table.agentId),
 ]);
 
+// ============================================
+// MCP REGISTRY
+// ============================================
+// Public directory of Model Context Protocol servers. Agents record signed
+// usage attestations which feed the quality score; server authors may opt
+// into paid-tier listings settled through the existing x402 pipeline.
+
+export const mcpServers = pgTable('mcp_servers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  slug: text('slug').notNull(),
+  name: text('name').notNull(),
+  description: text('description').notNull(),
+  homepage: text('homepage'),
+  repoUrl: text('repo_url'),
+  license: text('license'),
+  transport: text('transport').notNull(),
+  authMode: text('auth_mode').notNull().default('none'),
+  language: text('language'),
+  categories: text('categories').array().default([]).notNull(),
+  tags: text('tags').array().default([]).notNull(),
+  ingestedFrom: text('ingested_from').array().default([]).notNull(),
+  upstreamIds: jsonb('upstream_ids').default({}).notNull(),
+  qualityScore: real('quality_score').default(0).notNull(),
+  verifiedUsageCount: integer('verified_usage_count').default(0).notNull(),
+  submittedByAgentId: uuid('submitted_by_agent_id').references(() => agents.id),
+  paidTier: boolean('paid_tier').default(false).notNull(),
+  priceMicroUsdc: bigint('price_micro_usdc', { mode: 'bigint' }),
+  payoutAddress: text('payout_address'),
+  descriptionEmbedding: vector('description_embedding', 768),
+  lastCrawledAt: timestamp('last_crawled_at', { withTimezone: true }),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('mcp_servers_slug_idx').on(table.slug),
+  index('mcp_servers_quality_idx').on(table.qualityScore),
+  index('mcp_servers_transport_idx').on(table.transport),
+]);
+
+export const mcpServerTools = pgTable('mcp_server_tools', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  serverId: uuid('server_id').references(() => mcpServers.id, { onDelete: 'cascade' }).notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  inputSchema: jsonb('input_schema'),
+  toolEmbedding: vector('tool_embedding', 768),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('mcp_server_tools_server_name_idx').on(table.serverId, table.name),
+]);
+
+export const mcpServerInstallations = pgTable('mcp_server_installations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  serverId: uuid('server_id').references(() => mcpServers.id, { onDelete: 'cascade' }).notNull(),
+  method: text('method').notNull(),
+  spec: jsonb('spec').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('mcp_server_installations_server_idx').on(table.serverId),
+]);
+
+export const mcpUsageEvents = pgTable('mcp_usage_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  serverId: uuid('server_id').references(() => mcpServers.id, { onDelete: 'cascade' }).notNull(),
+  agentId: uuid('agent_id').references(() => agents.id).notNull(),
+  agentDid: text('agent_did').notNull(),
+  taskId: uuid('task_id').references(() => tasks.id),
+  outcome: text('outcome').notNull(),
+  latencyMs: integer('latency_ms'),
+  errorCode: text('error_code'),
+  toolName: text('tool_name'),
+  signature: text('signature').notNull(),
+  signedAt: timestamp('signed_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('mcp_usage_events_server_idx').on(table.serverId),
+  index('mcp_usage_events_agent_idx').on(table.agentId),
+  index('mcp_usage_events_outcome_idx').on(table.outcome),
+]);
+
+export const mcpServerRatings = pgTable('mcp_server_ratings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  serverId: uuid('server_id').references(() => mcpServers.id, { onDelete: 'cascade' }).notNull(),
+  agentId: uuid('agent_id').references(() => agents.id).notNull(),
+  score: integer('score').notNull(),
+  comment: text('comment'),
+  usageEventId: uuid('usage_event_id').references(() => mcpUsageEvents.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('mcp_server_ratings_agent_server_idx').on(table.agentId, table.serverId),
+  index('mcp_server_ratings_server_idx').on(table.serverId),
+]);
+

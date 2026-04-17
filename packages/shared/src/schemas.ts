@@ -7,6 +7,10 @@ import {
   DISPUTE_VERDICT,
   TASK_VISIBILITY,
   GUILD_VISIBILITY,
+  MCP_TRANSPORT,
+  MCP_AUTH_MODE,
+  MCP_INSTALL_METHOD,
+  MCP_USAGE_OUTCOME,
 } from './constants.js';
 
 const MICRO_USDC_AMOUNT_MESSAGE = 'Must be a non-negative integer amount in micro-USDC';
@@ -303,3 +307,121 @@ export const A2AMessageCreateSchema = z.object({
 });
 
 export type A2AMessageCreateInput = z.infer<typeof A2AMessageCreateSchema>;
+
+// ============================================
+// MCP REGISTRY
+// ============================================
+
+const MCP_SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+
+export const McpInstallationSchema = z.object({
+  method: z.enum([
+    MCP_INSTALL_METHOD.NPM,
+    MCP_INSTALL_METHOD.NPX,
+    MCP_INSTALL_METHOD.PIPX,
+    MCP_INSTALL_METHOD.UVX,
+    MCP_INSTALL_METHOD.DOCKER,
+    MCP_INSTALL_METHOD.BINARY,
+    MCP_INSTALL_METHOD.REMOTE,
+  ]),
+  spec: z.record(z.unknown()),
+});
+
+export const McpServerToolSchema = z.object({
+  name: z.string().min(1).max(128),
+  description: z.string().max(2000).optional(),
+  inputSchema: z.unknown().optional(),
+});
+
+export const McpServerSubmitSchema = z.object({
+  slug: z.string().min(2).max(80).regex(MCP_SLUG_REGEX, 'slug must be lower-kebab-case'),
+  name: z.string().min(1).max(200),
+  description: z.string().min(10).max(4000),
+  homepage: z.string().url().optional(),
+  repoUrl: z.string().url().optional(),
+  license: z.string().max(40).optional(),
+  transport: z.enum([
+    MCP_TRANSPORT.STDIO,
+    MCP_TRANSPORT.SSE,
+    MCP_TRANSPORT.HTTP,
+    MCP_TRANSPORT.WEBSOCKET,
+  ]),
+  authMode: z.enum([
+    MCP_AUTH_MODE.NONE,
+    MCP_AUTH_MODE.API_KEY,
+    MCP_AUTH_MODE.OAUTH,
+    MCP_AUTH_MODE.BEARER,
+  ]).default(MCP_AUTH_MODE.NONE),
+  language: z.string().max(40).optional(),
+  categories: z.array(z.string().max(40)).default([]),
+  tags: z.array(z.string().max(40)).default([]),
+  installations: z.array(McpInstallationSchema).min(1),
+  tools: z.array(McpServerToolSchema).default([]),
+  paidTier: z.boolean().default(false),
+  priceMicroUsdc: MicroUsdcAmountSchema.optional(),
+  payoutAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+});
+
+export const McpServerUpdateSchema = McpServerSubmitSchema.partial().omit({ slug: true });
+
+export const McpServerSearchQuerySchema = z.object({
+  q: z.string().max(500).optional(),
+  transport: z.enum([
+    MCP_TRANSPORT.STDIO,
+    MCP_TRANSPORT.SSE,
+    MCP_TRANSPORT.HTTP,
+    MCP_TRANSPORT.WEBSOCKET,
+  ]).optional(),
+  authMode: z.enum([
+    MCP_AUTH_MODE.NONE,
+    MCP_AUTH_MODE.API_KEY,
+    MCP_AUTH_MODE.OAUTH,
+    MCP_AUTH_MODE.BEARER,
+  ]).optional(),
+  language: z.string().max(40).optional(),
+  category: z.string().max(40).optional(),
+  paidTier: z.coerce.boolean().optional(),
+  minQuality: z.coerce.number().min(0).max(1).optional(),
+  limit: z.coerce.number().min(1).max(100).default(20),
+  offset: z.coerce.number().min(0).default(0),
+});
+
+/**
+ * Canonical JSON payload that the agent signs with its Ed25519 secret before
+ * posting an attestation. Serialize with sorted keys and no whitespace so the
+ * server and client agree byte-for-byte.
+ */
+export const McpUsageAttestationPayloadSchema = z.object({
+  serverSlug: z.string().min(1).max(80),
+  outcome: z.enum([
+    MCP_USAGE_OUTCOME.SUCCESS,
+    MCP_USAGE_OUTCOME.ERROR,
+    MCP_USAGE_OUTCOME.TIMEOUT,
+    MCP_USAGE_OUTCOME.CANCELLED,
+  ]),
+  latencyMs: z.number().int().min(0).max(600_000).optional(),
+  errorCode: z.string().max(120).optional(),
+  toolName: z.string().max(128).optional(),
+  taskId: z.string().uuid().optional(),
+  agentDid: z.string().min(3).max(200),
+  signedAt: z.string().datetime(),
+});
+
+export const McpUsageAttestationSubmitSchema = McpUsageAttestationPayloadSchema.extend({
+  signature: z.string().min(1).max(200),
+});
+
+export const McpServerRatingSchema = z.object({
+  score: z.number().int().min(1).max(5),
+  comment: z.string().max(2000).optional(),
+  usageEventId: z.string().uuid().optional(),
+});
+
+export type McpInstallationInput = z.infer<typeof McpInstallationSchema>;
+export type McpServerToolInput = z.infer<typeof McpServerToolSchema>;
+export type McpServerSubmitInput = z.infer<typeof McpServerSubmitSchema>;
+export type McpServerUpdateInput = z.infer<typeof McpServerUpdateSchema>;
+export type McpServerSearchQuery = z.infer<typeof McpServerSearchQuerySchema>;
+export type McpUsageAttestationPayload = z.infer<typeof McpUsageAttestationPayloadSchema>;
+export type McpUsageAttestationSubmit = z.infer<typeof McpUsageAttestationSubmitSchema>;
+export type McpServerRatingInput = z.infer<typeof McpServerRatingSchema>

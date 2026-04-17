@@ -35,7 +35,17 @@ import type {
   GuildCreateInput,
   A2AMessageCreateInput,
 } from '@swarmdock/shared';
-import { PRICING_MODEL, SkillTemplates, USDC_DECIMALS } from '@swarmdock/shared';
+import { PRICING_MODEL, SkillTemplates, USDC_DECIMALS, canonicalizeAttestationPayload } from '@swarmdock/shared';
+import type {
+  McpServer,
+  McpServerDetail,
+  McpServerSubmitInput,
+  McpServerUpdateInput,
+  McpServerSearchQuery,
+  McpUsageAttestationPayload,
+  McpUsageAttestationSubmit,
+  McpServerRatingInput,
+} from '@swarmdock/shared';
 import { SwarmDockError, TimeoutError } from './errors.js';
 
 export interface SwarmDockClientOptions {
@@ -205,6 +215,7 @@ export class SwarmDockClient {
   readonly social: SocialOperations;
   readonly a2a: A2AOperations;
   readonly analytics: AnalyticsOperations;
+  readonly mcp: McpRegistryOperations;
 
   /** Generate a new Ed25519 keypair for agent authentication */
   static generateKeys(): { publicKey: string; privateKey: string } {
@@ -262,6 +273,16 @@ export class SwarmDockClient {
     this.social = new SocialOperations(this);
     this.a2a = new A2AOperations(this);
     this.analytics = new AnalyticsOperations(this);
+    this.mcp = new McpRegistryOperations(this);
+  }
+
+  /**
+   * Sign a canonical MCP usage attestation payload with the agent's Ed25519
+   * secret key. Returns the submission object ready to POST.
+   */
+  signAttestation(payload: McpUsageAttestationPayload): McpUsageAttestationSubmit {
+    const canonical = canonicalizeAttestationPayload(payload);
+    return { ...payload, signature: this.sign(canonical) };
   }
 
   async register(params: RegisterParams): Promise<RegisterResult> {
@@ -485,6 +506,11 @@ export class SwarmDockClient {
     const messageBytes = new TextEncoder().encode(message);
     const signature = nacl.sign.detached(messageBytes, this.secretKey!);
     return encodeBase64(signature);
+  }
+
+  /** Agent DID derived from the agent ID. Used when building attestations. */
+  getAgentDid(): string {
+    return `did:web:swarmdock.ai:agents:${this.getAgentId()}`;
   }
 }
 
@@ -1577,5 +1603,113 @@ export class SwarmDockAgent {
     if (this.taskAvailableHandler) {
       await this.taskAvailableHandler(listing);
     }
+  }
+}
+
+/**
+ * Public MCP Registry — search, detail, recommendation (no auth required),
+ * plus agent-authenticated submit/update/usage/rate flows that sign
+ * attestations with the agent's Ed25519 secret key.
+ */
+class McpRegistryOperations {
+  constructor(private readonly client: SwarmDockClient) {}
+
+  async search(query: Partial<McpServerSearchQuery> = {}): Promise<{ servers: McpServer[]; total: number }> {
+    return this.client.fetch('/api/v1/mcp/servers', {
+      auth: false,
+      query: {
+        q: query.q,
+        transport: query.transport,
+        authMode: query.authMode,
+        language: query.language,
+        category: query.category,
+        paidTier: query.paidTier === undefined ? undefined : query.paidTier ? 'true' : 'false',
+        minQuality: query.minQuality,
+        limit: query.limit,
+        offset: query.offset,
+      },
+    });
+  }
+
+  async get(slug: string): Promise<McpServerDetail> {
+    return this.client.fetch(`/api/v1/mcp/servers/${encodeURIComponent(slug)}`, { auth: false });
+  }
+
+  async recommend(params: {
+    description: string;
+    transport?: string;
+    maxPriceMicroUsdc?: string | bigint;
+    limit?: number;
+  }): Promise<{ recommendations: Array<McpServer & { similarity: number }> }> {
+    return this.client.fetch('/api/v1/mcp/servers/recommend', {
+      auth: false,
+      query: {
+        description: params.description,
+        transport: params.transport,
+        maxPriceMicroUsdc: params.maxPriceMicroUsdc ? String(params.maxPriceMicroUsdc) : undefined,
+        limit: params.limit,
+      },
+    });
+  }
+
+  async submit(input: McpServerSubmitInput): Promise<McpServerDetail> {
+    await this.client.authenticate();
+    return this.client.fetch('/api/v1/mcp/servers', { method: 'POST', body: input });
+  }
+
+  async update(slug: string, input: McpServerUpdateInput): Promise<McpServerDetail> {
+    await this.client.authenticate();
+    return this.client.fetch(`/api/v1/mcp/servers/${encodeURIComponent(slug)}`, {
+      method: 'PATCH',
+      body: input,
+    });
+  }
+
+  /**
+   * Record a signed usage attestation for an MCP server. The agent's secret
+   * key signs the canonicalized payload; the server verifies with the
+   * agent's public key before persisting.
+   */
+  async recordUsage(
+    slug: string,
+    outcome: 'success' | 'error' | 'timeout' | 'cancelled',
+    extras: {
+      latencyMs?: number;
+      errorCode?: string;
+      toolName?: string;
+      taskId?: string;
+    } = {},
+  ): Promise<{ id: string; qualityScore: number }> {
+    await this.client.authenticate();
+    const payload = {
+      serverSlug: slug,
+      outcome,
+      latencyMs: extras.latencyMs,
+      errorCode: extras.errorCode,
+      toolName: extras.toolName,
+      taskId: extras.taskId,
+      agentDid: this.client.getAgentDid(),
+      signedAt: new Date().toISOString(),
+    };
+    const submission = this.client.signAttestation(payload);
+    return this.client.fetch(`/api/v1/mcp/servers/${encodeURIComponent(slug)}/usage`, {
+      method: 'POST',
+      body: submission,
+    });
+  }
+
+  async rate(slug: string, input: McpServerRatingInput): Promise<{ id: string }> {
+    await this.client.authenticate();
+    return this.client.fetch(`/api/v1/mcp/servers/${encodeURIComponent(slug)}/rate`, {
+      method: 'POST',
+      body: input,
+    });
+  }
+
+  async archive(slug: string): Promise<{ success: boolean }> {
+    await this.client.authenticate();
+    return this.client.fetch(`/api/v1/mcp/servers/${encodeURIComponent(slug)}`, {
+      method: 'DELETE',
+    });
   }
 }

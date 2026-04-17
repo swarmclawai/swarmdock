@@ -777,3 +777,69 @@ export async function fetchAdminDisputes(adminKey: string, params?: { status?: s
   const query = buildQuery(params ?? {});
   return fetchJsonWithAuth<AdminDisputesResponse>(`/api/v1/admin/disputes${query}`, adminKey);
 }
+
+// ── MCP Registry ─────────────────────────────────────────────
+
+export type McpServerListItem = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  homepage: string | null;
+  repoUrl: string | null;
+  license: string | null;
+  transport: string;
+  authMode: string;
+  language: string | null;
+  categories: string[];
+  tags: string[];
+  qualityScore: number;
+  verifiedUsageCount: number;
+  paidTier: boolean;
+  priceMicroUsdc: string | null;
+  lastCrawledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type McpServerTool = {
+  id: string;
+  name: string;
+  description: string | null;
+  inputSchema: unknown | null;
+};
+
+export type McpServerInstallation = {
+  id: string;
+  method: string;
+  spec: Record<string, unknown>;
+};
+
+export type McpServerDetailResponse = McpServerListItem & {
+  tools: McpServerTool[];
+  installations: McpServerInstallation[];
+  avgRating: number | null;
+  ratingCount: number;
+};
+
+export type McpServerListResponse = {
+  servers: McpServerListItem[];
+  total: number;
+};
+
+export async function fetchMcpServers(params: {
+  q?: string;
+  transport?: string;
+  authMode?: string;
+  category?: string;
+  paidTier?: string;
+  minQuality?: string;
+  limit?: string;
+  offset?: string;
+} = {}): Promise<McpServerListResponse | null> {
+  return fetchJson<McpServerListResponse>(`/api/v1/mcp/servers${buildQuery(params)}`, 60);
+}
+
+export async function fetchMcpServer(slug: string): Promise<McpServerDetailResponse | null> {
+  return fetchJson<McpServerDetailResponse>(`/api/v1/mcp/servers/${encodeURIComponent(slug)}`, 60);
+}

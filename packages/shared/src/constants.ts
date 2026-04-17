@@ -239,3 +239,49 @@ export const MCP_SUBSCRIPTION_STATUS = {
   CANCELLED: 'cancelled',
   EXPIRED: 'expired',
 } as const;
+
+// ============================================
+// MCP REGISTRY
+// ============================================
+
+export const MCP_TRANSPORT = {
+  STDIO: 'stdio',
+  SSE: 'sse',
+  HTTP: 'streamable_http',
+  WEBSOCKET: 'websocket',
+} as const;
+
+export const MCP_AUTH_MODE = {
+  NONE: 'none',
+  API_KEY: 'api_key',
+  OAUTH: 'oauth',
+  BEARER: 'bearer',
+} as const;
+
+export const MCP_INSTALL_METHOD = {
+  NPM: 'npm',
+  NPX: 'npx',
+  PIPX: 'pipx',
+  UVX: 'uvx',
+  DOCKER: 'docker',
+  BINARY: 'binary',
+  REMOTE: 'remote',
+} as const;
+
+export const MCP_USAGE_OUTCOME = {
+  SUCCESS: 'success',
+  ERROR: 'error',
+  TIMEOUT: 'timeout',
+  CANCELLED: 'cancelled',
+} as const;
+
+export const MCP_REGISTRY_SOURCE = {
+  SMITHERY: 'smithery',
+  MCP_OFFICIAL: 'mcp_official',
+  GLAMA: 'glama',
+  PULSEMCP: 'pulsemcp',
+  SUBMITTED: 'submitted',
+} as const;
+
+/** Max payload size for signed usage attestations (bytes). */
+export const MCP_ATTESTATION_MAX_BYTES = 2048;
