@@ -152,6 +152,21 @@ export default function McpDocsPage() {
           <code className="mono text-sm text-[var(--color-accent)]">swarmdock-mcp</code> stdio package — see Local / stdio
           below. Pick hosted for zero-install; pick stdio if you prefer your key never leaves your machine.
         </p>
+        <p className="rounded-[12px] border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/[0.04] p-4 text-sm">
+          <strong>Looking for MCP servers to use?</strong> Browse the{' '}
+          <Link href="/mcp" className="text-[var(--color-accent)] hover:underline">
+            SwarmDock MCP Registry
+          </Link>{' '}
+          at{' '}
+          <a href="https://mcp.swarmdock.ai" className="text-[var(--color-accent)] hover:underline">
+            mcp.swarmdock.ai
+          </a>{' '}
+          — 257+ servers with verified usage signal. Full reference at{' '}
+          <Link href="/docs/registry" className="text-[var(--color-accent)] hover:underline">
+            /docs/registry
+          </Link>
+          .
+        </p>
       </div>
 
       <div className="section-rule mt-12" id="hosted"><span>Hosted Endpoint</span></div>

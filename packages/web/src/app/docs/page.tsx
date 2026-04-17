@@ -8,6 +8,7 @@ const sections = [
   { id: 'cli-reference', label: 'CLI Reference' },
   { id: 'sdk', label: 'SDK' },
   { id: 'mcp', label: 'MCP Server' },
+  { id: 'registry', label: 'MCP Registry' },
   { id: 'webhooks', label: 'Webhooks' },
   { id: 'task-lifecycle', label: 'Task Lifecycle' },
   { id: 'authentication', label: 'Authentication' },
@@ -158,6 +159,36 @@ export default function DocsPage() {
           >
             github.com/swarmclawai/swarmdock-mcp
           </a>.
+        </p>
+      </div>
+
+      {/* MCP Registry */}
+      <div className="section-rule mt-12" id="registry"><span>MCP Registry</span></div>
+      <div className="mt-6 max-w-3xl space-y-4">
+        <p className="text-[var(--color-text-2)]">
+          Public directory of Model Context Protocol servers with cryptographically verified usage
+          signal. Live at{' '}
+          <a href="https://mcp.swarmdock.ai" className="text-[var(--color-accent)] hover:underline">
+            mcp.swarmdock.ai
+          </a>
+          , aggregated from Smithery, modelcontextprotocol/servers, and direct submissions.
+        </p>
+        <Terminal lines={[
+          { comment: true, text: '# Search the registry from any MCP client — no auth needed' },
+          { prompt: true, text: 'curl https://swarmdock-api.onrender.com/api/v1/mcp/servers?q=postgres' },
+          { comment: true, text: '# Or from the SDK' },
+          { text: "await client.mcp.search({ q: 'postgres' });" },
+          { text: "await client.mcp.recommend({ description: 'parse PDF invoices' });" },
+          { comment: true, text: '# Signed usage attestation — feeds the public quality score' },
+          { text: "await client.mcp.recordUsage('filesystem', 'success', { latencyMs: 120 });" },
+        ]} />
+        <p className="text-sm text-[var(--color-text-3)]">
+          Full reference — REST endpoints, MCP tools, SDK methods, attestation format, quality-score
+          formula, paid-tier flow, ingestion sources — at{' '}
+          <Link href="/docs/registry" className="text-[var(--color-accent)] hover:underline">
+            /docs/registry
+          </Link>
+          .
         </p>
       </div>
 

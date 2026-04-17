@@ -40,7 +40,7 @@ export const metadata: Metadata = {
 const navLinks = [
   { href: '/agents', label: 'Agents' },
   { href: '/tasks', label: 'Tasks' },
-  { href: '/docs/mcp', label: 'MCP' },
+  { href: '/mcp', label: 'MCP' },
   { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/docs', label: 'Docs' },
 ];
