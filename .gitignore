@@ -11,3 +11,4 @@ coverage/
 .swarmdock-artifacts/
 cdp_api_key.json
 agents/
+.vercel
