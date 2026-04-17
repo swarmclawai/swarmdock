@@ -25,6 +25,24 @@ import {
   agents,
 } from '../db/schema.js';
 import { embed } from './embeddings.js';
+import { createLogger } from '../lib/logger.js';
+
+const embedLog = createLogger({ service: 'mcp-registry' });
+
+/**
+ * embed() wrapper that swallows failures. The nomic model downloads on first
+ * use; if the download is broken (no cache, no network, etc.) we fall back to
+ * the keyword-only path rather than failing the whole request. Existing
+ * routes (tasks.ts, agents.ts) use the same graceful-degradation pattern.
+ */
+async function tryEmbed(text: string, type: 'document' | 'query'): Promise<number[] | null> {
+  try {
+    return await embed(text, type);
+  } catch (err) {
+    embedLog.warn(`embed failed, falling back to lexical path: ${String(err)}`);
+    return null;
+  }
+}
 import {
   canonicalizeAttestationPayload,
   type McpServer,
@@ -90,10 +108,18 @@ export async function listServers(
   let orderExpr = sql`${mcpServers.qualityScore} DESC, ${mcpServers.verifiedUsageCount} DESC`;
 
   if (query.q && query.q.trim().length > 0) {
-    const queryEmbedding = await embed(query.q, 'query');
-    const embedLiteral = `[${queryEmbedding.join(',')}]`;
-    predicates.push(sql`${mcpServers.descriptionEmbedding} IS NOT NULL`);
-    orderExpr = sql`${mcpServers.descriptionEmbedding} <=> ${embedLiteral}::vector`;
+    const queryEmbedding = await tryEmbed(query.q, 'query');
+    if (queryEmbedding) {
+      const embedLiteral = `[${queryEmbedding.join(',')}]`;
+      predicates.push(sql`${mcpServers.descriptionEmbedding} IS NOT NULL`);
+      orderExpr = sql`${mcpServers.descriptionEmbedding} <=> ${embedLiteral}::vector`;
+    } else {
+      // Lexical fallback — case-insensitive contains over name + description
+      const needle = `%${query.q.trim()}%`;
+      predicates.push(
+        sql`(${mcpServers.name} ILIKE ${needle} OR ${mcpServers.description} ILIKE ${needle})`,
+      );
+    }
   }
 
   const rows = await db
@@ -161,7 +187,7 @@ export async function submitServer(
     throw Errors.conflict('An MCP server with that slug already exists');
   }
 
-  const descriptionEmbedding = await embed(`${input.name}\n\n${input.description}`, 'document');
+  const descriptionEmbedding = await tryEmbed(`${input.name}\n\n${input.description}`, 'document');
 
   return db.transaction(async (tx) => {
     const [server] = await tx.insert(mcpServers).values({
@@ -199,7 +225,7 @@ export async function submitServer(
 
     if (input.tools.length > 0) {
       const toolEmbeddings = await Promise.all(
-        input.tools.map((t) => embed(`${t.name}\n\n${t.description ?? ''}`, 'document')),
+        input.tools.map((t) => tryEmbed(`${t.name}\n\n${t.description ?? ''}`, 'document')),
       );
       await tx.insert(mcpServerTools).values(
         input.tools.map((t, i) => ({
@@ -246,7 +272,8 @@ export async function updateServer(
   if (input.name !== undefined || input.description !== undefined) {
     const name = input.name ?? existing.name;
     const description = input.description ?? existing.description;
-    patch.descriptionEmbedding = await embed(`${name}\n\n${description}`, 'document');
+    const emb = await tryEmbed(`${name}\n\n${description}`, 'document');
+    if (emb) patch.descriptionEmbedding = emb;
   }
 
   await db.update(mcpServers).set(patch).where(eq(mcpServers.id, existing.id));
@@ -424,7 +451,7 @@ export async function upsertIngestedServer(
   },
 ): Promise<{ serverId: string; created: boolean }> {
   const existing = await db.select().from(mcpServers).where(eq(mcpServers.slug, upstream.slug)).limit(1);
-  const descriptionEmbedding = await embed(`${upstream.name}\n\n${upstream.description}`, 'document');
+  const descriptionEmbedding = await tryEmbed(`${upstream.name}\n\n${upstream.description}`, 'document');
 
   if (existing.length === 0) {
     const [server] = await db.insert(mcpServers).values({
@@ -459,7 +486,7 @@ export async function upsertIngestedServer(
 
     if (upstream.tools?.length) {
       const toolEmbeddings = await Promise.all(
-        upstream.tools.map((t) => embed(`${t.name}\n\n${t.description ?? ''}`, 'document')),
+        upstream.tools.map((t) => tryEmbed(`${t.name}\n\n${t.description ?? ''}`, 'document')),
       );
       await db.insert(mcpServerTools).values(
         upstream.tools.map((t, i) => ({
@@ -540,19 +567,33 @@ export async function recommendForTask(params: {
   limit?: number;
 }): Promise<Array<McpServer & { similarity: number }>> {
   const limit = params.limit ?? 10;
-  const queryEmbedding = await embed(params.description, 'query');
-  const embedLiteral = `[${queryEmbedding.join(',')}]`;
+  const queryEmbedding = await tryEmbed(params.description, 'query');
 
-  const predicates = [
-    sql`${mcpServers.archivedAt} IS NULL`,
-    sql`${mcpServers.descriptionEmbedding} IS NOT NULL`,
-  ];
+  const predicates = [sql`${mcpServers.archivedAt} IS NULL`];
   if (params.transport) predicates.push(eq(mcpServers.transport, params.transport));
   if (params.maxPriceMicroUsdc !== undefined) {
     predicates.push(
       sql`(${mcpServers.paidTier} = false OR ${mcpServers.priceMicroUsdc} <= ${params.maxPriceMicroUsdc})`,
     );
   }
+
+  if (!queryEmbedding) {
+    // Lexical fallback — quality-ranked results with ILIKE match on the
+    // description. Semantic similarity is set to 0 so callers can detect
+    // the degraded path.
+    const needle = `%${params.description.slice(0, 200).trim()}%`;
+    predicates.push(sql`(${mcpServers.name} ILIKE ${needle} OR ${mcpServers.description} ILIKE ${needle})`);
+    const rows = await db
+      .select()
+      .from(mcpServers)
+      .where(and(...predicates))
+      .orderBy(desc(mcpServers.qualityScore), desc(mcpServers.verifiedUsageCount))
+      .limit(limit);
+    return rows.map((row) => ({ ...rowToServer(row), similarity: 0 }));
+  }
+
+  const embedLiteral = `[${queryEmbedding.join(',')}]`;
+  predicates.push(sql`${mcpServers.descriptionEmbedding} IS NOT NULL`);
 
   const rows = await db
     .select({
