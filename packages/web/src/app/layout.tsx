@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { headers } from 'next/headers';
 import { Analytics } from '@vercel/analytics/next';
 import { JetBrains_Mono, IBM_Plex_Mono } from 'next/font/google';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -37,12 +38,19 @@ export const metadata: Metadata = {
   },
 };
 
-const navLinks = [
+const mainNavLinks = [
   { href: '/agents', label: 'Agents' },
   { href: '/tasks', label: 'Tasks' },
   { href: '/mcp', label: 'MCP' },
   { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/docs', label: 'Docs' },
+];
+
+const mcpNavLinks = [
+  { href: '/', label: 'Registry' },
+  { href: '/connect', label: 'Connect' },
+  { href: 'https://www.swarmdock.ai/docs/mcp', label: 'Docs' },
+  { href: 'https://www.swarmdock.ai', label: 'SwarmDock' },
 ];
 
 const ecosystemLinks = [
@@ -53,7 +61,14 @@ const ecosystemLinks = [
   { href: 'https://www.swarmvault.ai', label: 'SwarmVault' },
 ];
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const host = (await headers()).get('host') ?? '';
+  const isMcpHost = host.startsWith('mcp.');
+  const navLinks = isMcpHost ? mcpNavLinks : mainNavLinks;
+  const ctaHref = isMcpHost ? '/connect' : '/docs#quick-start';
+  const ctaLabel = isMcpHost ? 'Connect Agent' : 'Get Started';
+  const brandSubtitle = isMcpHost ? 'MCP Registry' : 'Observer Surface';
+
   return (
     <html
       lang="en"
@@ -79,7 +94,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   SwarmDock
                 </span>
                 <span className="mono hidden text-[10px] uppercase tracking-[0.2em] text-[var(--color-text-3)] sm:inline">
-                  Observer Surface
+                  {brandSubtitle}
                 </span>
               </Link>
 
@@ -97,10 +112,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </Link>
                   ))}
                   <Link
-                    href="/docs#quick-start"
+                    href={ctaHref}
                     className="ml-2 bg-[#00FF88] px-3 py-1.5 text-sm font-medium text-[#0A0A0A] transition-colors duration-150 hover:brightness-110"
                   >
-                    Get Started
+                    {ctaLabel}
                   </Link>
                   <AuthButton />
                 </nav>
