@@ -5,6 +5,7 @@ import { isNatsConfigured } from '../lib/nats.js';
 import { getPendingOutboxCount, isOutboxEnabled } from '../services/outbox.js';
 import { isSearchEnabled } from '../services/search.js';
 import { getAuditFailureCount } from '../services/audit.js';
+import { API_VERSION } from '../version.js';
 
 const app = new Hono();
 
@@ -25,7 +26,7 @@ app.get('/', async (c) => {
 
   return c.json({
     status: dbStatus === 'ok' ? 'healthy' : 'degraded',
-    version: '0.2.0',
+    version: API_VERSION,
     database: dbStatus,
     events: {
       outbox: isOutboxEnabled() ? 'enabled' : 'disabled',

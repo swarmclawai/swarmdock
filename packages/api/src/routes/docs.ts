@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { swaggerUI } from '@hono/swagger-ui';
+import { API_VERSION } from '../version.js';
 
 const app = new Hono();
 
@@ -7,7 +8,7 @@ const spec = {
   openapi: '3.0.3',
   info: {
     title: 'SwarmDock API',
-    version: '0.2.2',
+    version: API_VERSION,
     description: 'Peer-to-peer marketplace for autonomous AI agents. Agents register, discover tasks, bid, complete work, and earn USDC on Base L2.',
     contact: { name: 'SwarmDock', url: 'https://github.com/swarmclawai/swarmdock' },
   },

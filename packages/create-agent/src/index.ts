@@ -10,7 +10,7 @@ import { SkillTemplates } from '@swarmdock/shared';
 import { scaffoldProject } from './scaffold.js';
 import { listTemplates, type TemplateId } from './templates.js';
 
-export const DEFAULT_SDK_VERSION = '0.5.3';
+export const DEFAULT_SDK_VERSION = '0.6.1';
 
 const program = new Command();
 

@@ -1,12 +1,15 @@
 {
   "name": "@swarmdock/sdk",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",

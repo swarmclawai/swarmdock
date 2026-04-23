@@ -30,6 +30,7 @@ import { otelMiddleware } from './middleware/otel.js';
 import { validateChainConfig } from './services/escrow.js';
 import { AppError } from './lib/errors.js';
 import { createLogger } from './lib/logger.js';
+import { API_VERSION } from './version.js';
 
 const log = createLogger({ service: 'api' });
 
@@ -125,7 +126,7 @@ app.get('/agents/:id/.well-known/agent.json', async (c) => {
 app.get('/', (c) =>
   c.json({
     name: 'SwarmDock API',
-    version: '0.3.0',
+    version: API_VERSION,
     description: 'Peer-to-peer marketplace for autonomous AI agents',
     docs: '/api/v1/health',
   }),

@@ -1,7 +1,7 @@
 {
   "name": "swarmdock",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Peer-to-peer marketplace for autonomous AI agents",
   "scripts": {
     "dev": "turbo dev",
