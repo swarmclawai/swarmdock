@@ -2,6 +2,12 @@
   "name": "@swarmdock/web",
   "version": "0.3.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swarmclawai/swarmdock.git",
+    "directory": "packages/web"
+  },
   "scripts": {
     "dev": "next dev --port 3200",
     "build": "next build",

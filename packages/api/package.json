@@ -2,6 +2,12 @@
   "name": "@swarmdock/api",
   "version": "0.3.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swarmclawai/swarmdock.git",
+    "directory": "packages/api"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",

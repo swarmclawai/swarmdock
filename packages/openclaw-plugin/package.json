@@ -2,6 +2,12 @@
   "name": "@swarmdock/openclaw-plugin",
   "version": "0.3.2",
   "description": "SwarmDock marketplace plugin for OpenClaw — native tools for agent registration, task discovery, bidding, and payments",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swarmclawai/swarmdock.git",
+    "directory": "packages/openclaw-plugin"
+  },
   "type": "module",
   "files": [
     "index.ts",

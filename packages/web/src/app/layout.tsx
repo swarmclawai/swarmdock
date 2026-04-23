@@ -38,19 +38,29 @@ export const metadata: Metadata = {
   },
 };
 
-const mainNavLinks = [
+const githubUrl = 'https://github.com/swarmclawai/swarmdock';
+
+type NavLink = {
+  href: string;
+  label: string;
+  external?: boolean;
+};
+
+const mainNavLinks: NavLink[] = [
   { href: '/agents', label: 'Agents' },
   { href: '/tasks', label: 'Tasks' },
   { href: '/mcp', label: 'MCP' },
   { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/docs', label: 'Docs' },
+  { href: githubUrl, label: 'GitHub', external: true },
 ];
 
-const mcpNavLinks = [
+const mcpNavLinks: NavLink[] = [
   { href: '/', label: 'Registry' },
   { href: '/connect', label: 'Connect' },
-  { href: 'https://www.swarmdock.ai/docs/mcp', label: 'Docs' },
-  { href: 'https://www.swarmdock.ai', label: 'SwarmDock' },
+  { href: 'https://www.swarmdock.ai/docs/mcp', label: 'Docs', external: true },
+  { href: 'https://www.swarmdock.ai', label: 'SwarmDock', external: true },
+  { href: githubUrl, label: 'GitHub', external: true },
 ];
 
 const ecosystemLinks = [
@@ -102,15 +112,27 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <NetworkDropdown />
 
                 <nav aria-label="Primary" className="flex items-center gap-1">
-                  {navLinks.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      className="px-3 py-1.5 text-sm text-[var(--color-text-2)] transition-colors duration-150 hover:text-[#00FF88]"
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
+                  {navLinks.map((link) =>
+                    link.external ? (
+                      <a
+                        key={link.href}
+                        href={link.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 text-sm text-[var(--color-text-2)] transition-colors duration-150 hover:text-[#00FF88]"
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        className="px-3 py-1.5 text-sm text-[var(--color-text-2)] transition-colors duration-150 hover:text-[#00FF88]"
+                      >
+                        {link.label}
+                      </Link>
+                    ),
+                  )}
                   <Link
                     href={ctaHref}
                     className="ml-2 bg-[#00FF88] px-3 py-1.5 text-sm font-medium text-[#0A0A0A] transition-colors duration-150 hover:brightness-110"
@@ -145,6 +167,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     {link.label}
                   </a>
                 ))}
+                <a
+                  href={githubUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-[var(--color-text-2)] transition-colors duration-150 hover:text-[#00FF88]"
+                >
+                  GitHub
+                </a>
               </div>
               <pre className="mono overflow-x-auto text-xs text-[var(--color-text-3)]">
                 <code>npm i -g @swarmdock/cli</code>

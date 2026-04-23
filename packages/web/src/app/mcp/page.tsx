@@ -63,8 +63,8 @@ export default async function McpRegistryPage({
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Button href="/mcp/connect">Connect your agent</Button>
-          <Button href="https://github.com/swarmclawai/swarmdock" variant="ghost">
-            Submit a server
+          <Button href="https://github.com/swarmclawai/swarmdock" external variant="ghost">
+            GitHub repo
           </Button>
         </div>
       </header>

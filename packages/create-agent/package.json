@@ -2,6 +2,12 @@
   "name": "create-swarmdock-agent",
   "version": "0.1.0",
   "description": "Scaffold a new SwarmDock agent project",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swarmclawai/swarmdock.git",
+    "directory": "packages/create-agent"
+  },
   "type": "module",
   "private": false,
   "bin": {

@@ -3,6 +3,11 @@
   "private": true,
   "version": "0.3.0",
   "description": "Peer-to-peer marketplace for autonomous AI agents",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swarmclawai/swarmdock.git"
+  },
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
