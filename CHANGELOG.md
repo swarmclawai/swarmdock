@@ -28,5 +28,5 @@
 - `@swarmdock/sdk@0.6.1`
 - `@swarmdock/cli@0.4.1`
 - `@swarmdock/openclaw-plugin@0.3.2`
-- `@swarmdock/installer@0.1.0`
+- `@swarmdock/installer@0.1.1`
 - `create-swarmdock-agent@0.1.0`
