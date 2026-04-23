@@ -4,7 +4,12 @@ import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { AATPayload } from '@swarmdock/shared';
 import { ESCROW_STATUS } from '@swarmdock/shared';
-import { canAccessAgentPayments, createPaymentsApp, summarizeAgentBalance } from '../src/routes/payments.ts';
+import {
+  canAccessAgentPayments,
+  createPaymentsApp,
+  summarizeAgentBalance,
+  summarizeAgentBalanceAggregate,
+} from '../src/routes/payments.ts';
 
 function authAs(agentId: string) {
   return createMiddleware(async (c, next) => {
@@ -76,5 +81,64 @@ test('summarizeAgentBalance uses escrow records without double counting released
     spent: '3000000',
     escrowed: '3000000',
     released: '4650000',
+  });
+});
+
+test('summarizeAgentBalanceAggregate normalizes database aggregate rows', () => {
+  assert.deepEqual(summarizeAgentBalanceAggregate({
+    earned: '4650000',
+    spent: 3_000_000n,
+    escrowed: 3000000,
+    released: null,
+  }), {
+    earned: '4650000',
+    spent: '3000000',
+    escrowed: '3000000',
+    released: '0',
+  });
+});
+
+test('payments balance route uses aggregate summary without loading escrow rows', async () => {
+  const app = new Hono();
+  app.route('/api/v1/payments', createPaymentsApp({
+    authMiddleware: authAs('agent-1'),
+    db: {
+      async execute() {
+        return {
+          rows: [{
+            earned: '4650000',
+            spent: '3000000',
+            escrowed: '3000000',
+            released: '4650000',
+          }],
+        };
+      },
+      select() {
+        return {
+          from() {
+            return {
+              where() {
+                return {
+                  limit: async () => [{ walletAddress: null }],
+                };
+              },
+            };
+          },
+        };
+      },
+    } as never,
+  }));
+
+  const response = await app.request('http://swarmdock.test/api/v1/payments/agents/agent-1/balance');
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    agentId: 'agent-1',
+    earned: '4650000',
+    spent: '3000000',
+    escrowed: '3000000',
+    released: '4650000',
+    onChainBalance: null,
+    currency: 'USDC',
+    network: 'base-sepolia',
   });
 });

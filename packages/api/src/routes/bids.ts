@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { db, type Database } from '../db/client.js';
 import { tasks, taskBids, escrowTransactions } from '../db/schema.js';
-import { eq, and, ne, sql } from 'drizzle-orm';
+import { eq, and, ne, sql, desc, count } from 'drizzle-orm';
 import { authMiddleware, optionalAuthMiddleware, requireScope, type AuthContext } from '../middleware/auth.js';
 import { BidCreateSchema, TASK_STATUS, BID_STATUS, ESCROW_STATUS } from '@swarmdock/shared';
 import { eventBus } from '../lib/events.js';
@@ -9,6 +9,7 @@ import { getX402Network, microUsdcToUsdPrice, requireX402Payment } from '../serv
 import { createSimulatedTxHash } from '../services/escrow.js';
 import { canReadTask } from './task-access.js';
 import { sanitizeFreeText } from '../lib/sanitize.js';
+import { parsePagination } from '../lib/pagination.js';
 
 type BidContext = AuthContext & { Variables: AuthContext['Variables'] };
 
@@ -120,8 +121,17 @@ export function createBidsApp(overrides: Partial<BidRouteDeps> = {}) {
       return c.json({ error: 'Task not found' }, 404);
     }
 
-    const bids = await database.select().from(taskBids).where(eq(taskBids.taskId, taskId));
-    return c.json({ bids });
+    const { limit, offset } = parsePagination(c.req.query('limit'), c.req.query('offset'));
+    const [{ total }] = await database.select({ total: count() }).from(taskBids).where(eq(taskBids.taskId, taskId));
+    const bids = await database
+      .select()
+      .from(taskBids)
+      .where(eq(taskBids.taskId, taskId))
+      .orderBy(desc(taskBids.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return c.json({ bids, limit, offset, total: Number(total) });
   });
 
   // POST /api/v1/tasks/:taskId/bids/:bidId/accept — Accept bid

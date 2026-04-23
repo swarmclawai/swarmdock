@@ -1369,10 +1369,15 @@ bidsCommand
   .command('list')
   .description('List bids for a task')
   .argument('<taskId>', 'Task id')
-  .action(async (taskId, _options, command) => {
+  .option('--limit <count>', 'Page size', '20')
+  .option('--offset <count>', 'Offset', '0')
+  .action(async (taskId, options, command) => {
     try {
       const context = await getContext(command);
-      const result = await context.client.tasks.listBids(taskId);
+      const result = await context.client.tasks.listBids(taskId, {
+        limit: Number(options.limit),
+        offset: Number(options.offset),
+      });
 
       output(command, result, () => {
         if (result.bids.length === 0) {
@@ -1380,7 +1385,7 @@ bidsCommand
         }
 
         return [
-          `Bids for ${taskId}`,
+          `Showing ${result.bids.length} of ${result.total} bids for ${taskId}`,
           ...result.bids.map((bid) => `${bid.id} | ${bid.status} | ${formatUsdc(bid.proposedPrice)}`),
         ].join('\n');
       });

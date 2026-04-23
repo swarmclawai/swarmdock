@@ -76,6 +76,8 @@ function createFakeDb(state: FakeState) {
   class SelectQuery<T extends Record<string, unknown>> implements PromiseLike<T[]> {
     private rows: T[] = [];
     private selectedFields: Record<string, unknown> | null = null;
+    private limitCount: number | null = null;
+    private offsetCount = 0;
 
     constructor(fields?: Record<string, unknown>) {
       this.selectedFields = fields ?? null;
@@ -98,12 +100,13 @@ function createFakeDb(state: FakeState) {
       return this;
     }
 
-    offset() {
+    offset(count: number) {
+      this.offsetCount = count;
       return this;
     }
 
     limit(count: number) {
-      this.rows = this.rows.slice(0, count);
+      this.limitCount = count;
       return this;
     }
 
@@ -118,7 +121,9 @@ function createFakeDb(state: FakeState) {
           return Promise.resolve([{ total: this.rows.length }] as T[]).then(onfulfilled, onrejected);
         }
       }
-      return Promise.resolve(this.rows).then(onfulfilled, onrejected);
+      const start = this.offsetCount;
+      const end = this.limitCount === null ? undefined : start + this.limitCount;
+      return Promise.resolve(this.rows.slice(start, end)).then(onfulfilled, onrejected);
     }
   }
 
@@ -375,6 +380,66 @@ test('GET /:id returns task detail with bids', async () => {
   assert.ok(Array.isArray(body.bids));
   const bids = body.bids as Array<{ id: string; bidderDisplayName: string }>;
   assert.equal(bids[0]?.id, 'bid-1');
+});
+
+test('GET /:id paginates embedded bids while preserving total bid count', async () => {
+  const state: FakeState = {
+    tasks: [{
+      id: 'task-1',
+      requesterId: 'requester-1',
+      assigneeId: null,
+      title: 'Build API',
+      description: 'Build a REST API',
+      status: TASK_STATUS.OPEN,
+      visibility: TASK_VISIBILITY.PUBLIC,
+      revealIdentity: true,
+    }],
+    bids: [
+      {
+        id: 'bid-1',
+        taskId: 'task-1',
+        bidderId: 'agent-1',
+        proposedPrice: 3_000_000n,
+        status: 'pending',
+      },
+      {
+        id: 'bid-2',
+        taskId: 'task-1',
+        bidderId: 'agent-2',
+        proposedPrice: 2_500_000n,
+        status: 'pending',
+      },
+      {
+        id: 'bid-3',
+        taskId: 'task-1',
+        bidderId: 'agent-3',
+        proposedPrice: 2_000_000n,
+        status: 'pending',
+      },
+    ],
+    agents: [
+      { id: 'requester-1', displayName: 'Requester', trustLevel: 2, status: 'active' },
+      { id: 'agent-2', displayName: 'Bidder 2', trustLevel: 2, status: 'active' },
+    ],
+    disputes: [],
+    invitations: [],
+  };
+
+  const { app } = createMountedTasksApp(state);
+  const response = await app.request('http://swarmdock.test/tasks/task-1?bidsLimit=1&bidsOffset=1');
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    bidCount: number;
+    bidsLimit: number;
+    bidsOffset: number;
+    bids: Array<{ id: string; bidderDisplayName: string | null }>;
+  };
+  assert.equal(body.bidCount, 3);
+  assert.equal(body.bidsLimit, 1);
+  assert.equal(body.bidsOffset, 1);
+  assert.deepEqual(body.bids.map((bid) => bid.id), ['bid-2']);
+  assert.equal(body.bids[0]?.bidderDisplayName, 'Bidder 2');
 });
 
 test('GET /:id returns 404 for nonexistent task', async () => {

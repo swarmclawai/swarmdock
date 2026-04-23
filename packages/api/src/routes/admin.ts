@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { db } from '../db/client.js';
 import { agents, tasks, escrowTransactions, transactions, agentRatings, disputes, anomalyEvents, agentReputation } from '../db/schema.js';
-import { eq, sql, count, desc, and } from 'drizzle-orm';
+import { eq, sql, count, desc, and, inArray } from 'drizzle-orm';
 import { timingSafeEqual } from 'node:crypto';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
@@ -35,6 +35,24 @@ const adminAuth = createMiddleware(async (c, next) => {
 
 const ADMIN_LIST_MAX_LIMIT = 200;
 const ADMIN_LIST_DEFAULT_LIMIT = 50;
+export const TRIBUNAL_SELECTABLE_STATUSES = [
+  DISPUTE_STATUS.OPEN,
+  DISPUTE_STATUS.ESCALATED,
+] as const;
+export const ADMIN_RESOLVABLE_DISPUTE_STATUSES = [
+  DISPUTE_STATUS.OPEN,
+  DISPUTE_STATUS.ESCALATED,
+  DISPUTE_STATUS.TRIBUNAL,
+  DISPUTE_STATUS.ADMIN_REQUIRED,
+] as const;
+
+export function isDisputeStatusSelectableForTribunal(status: string): boolean {
+  return (TRIBUNAL_SELECTABLE_STATUSES as readonly string[]).includes(status);
+}
+
+export function isDisputeStatusResolvableByAdmin(status: string): boolean {
+  return (ADMIN_RESOLVABLE_DISPUTE_STATUSES as readonly string[]).includes(status);
+}
 
 function parseListLimit(raw: string | undefined): number {
   const parsed = parseInt(raw ?? String(ADMIN_LIST_DEFAULT_LIMIT), 10);
@@ -199,31 +217,42 @@ app.get('/disputes', adminAuth, async (c) => {
   });
 });
 
-// GET /api/v1/admin/disputes/:id/tribunal — Trigger tribunal selection
-app.get('/disputes/:id/tribunal', adminAuth, async (c) => {
+// GET /api/v1/admin/disputes/:id/tribunal — Deprecated: use POST for state changes
+app.get('/disputes/:id/tribunal', adminAuth, (c) =>
+  c.json({ error: 'Use POST /api/v1/admin/disputes/:id/tribunal to select tribunal judges' }, 405),
+);
+
+// POST /api/v1/admin/disputes/:id/tribunal — Trigger tribunal selection
+app.post('/disputes/:id/tribunal', adminAuth, async (c) => {
   const id = c.req.param('id');
 
   const [dispute] = await db
     .select()
     .from(disputes)
-    .where(and(eq(disputes.id, id), eq(disputes.status, DISPUTE_STATUS.OPEN)))
+    .where(eq(disputes.id, id))
     .limit(1);
 
   if (!dispute) {
-    return c.json({ error: 'Open dispute not found' }, 404);
+    return c.json({ error: 'Dispute not found' }, 404);
+  }
+  if (!isDisputeStatusSelectableForTribunal(dispute.status)) {
+    return c.json({ error: `Dispute is not selectable for tribunal in status: ${dispute.status}` }, 409);
   }
 
   const tribunalAgents = await selectTribunalJudges(dispute.id);
-
   const [updatedDispute] = await db
-    .update(disputes)
-    .set({
-      status: DISPUTE_STATUS.TRIBUNAL,
-      tribunalAgents,
-      updatedAt: new Date(),
-    })
+    .select()
+    .from(disputes)
     .where(eq(disputes.id, id))
-    .returning();
+    .limit(1);
+
+  if (tribunalAgents.length === 0) {
+    return c.json({
+      dispute: updatedDispute,
+      tribunalAgents,
+      error: 'Not enough eligible judges; admin resolution required',
+    }, 409);
+  }
 
   // Notify tribunal agents
   for (const agentId of tribunalAgents) {
@@ -248,11 +277,11 @@ app.post('/disputes/:id/resolve', adminAuth, async (c) => {
   const [dispute] = await db
     .select()
     .from(disputes)
-    .where(and(eq(disputes.id, id), eq(disputes.status, DISPUTE_STATUS.OPEN)))
+    .where(and(eq(disputes.id, id), inArray(disputes.status, [...ADMIN_RESOLVABLE_DISPUTE_STATUSES])))
     .limit(1);
 
   if (!dispute) {
-    return c.json({ error: 'Open dispute not found' }, 404);
+    return c.json({ error: 'Resolvable dispute not found' }, 404);
   }
 
   const [task] = await db.select().from(tasks).where(eq(tasks.id, dispute.taskId)).limit(1);

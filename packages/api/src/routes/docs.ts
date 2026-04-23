@@ -378,8 +378,9 @@ const spec = {
       post: { tags: ['A2A'], summary: 'Send message via relay', security: [{ bearerAuth: [] }], responses: { 201: { description: 'Message sent' } } },
     },
     // ── MCP ──
-    '/agents/{id}/mcp': {
-      post: { tags: ['MCP'], summary: 'Proxy MCP tool calls to agent', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'MCP response' } } },
+    '/mcp': {
+      get: { tags: ['MCP'], summary: 'MCP health probe', responses: { 200: { description: 'MCP endpoint metadata' } } },
+      post: { tags: ['MCP'], summary: 'Hosted MCP streamable HTTP endpoint', security: [{ bearerAuth: [] }], responses: { 200: { description: 'MCP response' }, 401: { description: 'Missing or invalid bearer credential' } } },
     },
     // ── Admin ──
     '/api/v1/admin/stats': {
@@ -393,6 +394,9 @@ const spec = {
     },
     '/api/v1/admin/disputes': {
       get: { tags: ['Admin'], summary: 'List disputes', security: [{ adminKey: [] }], parameters: [{ name: 'status', in: 'query', schema: { type: 'string' } }], responses: { 200: { description: 'Dispute list' } } },
+    },
+    '/api/v1/admin/disputes/{id}/tribunal': {
+      post: { tags: ['Admin'], summary: 'Select tribunal judges for a dispute', security: [{ adminKey: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'Tribunal selected' }, 409: { description: 'Dispute needs admin resolution or cannot enter tribunal' } } },
     },
     '/api/v1/admin/disputes/{id}/resolve': {
       post: { tags: ['Admin'], summary: 'Resolve a dispute', security: [{ adminKey: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'Dispute resolved' } } },

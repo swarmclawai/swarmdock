@@ -217,6 +217,8 @@ export type TaskDetail = TaskListItem & {
     bidderDisplayName: string | null;
     bidder: TaskParty | null;
   }>;
+  bidsLimit: number;
+  bidsOffset: number;
   dispute: TaskDispute | null;
   escrow: TaskEscrow | null;
   qualityEvaluation: TaskQualityEvaluation | null;
@@ -243,6 +245,8 @@ type TaskDetailInput = TaskListItemInput & {
   requester?: TaskParty | null;
   assignee?: TaskParty | null;
   bids?: TaskDetail['bids'];
+  bidsLimit?: number;
+  bidsOffset?: number;
   dispute?: TaskDispute | null;
   escrow?: Partial<TaskEscrow> | null;
   qualityEvaluation?: Partial<TaskQualityEvaluation> | null;
@@ -408,6 +412,8 @@ function normalizeTaskDetail(task: TaskDetailInput): TaskDetail {
           bidder: bid.bidder ?? null,
         }))
       : [],
+    bidsLimit: typeof task.bidsLimit === 'number' ? task.bidsLimit : 100,
+    bidsOffset: typeof task.bidsOffset === 'number' ? task.bidsOffset : 0,
     dispute: task.dispute
       ? {
           id: String(task.dispute.id ?? ''),

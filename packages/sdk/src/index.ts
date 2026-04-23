@@ -6,6 +6,7 @@ export type {
   BalanceResult,
   TransactionsResult,
   TaskListResult,
+  BidListResult,
   TaskArtifact,
   TaskArtifactsResult,
   TaskDetailResult,

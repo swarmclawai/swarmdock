@@ -1,17 +1,25 @@
 import { Hono } from 'hono';
 import { db, type Database } from '../db/client.js';
 import { escrowTransactions, transactions, agents } from '../db/schema.js';
-import { eq, or, desc } from 'drizzle-orm';
+import { eq, or, desc, sql } from 'drizzle-orm';
 import { authMiddleware, type AuthContext } from '../middleware/auth.js';
 import { queryOnChainBalance } from '../services/escrow.js';
 import { redisGet, redisSet } from '../lib/redis.js';
 import { ESCROW_STATUS } from '@swarmdock/shared';
+import { parsePagination } from '../lib/pagination.js';
 
 const BALANCE_CACHE_TTL = 30; // seconds
 
 type PaymentsDeps = {
-  db: Pick<Database, 'select'>;
+  db: Pick<Database, 'select' | 'execute'>;
   authMiddleware: typeof authMiddleware;
+};
+
+type BalanceAggregateRow = {
+  earned?: string | number | bigint | null;
+  spent?: string | number | bigint | null;
+  escrowed?: string | number | bigint | null;
+  released?: string | number | bigint | null;
 };
 
 export function canAccessAgentPayments(requestedAgentId: string, viewerAgentId: string): boolean {
@@ -57,6 +65,22 @@ export function summarizeAgentBalance(
   };
 }
 
+export function summarizeAgentBalanceAggregate(row: BalanceAggregateRow | undefined) {
+  const toAmountString = (value: BalanceAggregateRow[keyof BalanceAggregateRow]) => {
+    if (value === null || value === undefined) {
+      return '0';
+    }
+    return BigInt(String(value)).toString();
+  };
+
+  return {
+    earned: toAmountString(row?.earned),
+    spent: toAmountString(row?.spent),
+    escrowed: toAmountString(row?.escrowed),
+    released: toAmountString(row?.released),
+  };
+}
+
 export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
   const database = overrides.db ?? db;
   const requireAuth = overrides.authMiddleware ?? authMiddleware;
@@ -72,13 +96,38 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
       return c.json({ error: 'Can only view your own balance' }, 403);
     }
 
-    // Calculate from escrow transactions (legacy)
-    const escrowTxs = await database
-      .select()
-      .from(escrowTransactions)
-      .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)));
+    const balanceRows = await database.execute(sql`
+      SELECT
+        COALESCE(SUM(CASE
+          WHEN ${escrowTransactions.payeeId} = ${id}
+            AND ${escrowTransactions.status} = ${ESCROW_STATUS.RELEASED}
+          THEN ${escrowTransactions.amount} - COALESCE(${escrowTransactions.platformFee}, 0)
+          ELSE 0
+        END), 0)::text AS earned,
+        COALESCE(SUM(CASE
+          WHEN ${escrowTransactions.payerId} = ${id}
+            AND ${escrowTransactions.status} IN (${ESCROW_STATUS.FUNDED}, ${ESCROW_STATUS.RELEASED})
+          THEN ${escrowTransactions.amount}
+          ELSE 0
+        END), 0)::text AS spent,
+        COALESCE(SUM(CASE
+          WHEN ${escrowTransactions.payerId} = ${id}
+            AND ${escrowTransactions.status} IN (${ESCROW_STATUS.PENDING}, ${ESCROW_STATUS.FUNDED})
+          THEN ${escrowTransactions.amount}
+          ELSE 0
+        END), 0)::text AS escrowed,
+        COALESCE(SUM(CASE
+          WHEN ${escrowTransactions.payeeId} = ${id}
+            AND ${escrowTransactions.status} = ${ESCROW_STATUS.RELEASED}
+          THEN ${escrowTransactions.amount} - COALESCE(${escrowTransactions.platformFee}, 0)
+          ELSE 0
+        END), 0)::text AS released
+      FROM ${escrowTransactions}
+      WHERE ${escrowTransactions.payerId} = ${id}
+        OR ${escrowTransactions.payeeId} = ${id}
+    `);
 
-    const summary = summarizeAgentBalance(id, escrowTxs);
+    const summary = summarizeAgentBalanceAggregate(balanceRows.rows[0] as BalanceAggregateRow | undefined);
 
     // Query actual on-chain USDC balance if wallet is configured
     let onChainBalance: string | null = null;
@@ -126,8 +175,7 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
       return c.json({ error: 'Can only view your own transactions' }, 403);
     }
 
-    const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') ?? '20', 10) || 20, 100));
-    const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
+    const { limit, offset } = parsePagination(c.req.query('limit'), c.req.query('offset'));
 
     // Query from transactions table first
     const txRows = await database
@@ -144,7 +192,8 @@ export function createPaymentsApp(overrides: Partial<PaymentsDeps> = {}) {
         .select()
         .from(escrowTransactions)
         .where(or(eq(escrowTransactions.payerId, id), eq(escrowTransactions.payeeId, id)))
-        .limit(Math.min(limit, 100))
+        .orderBy(desc(escrowTransactions.createdAt))
+        .limit(limit)
         .offset(offset);
 
       return c.json({ transactions: escrowTxs, limit, offset, source: 'escrow' });

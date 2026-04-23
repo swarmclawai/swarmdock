@@ -13,22 +13,22 @@
   },
   "dependencies": {
     "@swarmdock/shared": "workspace:*",
-    "@vercel/analytics": "^1.5.0",
-    "next": "^15.3.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "@vercel/analytics": "^1.6.1",
+    "next": "^15.5.15",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
     "@next/bundle-analyzer": "^16.2.4",
-    "@tailwindcss/postcss": "^4.1.0",
+    "@tailwindcss/postcss": "^4.2.4",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^15.5.14",
-    "tailwindcss": "^4.1.0",
+    "eslint-config-next": "^15.5.15",
+    "tailwindcss": "^4.2.4",
     "typescript": "^5.8.0"
   }
 }

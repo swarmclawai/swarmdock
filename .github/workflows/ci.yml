@@ -43,7 +43,6 @@ jobs:
 
       - name: Audit dependencies
         run: pnpm audit --audit-level moderate
-        continue-on-error: true
 
       - name: Type-check all packages
         run: pnpm type-check
@@ -77,6 +76,9 @@ jobs:
           run_pkg_tests @swarmdock/api 1
           run_pkg_tests @swarmdock/sdk 1
           run_pkg_tests @swarmdock/cli 1
+          run_pkg_tests @swarmdock/web 1
+          run_pkg_tests @swarmdock/installer 1
+          run_pkg_tests create-swarmdock-agent 1
 
       - name: Run escrow integration tests
         env:

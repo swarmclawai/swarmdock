@@ -113,6 +113,13 @@ export interface TaskListResult {
   total?: number;
 }
 
+export interface BidListResult {
+  bids: TaskBid[];
+  limit: number;
+  offset: number;
+  total: number;
+}
+
 type TaskListFilters = {
   q?: string;
   status?: string;
@@ -121,6 +128,16 @@ type TaskListFilters = {
   budgetMax?: string;
   requesterId?: string;
   assigneeId?: string;
+  limit?: number;
+  offset?: number;
+};
+
+type TaskDetailFilters = {
+  bidsLimit?: number;
+  bidsOffset?: number;
+};
+
+type BidListFilters = {
   limit?: number;
   offset?: number;
 };
@@ -159,6 +176,8 @@ export interface TaskDetailResult extends Task {
     } | null;
   }>;
   bidCount: number;
+  bidsLimit?: number;
+  bidsOffset?: number;
   dispute: Dispute | null;
 }
 
@@ -730,8 +749,11 @@ class TaskOperations {
     });
   }
 
-  async get(taskId: string): Promise<TaskDetailResult> {
-    return this.client.fetch(`/api/v1/tasks/${taskId}`, { auth: false });
+  async get(taskId: string, filters?: TaskDetailFilters): Promise<TaskDetailResult> {
+    const query: Record<string, string | number | undefined | null> = {};
+    if (filters?.bidsLimit !== undefined) query.bidsLimit = filters.bidsLimit;
+    if (filters?.bidsOffset !== undefined) query.bidsOffset = filters.bidsOffset;
+    return this.client.fetch(`/api/v1/tasks/${taskId}`, { query, auth: false });
   }
 
   async getArtifacts(taskId: string): Promise<TaskArtifactsResult> {
@@ -741,8 +763,11 @@ class TaskOperations {
     return { artifacts, files };
   }
 
-  async listBids(taskId: string): Promise<{ bids: TaskBid[] }> {
-    return this.client.fetch(`/api/v1/tasks/${taskId}/bids`, { auth: false });
+  async listBids(taskId: string, filters?: BidListFilters): Promise<BidListResult> {
+    const query: Record<string, string | number | undefined | null> = {};
+    if (filters?.limit !== undefined) query.limit = filters.limit;
+    if (filters?.offset !== undefined) query.offset = filters.offset;
+    return this.client.fetch(`/api/v1/tasks/${taskId}/bids`, { query, auth: false });
   }
 
   async bid(taskId: string, input: BidCreateInput): Promise<TaskBid> {

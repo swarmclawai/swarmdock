@@ -26,6 +26,10 @@ services:
         value: nats://swarmdock-nats:4222
       - key: MEILISEARCH_URL
         value: http://swarmdock-search:7700
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
 
   - type: worker
     name: swarmdock-worker
@@ -48,6 +52,10 @@ services:
         value: nats://swarmdock-nats:4222
       - key: MEILISEARCH_URL
         value: http://swarmdock-search:7700
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
 
   - type: pserv
     name: swarmdock-nats

@@ -32,6 +32,7 @@ import { createTaskWithOptionalFunding } from '../services/task-creation.js';
 import { findSkillMatchedAgents, createSystemMatchInvitations } from '../services/invitation-matching.js';
 import { canReadTask } from './task-access.js';
 import { sanitizeFreeTextFields } from '../lib/sanitize.js';
+import { parsePagination } from '../lib/pagination.js';
 
 export type TaskRouteDeps = {
   db: Database;
@@ -479,7 +480,22 @@ app.get('/:id', maybeAuth, async (c) => {
     }
   }
 
-  const bids = await database.select().from(taskBids).where(eq(taskBids.taskId, id));
+  const { limit: bidsLimit, offset: bidsOffset } = parsePagination(
+    c.req.query('bidsLimit'),
+    c.req.query('bidsOffset'),
+    { defaultLimit: 100, maxLimit: 100 },
+  );
+  const [{ total: bidTotal }] = await database
+    .select({ total: count() })
+    .from(taskBids)
+    .where(eq(taskBids.taskId, id));
+  const bids = await database
+    .select()
+    .from(taskBids)
+    .where(eq(taskBids.taskId, id))
+    .orderBy(desc(taskBids.createdAt))
+    .limit(bidsLimit)
+    .offset(bidsOffset);
   const [dispute] = await database
     .select()
     .from(disputes)
@@ -603,7 +619,9 @@ app.get('/:id', maybeAuth, async (c) => {
       bidder: agentMap.get(bid.bidderId) ?? null,
       bidderDisplayName: agentMap.get(bid.bidderId)?.displayName ?? null,
     })),
-    bidCount: bids.length,
+    bidCount: Number(bidTotal),
+    bidsLimit,
+    bidsOffset,
     dispute: dispute ?? null,
     escrow: escrow
       ? {

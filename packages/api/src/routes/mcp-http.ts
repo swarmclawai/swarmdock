@@ -1,9 +1,9 @@
 /**
  * Hosted MCP endpoint at POST /mcp.
  *
- * Bearer auth uses the agent's base64 Ed25519 secret key. The handler
- * constructs a fresh swarmdock-mcp server per request, backed by a
- * SwarmDockClient that calls this same API on the loopback interface.
+ * Bearer auth accepts an Agent Authorization Token (AAT) and the legacy
+ * Ed25519 private-key flow. Operators can disable legacy private-key bearer
+ * auth by setting SWARMDOCK_MCP_ALLOW_PRIVATE_KEY_AUTH=0.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2';
@@ -15,6 +15,10 @@ import { createLogger } from '../lib/logger.js';
 const log = createLogger({ service: 'mcp-http' });
 
 const ED25519_SECRET_BYTES = 64;
+
+type McpBearerAuth =
+  | { kind: 'aat'; token: string; agentId: string }
+  | { kind: 'private_key'; privateKey: string };
 
 function extractBearer(req: IncomingMessage | Http2ServerRequest): string | undefined {
   const header = req.headers['authorization'];
@@ -30,6 +34,64 @@ function isValidEd25519Secret(base64: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function isLegacyPrivateKeyAuthAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.SWARMDOCK_MCP_ALLOW_PRIVATE_KEY_AUTH === '0') {
+    return false;
+  }
+  return true;
+}
+
+function decodeBase64UrlJson(segment: string): unknown {
+  const normalized = segment.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+}
+
+export function extractAgentIdFromAat(token: string): string | null {
+  const parts = token.split('.');
+  if (parts.length !== 3 || !parts[1]) {
+    return null;
+  }
+
+  try {
+    const payload = decodeBase64UrlJson(parts[1]);
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const agentId = (payload as { agent_id?: unknown }).agent_id;
+    if (typeof agentId === 'string' && agentId.length > 0) {
+      return agentId;
+    }
+
+    const subject = (payload as { sub?: unknown }).sub;
+    const didPrefix = 'did:web:swarmdock.ai:agents:';
+    if (typeof subject === 'string' && subject.startsWith(didPrefix)) {
+      return subject.slice(didPrefix.length) || null;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+export function resolveMcpBearerAuth(
+  bearer: string,
+  env: NodeJS.ProcessEnv = process.env,
+): McpBearerAuth | null {
+  const agentId = extractAgentIdFromAat(bearer);
+  if (agentId) {
+    return { kind: 'aat', token: bearer, agentId };
+  }
+
+  if (isValidEd25519Secret(bearer) && isLegacyPrivateKeyAuthAllowed(env)) {
+    return { kind: 'private_key', privateKey: bearer };
+  }
+
+  return null;
 }
 
 function reply(
@@ -67,25 +129,30 @@ export async function handleMcp(
     if (!bearer) {
       reply(outgoing, 401, {
         error: 'unauthorized',
-        hint: 'Pass your base64 Ed25519 secret key as "Authorization: Bearer <key>". Generate a key at https://www.swarmdock.ai/mcp/connect.',
+        hint: 'Pass an Agent Authorization Token (AAT), or a base64 Ed25519 secret for legacy clients, as "Authorization: Bearer <credential>".',
       });
       return;
     }
 
-    if (!isValidEd25519Secret(bearer)) {
+    const auth = resolveMcpBearerAuth(bearer);
+    if (!auth) {
       reply(outgoing, 401, {
         error: 'unauthorized',
-        hint: 'Bearer token is not a valid base64-encoded Ed25519 secret (expected 64 decoded bytes).',
+        hint: 'Bearer credential must be a valid AAT JWT or base64 Ed25519 secret. Private-key bearer auth can be disabled with SWARMDOCK_MCP_ALLOW_PRIVATE_KEY_AUTH=0.',
       });
       return;
     }
 
-    const { server } = createServer({
+    const { server, client } = createServer({
       config: {
         apiUrl: resolveInternalApiUrl(),
-        privateKey: bearer,
+        privateKey: auth.kind === 'private_key' ? auth.privateKey : undefined,
       },
     });
+    if (auth.kind === 'aat') {
+      client.setToken(auth.token);
+      (client as unknown as { agentId: string | null }).agentId = auth.agentId;
+    }
 
     // Stateless mode — each POST is a complete MCP exchange. Tool calls are themselves
     // stateless (they go straight to the SwarmDock API), so we don't need session continuity.

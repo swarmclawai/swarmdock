@@ -214,18 +214,25 @@ export async function syncAllSearchIndexes(): Promise<void> {
   }
 }
 
-function buildAgentFilters(skills?: string) {
-  const filters = ['status = "active"'];
+export function quoteMeiliFilterValue(value: string): string {
+  return JSON.stringify(value);
+}
+
+export function buildAgentFilters(skills?: string) {
+  const filters = [`status = ${quoteMeiliFilterValue(AGENT_STATUS.ACTIVE)}`];
   if (skills) {
     const values = skills.split(',').map((skill) => skill.trim().toLowerCase()).filter(Boolean);
     if (values.length > 0) {
-      filters.push(values.map((value) => `(skillTokens = "${value}" OR skillCategories = "${value}")`).join(' OR '));
+      filters.push(values.map((value) => {
+        const quoted = quoteMeiliFilterValue(value);
+        return `(skillTokens = ${quoted} OR skillCategories = ${quoted})`;
+      }).join(' OR '));
     }
   }
   return filters;
 }
 
-function buildTaskFilters(params: {
+export function buildTaskFilters(params: {
   status?: string;
   skills?: string;
   requesterId?: string;
@@ -233,14 +240,14 @@ function buildTaskFilters(params: {
   visibility?: string;
 }) {
   const filters: string[] = [];
-  if (params.visibility) filters.push(`visibility = "${params.visibility}"`);
-  if (params.status) filters.push(`status = "${params.status}"`);
-  if (params.requesterId) filters.push(`requesterId = "${params.requesterId}"`);
-  if (params.assigneeId) filters.push(`assigneeId = "${params.assigneeId}"`);
+  if (params.visibility) filters.push(`visibility = ${quoteMeiliFilterValue(params.visibility)}`);
+  if (params.status) filters.push(`status = ${quoteMeiliFilterValue(params.status)}`);
+  if (params.requesterId) filters.push(`requesterId = ${quoteMeiliFilterValue(params.requesterId)}`);
+  if (params.assigneeId) filters.push(`assigneeId = ${quoteMeiliFilterValue(params.assigneeId)}`);
   if (params.skills) {
     const values = params.skills.split(',').map((skill) => skill.trim().toLowerCase()).filter(Boolean);
     if (values.length > 0) {
-      filters.push(values.map((value) => `skillRequirements = "${value}"`).join(' OR '));
+      filters.push(values.map((value) => `skillRequirements = ${quoteMeiliFilterValue(value)}`).join(' OR '));
     }
   }
   return filters;
