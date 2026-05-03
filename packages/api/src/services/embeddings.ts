@@ -9,10 +9,16 @@ let extractor: unknown = null;
 
 export async function initEmbeddings(): Promise<void> {
   if (extractor) return;
-  console.log('Loading embedding model (nomic-embed-text-v1.5)...');
+  // q8 quantization keeps the model under ~150MB so it fits alongside the
+  // worker's other memory on Render's 512MB starter plan. fp32 loaded ~550MB
+  // and OOM-killed the worker on every MCP ingest cycle. Override with
+  // EMBEDDING_DTYPE if running on a larger instance and absolute fidelity
+  // is required (q8 cosine similarity is within ~1% of fp32).
+  const dtype = process.env.EMBEDDING_DTYPE ?? 'q8';
+  console.log(`Loading embedding model (nomic-embed-text-v1.5, dtype=${dtype})...`);
   const { pipeline } = await import('@huggingface/transformers');
   extractor = await (pipeline as (...args: unknown[]) => Promise<unknown>)('feature-extraction', 'nomic-ai/nomic-embed-text-v1.5', {
-    dtype: 'fp32',
+    dtype,
   });
   console.log(`Embedding model loaded (${EMBEDDING_DIM} dims).`);
 }
