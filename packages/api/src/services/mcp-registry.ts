@@ -449,9 +449,30 @@ export async function upsertIngestedServer(
     installations?: Array<{ method: string; spec: Record<string, unknown> }>;
     tools?: Array<{ name: string; description?: string; inputSchema?: unknown }>;
   },
-): Promise<{ serverId: string; created: boolean }> {
+  ctx: { embedBudget?: { remaining: number } } = {},
+): Promise<{ serverId: string; created: boolean } | { skipped: 'embed_budget_exhausted' }> {
   const existing = await db.select().from(mcpServers).where(eq(mcpServers.slug, upstream.slug)).limit(1);
-  const descriptionEmbedding = await tryEmbed(`${upstream.name}\n\n${upstream.description}`, 'document');
+
+  // Only re-embed when the text actually changed. Re-embedding 250+ servers on
+  // every 6h ingest cycle was OOM-killing the worker on Render's 512MB plan
+  // because the onnxruntime allocator grows with each inference. Steady-state
+  // ingest now does zero embed calls when nothing has changed upstream.
+  const row = existing[0];
+  const textChanged = !row || row.name !== upstream.name || row.description !== upstream.description;
+
+  let descriptionEmbedding: number[] | null;
+  if (textChanged) {
+    if (ctx.embedBudget && ctx.embedBudget.remaining <= 0) {
+      // Budget exhausted for this process. Skip rather than insert with null
+      // embedding (which would break semantic search ranking). Server will
+      // be picked up on the next ingest run in a fresh process.
+      return { skipped: 'embed_budget_exhausted' };
+    }
+    if (ctx.embedBudget) ctx.embedBudget.remaining -= 1;
+    descriptionEmbedding = await tryEmbed(`${upstream.name}\n\n${upstream.description}`, 'document');
+  } else {
+    descriptionEmbedding = row.descriptionEmbedding ?? null;
+  }
 
   if (existing.length === 0) {
     const [server] = await db.insert(mcpServers).values({
@@ -501,7 +522,7 @@ export async function upsertIngestedServer(
     return { serverId: server.id, created: true };
   }
 
-  const row = existing[0];
+  if (!row) throw new Error('unreachable: existing.length > 0 but row undefined');
   const mergedSources = Array.from(new Set([...row.ingestedFrom, source]));
   const mergedUpstreamIds = { ...(row.upstreamIds as Record<string, string>), [source]: upstream.upstreamId };
 

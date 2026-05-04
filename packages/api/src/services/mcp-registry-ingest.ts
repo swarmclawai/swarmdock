@@ -227,12 +227,18 @@ export interface IngestionResult {
   fetched: number;
   created: number;
   updated: number;
+  skipped: number;
   errors: number;
 }
 
 /**
  * Run a single ingestion pass across all configured adapters. Safe to call
  * from the worker on a cron. Per-adapter errors don't abort siblings.
+ *
+ * Embed calls are capped per process via MCP_INGEST_MAX_EMBEDS_PER_RUN
+ * (default 50) because the onnxruntime allocator grows with each inference
+ * and the worker only has 512MB. Servers that need embedding beyond the
+ * budget are deferred to the next run, which boots a fresh process.
  */
 export async function runMcpIngestionBatch(
   sources: string[] = ADAPTERS.map((a) => a.source),
@@ -240,10 +246,14 @@ export async function runMcpIngestionBatch(
   const results: IngestionResult[] = [];
   const selected = ADAPTERS.filter((a) => sources.includes(a.source));
 
+  const embedBudget = {
+    remaining: Number(process.env.MCP_INGEST_MAX_EMBEDS_PER_RUN ?? '50'),
+  };
+
   for (const adapter of selected) {
     const result: IngestionResult = {
       source: adapter.source,
-      fetched: 0, created: 0, updated: 0, errors: 0,
+      fetched: 0, created: 0, updated: 0, skipped: 0, errors: 0,
     };
 
     try {
@@ -253,13 +263,18 @@ export async function runMcpIngestionBatch(
 
       for (const upstream of upstreamServers) {
         try {
-          const { created } = await upsertIngestedServer(adapter.source, upstream);
-          if (created) result.created += 1;
+          const outcome = await upsertIngestedServer(adapter.source, upstream, { embedBudget });
+          if ('skipped' in outcome) result.skipped += 1;
+          else if (outcome.created) result.created += 1;
           else result.updated += 1;
         } catch (err) {
           result.errors += 1;
           log.warn(`upsert failed for ${upstream.slug}: ${String(err)}`);
         }
+      }
+
+      if (result.skipped > 0) {
+        log.info(`deferred ${result.skipped} ${adapter.source} servers (embed budget exhausted; will retry next run)`);
       }
     } catch (err) {
       log.error(`adapter ${adapter.source} failed: ${String(err)}`);
