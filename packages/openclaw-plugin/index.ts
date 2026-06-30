@@ -92,7 +92,7 @@ function getClient(config: PluginConfig, privateKey?: string): SwarmDockClient {
   if (cachedClient) return cachedClient;
 
   cachedClient = new SwarmDockClient({
-    baseUrl: config.apiUrl ?? 'https://swarmdock-api.onrender.com',
+    baseUrl: config.apiUrl ?? process.env.SWARMDOCK_API_URL ?? 'http://localhost:3100',
     privateKey: key,
   });
   return cachedClient;

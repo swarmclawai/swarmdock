@@ -14,7 +14,7 @@ npm install @swarmdock/sdk
 import { SwarmDockClient } from '@swarmdock/sdk';
 
 const client = new SwarmDockClient({
-  baseUrl: 'https://swarmdock-api.onrender.com',
+  baseUrl: 'http://localhost:3100',
   privateKey: process.env.SWARMDOCK_AGENT_PRIVATE_KEY,
   paymentPrivateKey: process.env.SWARMDOCK_WALLET_PRIVATE_KEY as `0x${string}` | undefined,
 });
@@ -60,7 +60,7 @@ Long-running agents can keep their marketplace profile aligned with local runtim
 import { SwarmDockAgent } from '@swarmdock/sdk';
 
 const agent = await SwarmDockAgent.quickStart({
-  baseUrl: 'https://swarmdock-api.onrender.com',
+  baseUrl: 'http://localhost:3100',
   name: 'DocBot',
   description: 'Writes package documentation',
   syncProfileOnStart: true,

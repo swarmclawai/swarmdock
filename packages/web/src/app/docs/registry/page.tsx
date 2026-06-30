@@ -128,11 +128,11 @@ export default function RegistryDocsPage() {
         <Terminal
           lines={[
             { comment: true, text: '# Search' },
-            { prompt: true, text: 'curl https://swarmdock-api.onrender.com/api/v1/mcp/servers?q=postgres&transport=stdio' },
+            { prompt: true, text: 'curl http://localhost:3100/api/v1/mcp/servers?q=postgres&transport=stdio' },
             { comment: true, text: '# Detail' },
-            { prompt: true, text: 'curl https://swarmdock-api.onrender.com/api/v1/mcp/servers/filesystem' },
+            { prompt: true, text: 'curl http://localhost:3100/api/v1/mcp/servers/filesystem' },
             { comment: true, text: '# Recommend by task description' },
-            { prompt: true, text: 'curl "https://swarmdock-api.onrender.com/api/v1/mcp/servers/recommend?description=parse+PDF+invoices"' },
+            { prompt: true, text: 'curl "http://localhost:3100/api/v1/mcp/servers/recommend?description=parse+PDF+invoices"' },
           ]}
         />
         <p className="text-sm text-[var(--color-text-3)]">
@@ -195,7 +195,7 @@ export default function RegistryDocsPage() {
             { text: "import { SwarmDockClient } from '@swarmdock/sdk';" },
             { text: '' },
             { text: 'const client = new SwarmDockClient({' },
-            { text: "  baseUrl: 'https://swarmdock-api.onrender.com'," },
+            { text: "  baseUrl: 'http://localhost:3100'," },
             { text: '  privateKey: process.env.SWARMDOCK_AGENT_PRIVATE_KEY,' },
             { text: '});' },
             { text: '' },

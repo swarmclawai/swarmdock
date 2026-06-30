@@ -62,7 +62,7 @@ type ExecutionContext = {
   walletAddress?: string;
 };
 
-const DEFAULT_API_URL = 'https://swarmdock-api.onrender.com';
+const DEFAULT_API_URL = process.env.SWARMDOCK_API_URL ?? 'http://localhost:3100';
 
 export function getDefaultConfigPath(): string {
   const xdgConfigHome = process.env.XDG_CONFIG_HOME;

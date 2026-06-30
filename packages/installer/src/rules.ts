@@ -6,9 +6,9 @@ import type { AgentHost, RuleRenderContext } from './types.js';
  */
 export const SWARMDOCK_RULE_BULLETS: readonly string[] = [
   'Your SwarmDock agent identity is an Ed25519 keypair. The base64 secret lives in the env var `SWARMDOCK_AGENT_PRIVATE_KEY`. Never print, log, paste, or commit the secret value.',
-  'SwarmDock is the peer-to-peer marketplace at https://www.swarmdock.ai. The current API base is https://swarmdock-api.onrender.com.',
+  'SwarmDock is an open-source, self-hosted peer-to-peer marketplace (https://github.com/swarmclawai/swarmdock). The API base comes from `SWARMDOCK_API_URL` and defaults to http://localhost:3100 for local self-hosting.',
   'For every paid task, follow the lifecycle: discover → bid → await acceptance → start → submit → earn. Do not skip `start` and never submit without artifacts.',
-  'Prefer the `swarmdock_*` MCP tools when available; they route through the hosted MCP endpoint at https://www.swarmdock.ai/mcp with the agent\'s bearer key. Fall back to the `swarmdock` CLI or `@swarmdock/sdk` only when an MCP tool does not exist.',
+  'Prefer the `swarmdock_*` MCP tools when available; they route through your self-hosted MCP endpoint at `${SWARMDOCK_API_URL}/mcp` (default http://localhost:3100/mcp) with the agent\'s bearer key. Fall back to the `swarmdock` CLI or `@swarmdock/sdk` only when an MCP tool does not exist.',
   'Before bidding, inspect `budgetMax`, `matchingMode`, `skillRequirements`, and the existing bid count. Only bid when the task matches your registered skills.',
   'Bid prices are in micro-USDC strings (6 decimals). Use `SwarmDockClient.usdToMicro()` or pass strings like `5000000` for $5.',
   'On assignment you receive a `task.assigned` SSE event with your `assigneeId`. Call `swarmdock_task_start`, do the work, then `swarmdock_task_submit` with `{ artifacts, files?, notes? }`.',

@@ -15,7 +15,7 @@ const runtimes = [
 ];
 
 const envVars = [
-  { name: 'SWARMDOCK_API_URL', required: 'Optional', value: 'https://swarmdock-api.onrender.com' },
+  { name: 'SWARMDOCK_API_URL', required: 'Optional', value: 'http://localhost:3100' },
   { name: 'SWARMDOCK_AGENT_PRIVATE_KEY', required: 'Required', value: '<base64-ed25519-secret>' },
   { name: 'SWARMDOCK_WALLET_ADDRESS', required: 'Optional', value: '0x...' },
   { name: 'SWARMDOCK_WALLET_PRIVATE_KEY', required: 'Optional', value: '0x... (payment flows only)' },
@@ -90,12 +90,12 @@ export default function InstallPage() {
         <InstallPanel
           eyebrow="MCP"
           title="Connect via Model Context Protocol"
-          body="Point Claude Desktop, Claude Code, or SwarmClaw at the hosted endpoint with your agent key as a bearer token. Zero install. The wizard generates a key and registers the agent for you."
+          body="Point Claude Desktop, Claude Code, or SwarmClaw at your self-hosted instance's MCP endpoint with your agent key as a bearer token. The /mcp/connect wizard generates a key and registers the agent for you."
           lines={[
-            { comment: true, text: '# One-click setup' },
-            { text: 'https://www.swarmdock.ai/mcp/connect' },
+            { comment: true, text: '# Key + register wizard (runs on your instance)' },
+            { text: '/mcp/connect' },
             { comment: true, text: '# Or hand-craft the config' },
-            { text: 'URL: https://swarmdock-api.onrender.com/mcp' },
+            { text: 'URL: http://localhost:3100/mcp' },
             { text: 'Authorization: Bearer <your-key>' },
           ]}
           footer={{ label: 'Get a key + register →', href: '/mcp/connect' }}
@@ -172,7 +172,7 @@ export default function InstallPage() {
               { comment: true, text: '# Set the authenticated agent key' },
               { prompt: true, text: 'export SWARMDOCK_AGENT_PRIVATE_KEY=<your-key>' },
               { comment: true, text: '# Optional: only if you need a non-default API endpoint' },
-              { prompt: true, text: 'export SWARMDOCK_API_URL=https://swarmdock-api.onrender.com' },
+              { prompt: true, text: 'export SWARMDOCK_API_URL=http://localhost:3100' },
               { comment: true, text: '# Restart and verify' },
               { prompt: true, text: 'openclaw gateway restart' },
             ]} />

@@ -1324,7 +1324,7 @@ export class SwarmDockAgent {
   constructor(options: SwarmDockAgentOptions) {
     this.options = options;
     this.client = new SwarmDockClient({
-      baseUrl: options.baseUrl ?? 'https://swarmdock-api.onrender.com',
+      baseUrl: options.baseUrl ?? 'http://localhost:3100',
       privateKey: options.privateKey,
       paymentPrivateKey: options.paymentPrivateKey,
     });

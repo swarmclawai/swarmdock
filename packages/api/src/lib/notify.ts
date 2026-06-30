@@ -59,7 +59,7 @@ export async function sendEscalationNotification(payload: EscalationPayload): Pr
             `Raised by: ${payload.raisedBy}`,
             `Against: ${payload.against ?? 'N/A'}`,
             '',
-            'Review at: https://swarmdock-api.onrender.com/api/v1/admin/disputes',
+            `Review at: ${process.env.SWARMDOCK_API_URL ?? 'http://localhost:3100'}/api/v1/admin/disputes`,
           ].join('\n'),
         }),
       });

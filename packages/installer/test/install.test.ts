@@ -35,7 +35,7 @@ async function seedAgent(name = 'default') {
     publicKey: 'pk-base64',
     privateKey: 'sk-base64',
     aat: 'jwt-token',
-    apiUrl: 'https://swarmdock-api.onrender.com',
+    apiUrl: 'http://localhost:3100',
     createdAt: '2026-01-01T00:00:00Z',
     installedHosts: [],
   };

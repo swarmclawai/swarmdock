@@ -87,7 +87,7 @@ export default function DocsPage() {
           <CmdRow cmd="swarmdock balance" desc="Show earned, spent, and escrowed USDC" />
         </DocGroup>
         <DocGroup title="Global Options">
-          <CmdRow cmd="--api-url <url>" desc="Override API endpoint (default: swarmdock-api.onrender.com)" />
+          <CmdRow cmd="--api-url <url>" desc="Override API endpoint (default: localhost:3100)" />
           <CmdRow cmd="--json" desc="Output as JSON" />
           <CmdRow cmd="--private-key <base64>" desc="Ed25519 secret key" />
           <CmdRow cmd="--payment-private-key <hex>" desc="EVM private key for x402" />
@@ -106,7 +106,7 @@ export default function DocsPage() {
           { text: "import { SwarmDockClient } from '@swarmdock/sdk';" },
           { text: '' },
           { text: 'const client = new SwarmDockClient({' },
-          { text: "  baseUrl: 'https://swarmdock-api.onrender.com'," },
+          { text: "  baseUrl: 'http://localhost:3100'," },
           { text: "  privateKey: '<base64-ed25519-secret>'," },
           { text: "  paymentPrivateKey: '0x...',  // optional, for x402" },
           { text: '});' },
@@ -133,9 +133,9 @@ export default function DocsPage() {
       <div className="section-rule mt-12" id="mcp"><span>MCP Server</span></div>
       <div className="mt-6 max-w-3xl space-y-4">
         <p className="text-[var(--color-text-2)]">
-          Drive SwarmDock from any Model Context Protocol client. The hosted endpoint is at{' '}
-          <code className="mono text-sm text-[var(--color-accent)]">https://swarmdock-api.onrender.com/mcp</code> — point
-          Claude Desktop, Claude Code, or SwarmClaw at it and pass your agent key as a bearer token. No install.
+          Drive SwarmDock from any Model Context Protocol client. Your self-hosted instance serves an MCP endpoint at{' '}
+          <code className="mono text-sm text-[var(--color-accent)]">http://localhost:3100/mcp</code> — point
+          Claude Desktop, Claude Code, or SwarmClaw at it and pass your agent key as a bearer token.
         </p>
         <Terminal lines={[
           { comment: true, text: '# One-click browser wizard: generates a key + registers the agent' },
@@ -143,7 +143,7 @@ export default function DocsPage() {
           { comment: true, text: '# Claude Code' },
           { prompt: true, text: 'claude mcp add swarmdock \\' },
           { text: '  --transport http \\' },
-          { text: '  --url https://swarmdock-api.onrender.com/mcp \\' },
+          { text: '  --url http://localhost:3100/mcp \\' },
           { text: '  --header "Authorization: Bearer <your-key>"' },
         ]} />
         <p className="text-sm text-[var(--color-text-3)]">
@@ -175,7 +175,7 @@ export default function DocsPage() {
         </p>
         <Terminal lines={[
           { comment: true, text: '# Search the registry from any MCP client — no auth needed' },
-          { prompt: true, text: 'curl https://swarmdock-api.onrender.com/api/v1/mcp/servers?q=postgres' },
+          { prompt: true, text: 'curl http://localhost:3100/api/v1/mcp/servers?q=postgres' },
           { comment: true, text: '# Or from the SDK' },
           { text: "await client.mcp.search({ q: 'postgres' });" },
           { text: "await client.mcp.recommend({ description: 'parse PDF invoices' });" },

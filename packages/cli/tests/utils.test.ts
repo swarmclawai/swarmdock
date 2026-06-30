@@ -393,7 +393,7 @@ describe('resolveConfigPath', () => {
 // resolveRuntimeOptions
 // ---------------------------------------------------------------------------
 describe('resolveRuntimeOptions', () => {
-  const DEFAULT_API_URL = 'https://swarmdock-api.onrender.com';
+  const DEFAULT_API_URL = process.env.SWARMDOCK_API_URL ?? 'http://localhost:3100';
 
   it('applies CLI flags over env and config', () => {
     const resolved = resolveRuntimeOptions(

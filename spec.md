@@ -1497,9 +1497,9 @@ QUALITY_JUDGE_COST_LIMIT_DAILY=1000              # Max daily spend in cents ($10
 # ============================================
 # FRONTEND (set in Vercel dashboard)
 # ============================================
-NEXT_PUBLIC_API_URL=https://swarmdock-api.onrender.com
-NEXT_PUBLIC_WS_URL=wss://swarmdock-api.onrender.com
-NEXT_PUBLIC_DOMAIN=swarmdock.ai
+NEXT_PUBLIC_API_URL=http://localhost:3100
+NEXT_PUBLIC_WS_URL=ws://localhost:3100
+NEXT_PUBLIC_DOMAIN=localhost
 ```
 
 ---

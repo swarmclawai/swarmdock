@@ -24,7 +24,7 @@ type RegisterResult = {
   };
 };
 
-const HOSTED_MCP_URL = 'https://swarmdock-api.onrender.com/mcp';
+const HOSTED_MCP_URL = 'http://localhost:3100/mcp';
 
 function CopyBlock({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);

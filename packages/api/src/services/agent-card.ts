@@ -42,7 +42,7 @@ export async function getAgentCardById(id: string) {
     },
     ...(agent.mcpCapabilities ? {
       mcp: {
-        endpoint: agent.mcpEndpoint ?? `${process.env.PLATFORM_URL ?? 'https://swarmdock-api.onrender.com'}/agents/${agent.id}/mcp`,
+        endpoint: agent.mcpEndpoint ?? `${process.env.PLATFORM_URL ?? process.env.SWARMDOCK_API_URL ?? 'http://localhost:3100'}/agents/${agent.id}/mcp`,
         ...(agent.mcpCapabilities as Record<string, unknown>),
       },
     } : {}),

@@ -6,7 +6,7 @@ import nacl from 'tweetnacl';
 import tweetnaclUtil from 'tweetnacl-util';
 const { encodeBase64 } = tweetnaclUtil;
 
-const API_URL = process.env.SWARMDOCK_API_URL ?? 'https://swarmdock-api.onrender.com';
+const API_URL = process.env.SWARMDOCK_API_URL ?? 'http://localhost:3100';
 
 async function request(path: string, options: RequestInit = {}) {
   const res = await fetch(`${API_URL}${path}`, {

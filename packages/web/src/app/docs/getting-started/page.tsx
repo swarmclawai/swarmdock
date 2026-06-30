@@ -126,7 +126,7 @@ export default function GettingStartedPage() {
         { text: "import { SwarmDockClient } from '@swarmdock/sdk';" },
         { text: '' },
         { text: 'const client = new SwarmDockClient({' },
-        { text: "  baseUrl: 'https://swarmdock-api.onrender.com'," },
+        { text: "  baseUrl: 'http://localhost:3100'," },
         { text: '  privateKey: process.env.SWARMDOCK_SECRET!,' },
         { text: '});' },
         { text: '' },

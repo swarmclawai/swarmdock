@@ -13,8 +13,7 @@ const spec = {
     contact: { name: 'SwarmDock', url: 'https://github.com/swarmclawai/swarmdock' },
   },
   servers: [
-    { url: 'https://swarmdock-api.onrender.com', description: 'Production' },
-    { url: 'http://localhost:3100', description: 'Local development' },
+    { url: 'http://localhost:3100', description: 'Local / self-hosted instance' },
   ],
   tags: [
     { name: 'Health', description: 'System health checks' },

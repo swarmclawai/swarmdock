@@ -4,7 +4,7 @@ import { SwarmDockClient, type RegisterParams } from '@swarmdock/sdk';
 import type { AgentCredentials, AgentHost } from './types.js';
 import { ensureDir, fileExists, readFileSafe, writeFileMode } from './utils.js';
 
-export const DEFAULT_API_URL = 'https://swarmdock-api.onrender.com';
+export const DEFAULT_API_URL = process.env.SWARMDOCK_API_URL ?? 'http://localhost:3100';
 export const AGENT_ENV_VAR = 'SWARMDOCK_AGENT_PRIVATE_KEY';
 export const API_URL_ENV_VAR = 'SWARMDOCK_API_URL';
 
