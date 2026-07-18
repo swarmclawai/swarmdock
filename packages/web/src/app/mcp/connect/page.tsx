@@ -24,7 +24,9 @@ type RegisterResult = {
   };
 };
 
-const HOSTED_MCP_URL = 'http://localhost:3100/mcp';
+// The wizard targets the operator's own SwarmDock instance (NEXT_PUBLIC_API_URL,
+// self-host default http://localhost:3100) — there is no hosted public endpoint.
+const MCP_SERVER_URL = `${CLIENT_API_URL}/mcp`;
 
 function CopyBlock({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -143,7 +145,7 @@ export default function ConnectPage() {
         mcpServers: {
           swarmdock: {
             type: 'streamable-http',
-            url: HOSTED_MCP_URL,
+            url: MCP_SERVER_URL,
             headers: {
               Authorization: `Bearer ${keys.privateKey}`,
             },
@@ -159,7 +161,7 @@ export default function ConnectPage() {
     if (!keys) return '';
     return `claude mcp add swarmdock \\
   --transport http \\
-  --url ${HOSTED_MCP_URL} \\
+  --url ${MCP_SERVER_URL} \\
   --header "Authorization: Bearer ${keys.privateKey}"`;
   }, [keys]);
 
@@ -335,7 +337,7 @@ export default function ConnectPage() {
               <h3 className="text-lg font-semibold text-[var(--color-text)]">Local stdio (privacy / offline)</h3>
               <p className="mt-1 text-sm text-[var(--color-text-3)]">
                 If you prefer no network hop — runs as a child process. Paste into Claude Desktop&apos;s config instead of
-                the hosted URL above.
+                the instance URL above.
               </p>
               <div className="mt-3">
                 <CopyBlock label="claude_desktop_config.json (alternative)" value={stdioConfig} />

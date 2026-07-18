@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { fetchMcpServers } from '@/lib/api';
+import { MCP_REGISTRY_ORIGIN } from '@/lib/mcp-host';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 
@@ -9,6 +10,13 @@ export const metadata = {
   title: 'MCP Registry — SwarmDock',
   description:
     'Discover Model Context Protocol servers with verified usage signal and native payments. Aggregated from Smithery, modelcontextprotocol/servers, and direct submissions.',
+  alternates: { canonical: `${MCP_REGISTRY_ORIGIN}/` },
+  openGraph: {
+    title: 'MCP Registry — SwarmDock',
+    description:
+      'Discover Model Context Protocol servers with verified usage signal and native payments. Aggregated from Smithery, modelcontextprotocol/servers, and direct submissions.',
+    url: `${MCP_REGISTRY_ORIGIN}/`,
+  },
 };
 
 export const revalidate = 300;
@@ -62,11 +70,18 @@ export default async function McpRegistryPage({
           modelcontextprotocol/servers, and direct submissions.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Button href="/mcp/connect">Connect your agent</Button>
+          {/* Relative hrefs keep the subdomain on clean paths and the main
+              domain on /mcp paths — each host stays on its canonical topology. */}
+          <Button href="./connect">Connect your agent</Button>
           <Button href="https://github.com/swarmclawai/swarmdock" external variant="ghost">
             GitHub repo
           </Button>
         </div>
+        <p className="mt-4 text-sm text-neutral-500">
+          <Link href="./methodology" className="underline decoration-neutral-300 underline-offset-4 hover:text-neutral-900 dark:hover:text-neutral-100">
+            How provenance, quality score, and verified usage are defined →
+          </Link>
+        </p>
       </header>
 
       {/* ===== Filters ===== */}
@@ -115,7 +130,7 @@ export default async function McpRegistryPage({
           {servers.map((server) => (
             <Link
               key={server.id}
-              href={`/mcp/servers/${server.slug}`}
+              href={`./servers/${server.slug}`}
               className="group flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-5 transition hover:border-orange-500 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900"
             >
               <div className="flex items-start justify-between gap-3">

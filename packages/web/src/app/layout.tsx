@@ -5,6 +5,7 @@ import { Analytics } from '@vercel/analytics/next';
 import { JetBrains_Mono, IBM_Plex_Mono } from 'next/font/google';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AuthButton } from '@/components/AuthPanel';
+import { isMcpRegistryHost } from '@/lib/mcp-host';
 import './globals.css';
 import { NetworkDropdown } from '@/components/NetworkDropdown';
 
@@ -73,7 +74,7 @@ const ecosystemLinks = [
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const host = (await headers()).get('host') ?? '';
-  const isMcpHost = host.startsWith('mcp.');
+  const isMcpHost = isMcpRegistryHost(host);
   const navLinks = isMcpHost ? mcpNavLinks : mainNavLinks;
   const ctaHref = isMcpHost ? '/connect' : '/docs#quick-start';
   const ctaLabel = isMcpHost ? 'Connect Agent' : 'Get Started';

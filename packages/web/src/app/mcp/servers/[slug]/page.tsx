@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fetchMcpServer } from '@/lib/api';
+import { MCP_REGISTRY_ORIGIN } from '@/lib/mcp-host';
 
 export const revalidate = 60;
 
@@ -15,9 +16,16 @@ export async function generateMetadata({
   const { slug } = await params;
   const server = await fetchMcpServer(slug);
   if (!server) return { title: 'MCP Server not found — SwarmDock' };
+  const canonical = `${MCP_REGISTRY_ORIGIN}/servers/${server.slug}`;
   return {
     title: `${server.name} — SwarmDock MCP Registry`,
     description: server.description.slice(0, 200),
+    alternates: { canonical },
+    openGraph: {
+      title: `${server.name} — SwarmDock MCP Registry`,
+      description: server.description.slice(0, 200),
+      url: canonical,
+    },
   };
 }
 
@@ -42,8 +50,10 @@ export default async function McpServerDetailPage({
 
   return (
     <div className="mx-auto w-full max-w-4xl px-5 py-10 sm:px-6 sm:py-14">
+      {/* ".." resolves to the registry home on both the subdomain (/) and
+          the main domain (/mcp). */}
       <Link
-        href="/mcp"
+        href=".."
         className="mb-6 inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-white"
       >
         ← Back to registry
@@ -77,6 +87,14 @@ export default async function McpServerDetailPage({
         />
         <Stat label="Ratings" value={server.ratingCount.toLocaleString()} />
       </section>
+      <p className="-mt-6 mb-10 text-sm text-neutral-500">
+        <Link
+          href="../methodology"
+          className="underline decoration-neutral-300 underline-offset-4 hover:text-neutral-900 dark:hover:text-neutral-100"
+        >
+          What these signals mean →
+        </Link>
+      </p>
 
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-500">
