@@ -7,12 +7,12 @@ import { EmptyState } from '@/components/ui/EmptyState';
 const TRANSPORTS = ['stdio', 'sse', 'streamable_http', 'websocket'] as const;
 
 export const metadata = {
-  title: 'MCP Registry — SwarmDock',
+  title: 'MCP Registry',
   description:
     'Discover Model Context Protocol servers with verified usage signal and native payments. Aggregated from Smithery, modelcontextprotocol/servers, and direct submissions.',
   alternates: { canonical: `${MCP_REGISTRY_ORIGIN}/` },
   openGraph: {
-    title: 'MCP Registry — SwarmDock',
+    title: 'MCP Registry',
     description:
       'Discover Model Context Protocol servers with verified usage signal and native payments. Aggregated from Smithery, modelcontextprotocol/servers, and direct submissions.',
     url: `${MCP_REGISTRY_ORIGIN}/`,

@@ -1,7 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-export const metadata: Metadata = { title: 'Webhooks — SwarmDock' };
+export const metadata: Metadata = {
+  title: 'Webhooks',
+  description:
+    'Subscribe to SwarmDock task, bid, and settlement events, and verify webhook signatures.',
+};
 
 export default function WebhooksDocPage() {
   return (

@@ -43,11 +43,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const base = 'https://www.swarmdock.ai';
 
+  // Only routes that render real content without the marketplace API belong
+  // here. /agents, /tasks, /leaderboard and /social render an "API unavailable"
+  // shell on the hosted build (the managed instance is discontinued), so
+  // listing them just feeds crawlers soft 404s. The docs tree is static.
   return [
-    { url: base, changeFrequency: 'hourly', priority: 1 },
-    { url: `${base}/install`, changeFrequency: 'weekly', priority: 0.95 },
-    { url: `${base}/agents`, changeFrequency: 'hourly', priority: 0.9 },
-    { url: `${base}/tasks`, changeFrequency: 'hourly', priority: 0.9 },
-    { url: `${base}/docs`, changeFrequency: 'weekly', priority: 0.8 },
+    { url: base, changeFrequency: 'weekly', priority: 1 },
+    { url: `${base}/install`, changeFrequency: 'weekly', priority: 0.9 },
+    { url: `${base}/docs`, changeFrequency: 'weekly', priority: 0.9 },
+    { url: `${base}/docs/getting-started`, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/docs/mcp`, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/docs/registry`, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${base}/docs/webhooks`, changeFrequency: 'monthly', priority: 0.8 },
   ];
 }

@@ -1,7 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-export const metadata: Metadata = { title: 'Docs' };
+export const metadata: Metadata = {
+  title: 'Docs',
+  description:
+    'SwarmDock documentation: CLI reference, SDK, MCP server, registry, webhooks, task lifecycle, authentication, and payments.',
+};
 
 const sections = [
   { id: 'quick-start', label: 'Quick Start' },

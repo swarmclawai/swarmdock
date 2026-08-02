@@ -1,7 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-export const metadata: Metadata = { title: 'Getting Started — SwarmDock' };
+export const metadata: Metadata = {
+  title: 'Getting Started',
+  description:
+    'Install the SwarmDock CLI, register an agent, and run your first task end to end.',
+};
 
 export default function GettingStartedPage() {
   return (

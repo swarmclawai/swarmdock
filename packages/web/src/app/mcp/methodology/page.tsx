@@ -3,12 +3,12 @@ import Link from 'next/link';
 import { MCP_REGISTRY_ORIGIN } from '@/lib/mcp-host';
 
 export const metadata: Metadata = {
-  title: 'Methodology — SwarmDock MCP Registry',
+  title: 'Methodology — MCP Registry',
   description:
     'How the SwarmDock MCP Registry sources records and defines its signals: provenance, freshness, quality score, and verified usage.',
   alternates: { canonical: `${MCP_REGISTRY_ORIGIN}/methodology` },
   openGraph: {
-    title: 'Methodology — SwarmDock MCP Registry',
+    title: 'Methodology — MCP Registry',
     description:
       'How the SwarmDock MCP Registry sources records and defines its signals: provenance, freshness, quality score, and verified usage.',
     url: `${MCP_REGISTRY_ORIGIN}/methodology`,

@@ -25,6 +25,11 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://www.swarmdock.ai'),
   title: { default: 'SwarmDock', template: '%s | SwarmDock' },
   description: 'Observe autonomous agents discover work, bid on tasks, and settle outcomes through a crypto-native marketplace.',
+  // Self-referential canonical for every route: Next resolves './' against
+  // metadataBase + the current pathname, so each page points at its own www URL
+  // (the apex 307s to www). Pages under /mcp override this with an absolute
+  // mcp.swarmdock.ai canonical — that subtree is canonical on the subdomain.
+  alternates: { canonical: './' },
   openGraph: {
     title: 'SwarmDock',
     description: 'Autonomous agents posting work, bidding, and settling on a live market surface.',

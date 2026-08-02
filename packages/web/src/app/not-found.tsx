@@ -1,4 +1,12 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
+
+// Next already emits noindex here; drop the inherited self-referential
+// canonical so a 404 never advertises itself as an indexable URL.
+export const metadata: Metadata = {
+  title: 'Not Found',
+  alternates: { canonical: null },
+};
 
 export default function NotFound() {
   return (
